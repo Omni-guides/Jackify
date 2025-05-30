@@ -4,15 +4,26 @@
 #                                                 #
 # A tool for running Wabbajack modlists on Linux  #
 #                                                 #
-#          Beta v0.69 - Omni 03/18/2025           #
+#          Beta v0.69t - Omni 03/18/2025           #
 #                                                 #
 ###################################################
 
 # Full Changelog can be found here: https://github.com/Omni-guides/Wabbajack-Modlist-Linux/blob/main/binaries/omni-guides-sh.changelog.txt
 
+# Parse --debug or -d flag before anything else
+DEBUG=0
+for arg in "$@"; do
+    if [[ "$arg" == "--debug" || "$arg" == "-d" ]]; then
+        DEBUG=1
+        export DEBUG
+        break
+    fi
+    # Do not shift here, just scan args
+
+done
 
 # Current Script Version (beta)
-script_ver=0.69
+script_ver=0.69t
 
 # Define modlist-specific configurations
 declare -A modlist_configs=(
@@ -36,15 +47,16 @@ log_status() {
     # Always write to log file with timestamp but without color codes
     echo "[$timestamp] [$level] $(echo "$message" | sed 's/\x1b\[[0-9;]*m//g')" >> "$LOGFILE"
     
-    # Only display non-DEBUG messages to the user, preserving color codes
-    if [ "$level" != "DEBUG" ]; then
+    # If DEBUG=1, print all messages to terminal, including DEBUG
+    if [[ "$DEBUG" == "1" ]]; then
         echo -e "$message"
+    else
+        # Only display non-DEBUG messages to the user, preserving color codes
+        if [ "$level" != "DEBUG" ]; then
+            echo -e "$message"
+        fi
     fi
 }
-
-#set -x
-#Protontricks Bug
-#export PROTON_VERSION="Proton Experimental"
 
 # Display banner
 echo "╔══════════════════════════════════════════════════════════════════╗"
@@ -128,6 +140,29 @@ detect_steamdeck() {
 
 }
 
+# Modlist-specific steps spinner wrapper
+modlist_specific_steps_spinner() {
+    echo "[DEBUG] modlist_specific_steps_spinner: DEBUG=$DEBUG" >&2
+    if [ "$DEBUG" = "1" ]; then
+        modlist_specific_steps
+    else
+        local pid
+        local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+        modlist_specific_steps >>"$LOGFILE" 2>&1 &
+        pid=$!
+        local i=0
+        local bar="===============                                   "
+        local msg="Progress: [${bar}] 30% - Running modlist-specific steps... "
+        while kill -0 "$pid" 2>/dev/null; do
+            printf "\r\033[K%s%s" "$msg" "${spinner[i]}"
+            i=$(( (i+1) % 10 ))
+            sleep 0.1
+        done
+        wait "$pid"
+        printf "\r\033[K"
+    fi
+}
+
 ###########################################
 # Detect Protontricks (flatpak or native) #
 ###########################################
@@ -135,35 +170,31 @@ detect_steamdeck() {
 detect_protontricks() {
 	echo -ne "\nDetecting if protontricks is installed..." >>$LOGFILE 2>&1
 
-    # Check if native protontricks exists
+	# Check if protontricks exists
 	if command -v protontricks >/dev/null 2>&1; then
 		protontricks_path=$(command -v protontricks)
 		# Check if the detected binary is actually a Flatpak wrapper
 		if [[ -f "$protontricks_path" ]] && grep -q "flatpak run" "$protontricks_path"; then
 			echo -e "Detected Protontricks is actually a Flatpak wrapper at $protontricks_path." >>$LOGFILE 2>&1
 			which_protontricks=flatpak
+			return 0
 		else
 			echo -e "Native Protontricks found at $protontricks_path." | tee -a $LOGFILE
 			which_protontricks=native
 			return 0 # Exit function since we confirmed native protontricks
 		fi
-    fi
-
-    # If not found, check for Flatpak protontricks
+	else
+		echo -e "Non-Flatpak Protontricks not found. Checking flatpak..." >>$LOGFILE 2>&1
 		if flatpak list | grep -iq protontricks; then
 			echo -e "Flatpak Protontricks is already installed." >>$LOGFILE 2>&1
 			which_protontricks=flatpak
-        return 0
-    fi
-
-    # If neither found, offer to install Flatpak
+		else
 			echo -e "\e[31m\n** Protontricks not found. Do you wish to install it? (y/n): **\e[0m"
 			read -p " " answer
 			if [[ $answer =~ ^[Yy]$ ]]; then
 				if [[ $steamdeck -eq 1 ]]; then
 					if flatpak install -u -y --noninteractive flathub com.github.Matoking.protontricks; then
 						which_protontricks=flatpak
-                return 0
 					else
 						echo -e "\n\e[31mFailed to install Protontricks via Flatpak. Please install it manually and rerun this script.\e[0m" | tee -a $LOGFILE
 						exit 1
@@ -173,7 +204,6 @@ detect_protontricks() {
 					if [[ $choice =~ 1 ]]; then
 						if flatpak install -u -y --noninteractive flathub com.github.Matoking.protontricks; then
 							which_protontricks=flatpak
-                    return 0
 						else
 							echo -e "\n\e[31mFailed to install Protontricks via Flatpak. Please install it manually and rerun this script.\e[0m" | tee -a $LOGFILE
 							exit 1
@@ -188,6 +218,13 @@ detect_protontricks() {
 			else
 				echo -e "\e[31mProtontricks is required for this script to function. Exiting.\e[0m" | tee -a $LOGFILE
 				exit 1
+			fi
+		fi
+		# After any install attempt, re-check for protontricks
+		if ! command -v protontricks >/dev/null 2>&1 && ! flatpak list | grep -iq protontricks; then
+			echo -e "\e[31mProtontricks is still not installed after attempted installation. Exiting.\e[0m" | tee -a $LOGFILE
+			exit 1
+		fi
 	fi
 }
 
@@ -451,8 +488,12 @@ enable_dotfiles() {
     log_status "INFO" "\nEnabling visibility of (.)dot files..."
 
     # Completely redirect all output to avoid any wine debug messages
-    dotfiles_check=$(WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID > /dev/null 2>&1; 
-                     WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID 2>/dev/null | grep ShowDotFiles | awk '{gsub(/\r/,""); print $NF}')
+    if [[ "$DEBUG" == "1" ]]; then
+        dotfiles_check=$(run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID | grep ShowDotFiles | awk '{gsub(/\r/,""); print $NF}')
+    else
+        dotfiles_check=$(WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID > /dev/null 2>&1; \
+                         WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID 2>/dev/null | grep ShowDotFiles | awk '{gsub(/\r/,""); print $NF}')
+    fi
     
     log_status "DEBUG" "Current dotfiles setting: $dotfiles_check"
 
@@ -461,15 +502,25 @@ enable_dotfiles() {
     else
         # Method 2: Set registry key (standard approach)
         log_status "DEBUG" "Setting ShowDotFiles registry key..."
-        WINEDEBUG=-all run_protontricks -c 'wine reg add "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles /d Y /f' $APPID > /dev/null 2>&1
-        
+        if [[ "$DEBUG" == "1" ]]; then
+            run_protontricks -c 'wine reg add "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles /d Y /f' $APPID
+        else
+            WINEDEBUG=-all run_protontricks -c 'wine reg add "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles /d Y /f' $APPID > /dev/null 2>&1
+        fi
         # Method 3: Also try direct winecfg approach as backup
         log_status "DEBUG" "Also setting via winecfg command..."
-        WINEDEBUG=-all run_protontricks -c 'winecfg /v wine' $APPID > /dev/null 2>&1
-        
+        if [[ "$DEBUG" == "1" ]]; then
+            run_protontricks -c 'winecfg /v wine' $APPID
+        else
+            WINEDEBUG=-all run_protontricks -c 'winecfg /v wine' $APPID > /dev/null 2>&1
+        fi
         # Method 4: Create user.reg entry if it doesn't exist
         log_status "DEBUG" "Ensuring user.reg has correct entry..."
-        prefix_path=$(WINEDEBUG=-all run_protontricks -c 'echo $WINEPREFIX' $APPID 2>/dev/null)
+        if [[ "$DEBUG" == "1" ]]; then
+            prefix_path=$(run_protontricks -c 'echo $WINEPREFIX' $APPID 2>/dev/null)
+        else
+            prefix_path=$(WINEDEBUG=-all run_protontricks -c 'echo $WINEPREFIX' $APPID 2>/dev/null)
+        fi
         if [[ -n "$prefix_path" && -d "$prefix_path" ]]; then
             if [[ -f "$prefix_path/user.reg" ]]; then
                 if ! grep -q "ShowDotFiles" "$prefix_path/user.reg" 2>/dev/null; then
@@ -478,12 +529,14 @@ enable_dotfiles() {
                 fi
             fi
         fi
-        
         # Verify the setting took effect
-        dotfiles_verify=$(WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID > /dev/null 2>&1;
-                          WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID 2>/dev/null | grep ShowDotFiles | awk '{gsub(/\r/,""); print $NF}')
+        if [[ "$DEBUG" == "1" ]]; then
+            dotfiles_verify=$(run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID | grep ShowDotFiles | awk '{gsub(/\r/,""); print $NF}')
+        else
+            dotfiles_verify=$(WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID > /dev/null 2>&1; \
+                              WINEDEBUG=-all run_protontricks -c 'wine reg query "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles' $APPID 2>/dev/null | grep ShowDotFiles | awk '{gsub(/\r/,""); print $NF}')
+        fi
         log_status "DEBUG" "Verification check: $dotfiles_verify"
-        
         log_status "SUCCESS" "Done!"
     fi
 }
@@ -493,7 +546,11 @@ enable_dotfiles() {
 ###############################################
 
 set_win10_prefix() {
-	WINEDEBUG=-all run_protontricks --no-bwrap $APPID win10 >/dev/null 2>&1
+    if [[ "$DEBUG" == "1" ]]; then
+        run_protontricks --no-bwrap $APPID win10
+    else
+        WINEDEBUG=-all run_protontricks --no-bwrap $APPID win10 >/dev/null 2>&1
+    fi
 }
 
 ######################################
@@ -544,8 +601,14 @@ install_wine_components() {
             echo "Retry attempt $attempt/$max_attempts..." | tee -a "$LOGFILE"
             sleep 2
         fi
-        
-        if WINEDEBUG=-all run_protontricks --no-bwrap "$protontricks_appid" -q "${protontricks_components[@]}" >/dev/null 2>&1; then
+        if [[ "$DEBUG" == "1" ]]; then
+            run_protontricks --no-bwrap "$protontricks_appid" -q "${protontricks_components[@]}"
+            result=$?
+        else
+            WINEDEBUG=-all run_protontricks --no-bwrap "$protontricks_appid" -q "${protontricks_components[@]}" >/dev/null 2>&1
+            result=$?
+        fi
+        if [[ $result -eq 0 ]]; then
             success=true
         else
             echo "Attempt $attempt failed, cleaning up wine processes before retry..." >>$LOGFILE 2>&1
@@ -585,8 +648,8 @@ install_wine_components() {
     done
     
     if [[ ${#missing_components[@]} -gt 0 ]]; then
-        echo -e "\nWarning: Some critical components may be missing: ${missing_components[*]}" | tee -a "$LOGFILE"
-        echo "Installation will continue, but you may encounter issues." | tee -a "$LOGFILE"
+        echo -e "\nERROR: Some critical components are missing: ${missing_components[*]}" | tee -a "$LOGFILE"
+        return 1
     else
         echo "Critical components verified successfully." >>$LOGFILE 2>&1
     fi
@@ -634,13 +697,12 @@ detect_compatdata_path() {
     local appid_to_check="$APPID"
     if [[ "$gamevar" == "Fallout New Vegas" ]]; then
         appid_to_check="22380"
-        local vdf_file="$HOME/.local/share/Steam/config/libraryfolders.vdf"
-        local libraries=("$HOME/.local/share/Steam")
+        local vdf_file="$HOME/.steam/steam/config/libraryfolders.vdf"
+        local libraries=("$HOME/.local/share/Steam" "$HOME/.steam/steam")
         # Parse all additional libraries from the VDF
         if [[ -f "$vdf_file" ]]; then
             while IFS= read -r line; do
                 if [[ "$line" =~ "path" ]]; then
-                    # Extract the path value using sed
                     local path=$(echo "$line" | sed -E 's/.*"path"[ \t]*"([^"]+)".*/\1/')
                     if [[ "$path" == /* ]]; then
                         libraries+=("$path")
@@ -662,7 +724,7 @@ detect_compatdata_path() {
         done
         if [[ -z "$compat_data_path" ]]; then
             log_status "ERROR" "Could not find compatdata directory for Fallout New Vegas (22380) in any Steam library."
-            log_status "ERROR" "Please ensure you have launched the vanilla Fallout New Vegas game at least once via Steam."
+            log_status "ERROR" "Please ensure you have launched the vanilla Fallout New Vegas game at least once via Steam in the correct library."
             return 1
         fi
         return 0
@@ -1319,13 +1381,20 @@ modlist_specific_steps() {
                 if [[ "$component" == "dotnet8" ]]; then
                     log_status "INFO" "\nDownloading .NET 8 Runtime"
                     wget https://download.visualstudio.microsoft.com/download/pr/77284554-b8df-4697-9a9e-4c70a8b35f29/6763c16069d1ab8fa2bc506ef0767366/dotnet-runtime-8.0.5-win-x64.exe -q -nc --show-progress --progress=bar:force:noscroll -O "$HOME/Downloads/dotnet-runtime-8.0.5-win-x64.exe"
-                    
                     log_status "INFO" "Installing .NET 8 Runtime...."
-                    WINEDEBUG=-all run_protontricks --no-bwrap -c 'wine "$HOME/Downloads/dotnet-runtime-8.0.5-win-x64.exe" /Q' "$APPID" >/dev/null 2>&1
+                    if [[ "$DEBUG" == "1" ]]; then
+                        run_protontricks --no-bwrap -c 'wine "$HOME/Downloads/dotnet-runtime-8.0.5-win-x64.exe" /Q' "$APPID"
+                    else
+                        WINEDEBUG=-all run_protontricks --no-bwrap -c 'wine "$HOME/Downloads/dotnet-runtime-8.0.5-win-x64.exe" /Q' "$APPID" >/dev/null 2>&1
+                    fi
                     log_status "SUCCESS" "Done."
                 else
                     log_status "INFO" "Installing .NET ${component#dotnet}..."
-                    WINEDEBUG=-all run_protontricks --no-bwrap "$APPID" -q "$component" >/dev/null 2>&1
+                    if [[ "$DEBUG" == "1" ]]; then
+                        run_protontricks --no-bwrap "$APPID" -q "$component"
+                    else
+                        WINEDEBUG=-all run_protontricks --no-bwrap "$APPID" -q "$component" >/dev/null 2>&1
+                    fi
                     log_status "SUCCESS" "Done."
                 fi
             done
@@ -1422,9 +1491,11 @@ fnv_launch_options() {
     log_status "DEBUG" "fnv_launch_options: gamevar='$gamevar', compat_data_path='$compat_data_path'"
     if [[ "$gamevar" == "Fallout New Vegas" ]]; then
         if [[ -n "$compat_data_path" && -d "$compat_data_path" ]]; then
-            log_status "WARN" "\nFor $MODLIST, please add the following line to the Launch Options in Steam for your '$MODLIST' entry:"
-            log_status "SUCCESS" "\nSTEAM_COMPAT_DATA_PATH=\"$compat_data_path\" %command%"
-            log_status "WARN" "\nThis is essential for the modlist to load correctly."
+            log_status "WARN" "\n\e[41;97m======================= CRITICAL: STEAM LAUNCH OPTIONS =======================\e[0m"
+            log_status "SUCCESS" "\n\e[1;32mOpen the properties of your '$MODLIST' entry in Steam and add the following to the launch options:\e[0m"            
+            log_status "SUCCESS" "\n\e[1;32mSTEAM_COMPAT_DATA_PATH=\"$compat_data_path\" %command%\e[0m"
+            log_status "WARN" "\e[41;97m=============================================================================\e[0m"
+            log_status "WARN" "\nThis is \e[1;4mESSENTIAL\e[0m for the modlist to load correctly. You \e[1;4mMUST\e[0m add it to your Steam launch options."
         else
             log_status "ERROR" "\nCould not determine the compatdata path for Fallout New Vegas. Please manually set the correct path in the Launch Options."
         fi
@@ -1563,7 +1634,6 @@ fi
 # Detect compatdata path and Proton version
 detect_compatdata_path
 detect_proton_version
-fnv_launch_options
 
 # Get resolution preference
 if [ "$steamdeck" -eq 1 ]; then
@@ -1605,97 +1675,103 @@ fi
 read -rp $'\e[32mDo you want to proceed with the installation? (y/N)\e[0m ' proceed
 
 if [[ $proceed =~ ^[Yy]$ ]]; then
-    # Function to update progress
-    update_progress() {
-        local percent=$1
-        local bar_length=50
-        local filled_length=$((percent * bar_length / 100))
-        local bar=""
-        
-        # Create the bar string with = for filled portions
-        for ((i = 0; i < bar_length; i++)); do
-            if [ $i -lt $filled_length ]; then
-                bar+="="
-            else
-                bar+=" "
+    if [ "$DEBUG" = "1" ]; then
+        {
+            # Protontricks setup (10%)
+            set_protontricks_perms
+            # Dotfiles (20%)
+            enable_dotfiles
+            # Modlist-specific steps (30%)
+            modlist_specific_steps
+            # Wine components (40%)
+            install_wine_components
+            # Windows 10 prefix (50%)
+            set_win10_prefix
+            # ModOrganizer configuration (70%)
+            backup_modorganizer
+            blank_downloads_dir
+            replace_gamepath
+            edit_binary_working_paths
+            # Resolution and additional tasks (90%)
+            edit_resolution
+            small_additional_tasks
+            create_dxvk_file
+            # Final steps (100%)
+            chown_chmod_modlist_dir
+            fnv_launch_options
+        } 2>&1 | tee -a "$LOGFILE"
+    else
+        # Function to update progress
+        update_progress() {
+            local percent=$1
+            local bar_length=50
+            local filled_length=$((percent * bar_length / 100))
+            local bar=""
+            for ((i = 0; i < bar_length; i++)); do
+                if [ $i -lt $filled_length ]; then
+                    bar+="="
+                else
+                    bar+=" "
+                fi
+            done
+            printf "\r[%-${bar_length}s] %d%%" "$bar" "$percent"
+        }
+        {
+            if [ "$DEBUG" != "1" ]; then
+                printf "\r\033[KProgress: [%-50s] %d%% - Setting up Protontricks..." "                                                  " "10"
             fi
-        done
-        
-        # Use \r to return to start of line and overwrite previous progress
-        printf "\r[%-${bar_length}s] %d%%" "$bar" "$percent"
-    }
-
-    {
-        # Add newline before progress bar starts
-        echo ""
-        
-        # Protontricks setup (10%)
-        printf "\r\033[KProgress: [%-50s] %d%% - Setting up Protontricks..." "                                                  " "10"
-        set_protontricks_perms >/dev/null 2>&1
-        
-        # Dotfiles (20%)
-        printf "\r\033[KProgress: [%-50s] %d%% - Enabling dotfiles..." "==========                                        " "20"
-        enable_dotfiles >/dev/null 2>&1
-        
-        # Wine components (40%)
-        printf "\r\033[KProgress: [%-50s] %d%% - Installing Wine components..." "====================                              " "40"
-        install_wine_components >/dev/null 2>&1
-        
-        # Windows 10 prefix (50%)
-        printf "\r\033[KProgress: [%-50s] %d%% - Setting Windows 10 prefix..." "=========================                         " "50"
-        set_win10_prefix >/dev/null 2>&1
-        
-        # ModOrganizer configuration (70%)
-        printf "\r\033[KProgress: [%-50s] %d%% - Configuring Mod Organizer..." "===================================               " "70"
-        backup_modorganizer >/dev/null 2>&1
-        blank_downloads_dir >/dev/null 2>&1
-        replace_gamepath >/dev/null 2>&1
-        edit_binary_working_paths >/dev/null 2>&1
-        
-        # Resolution and additional tasks (90%)
-        printf "\r\033[KProgress: [%-50s] %d%% - Setting resolution and additional tasks..." "============================================      " "90"
-        edit_resolution >/dev/null 2>&1
-        small_additional_tasks >/dev/null 2>&1
-        create_dxvk_file >/dev/null 2>&1
-        
-        # Final steps (100%)
-        printf "\r\033[KProgress: [%-50s] %d%% - Completing installation...\n" "==================================================" "100"
-        
-        # Remove user-facing artwork and debug output
-        # echo "" # Add spacing
-        # echo "ABOUT TO CALL MODLIST_SPECIFIC_STEPS FOR: $MODLIST" | tee -a "$LOGFILE"
-        modlist_specific_steps
-        # echo "FINISHED CALLING MODLIST_SPECIFIC_STEPS" | tee -a "$LOGFILE"
-        
-        # Add two newlines after progress bar completes
-        # printf "\n\n"
-        
-        chown_chmod_modlist_dir
-        fnv_launch_options >/dev/null 2>&1
-        
-    } 2>>$LOGFILE
-    
+            set_protontricks_perms >/dev/null 2>&1
+            if [ "$DEBUG" != "1" ]; then
+                printf "\r\033[KProgress: [%-50s] %d%% - Enabling dotfiles..." "==========                                        " "20"
+            fi
+            enable_dotfiles >/dev/null 2>&1
+            if [ "$DEBUG" != "1" ]; then
+                modlist_specific_steps_spinner
+            else
+                modlist_specific_steps
+            fi
+            if [ "$DEBUG" != "1" ]; then
+                printf "\r\033[KProgress: [%-50s] %d%% - Installing Wine components..." "====================                              " "40"
+            fi
+            install_wine_components >/dev/null 2>&1
+            if [ "$DEBUG" != "1" ]; then
+                printf "\r\033[KProgress: [%-50s] %d%% - Setting Windows 10 prefix..." "=========================                         " "50"
+            fi
+            set_win10_prefix >/dev/null 2>&1
+            if [ "$DEBUG" != "1" ]; then
+                printf "\r\033[KProgress: [%-50s] %d%% - Configuring Mod Organizer..." "===================================               " "70"
+            fi
+            backup_modorganizer >/dev/null 2>&1
+            blank_downloads_dir >/dev/null 2>&1
+            replace_gamepath >/dev/null 2>&1
+            edit_binary_working_paths >/dev/null 2>&1
+            if [ "$DEBUG" != "1" ]; then
+                printf "\r\033[KProgress: [%-50s] %d%% - Setting resolution and additional tasks..." "============================================      " "90"
+            fi
+            edit_resolution >/dev/null 2>&1
+            small_additional_tasks >/dev/null 2>&1
+            create_dxvk_file >/dev/null 2>&1
+            if [ "$DEBUG" != "1" ]; then
+                printf "\r\033[KProgress: [%-50s] %d%% - Completing installation..." "==================================================" "100"
+            fi
+            chown_chmod_modlist_dir
+            fnv_launch_options
+        } 2>>$LOGFILE
+    fi
     # Show completion message
     {
         echo ""  # Add blank line before success message
         echo -e "\e[32m✓ Installation completed successfully!\e[0m"
         echo -e "\n📝 Next Steps:"
         echo "  • Launch your modlist through Steam"
-        echo "  • When Mod Organizer opens, verify the game path is correct"
-        if [[ "$gamevar" == "Skyrim Special Edition" || "$gamevar" == "Fallout 4" ]]; then
-            echo "  • Run the game through SKSE/F4SE launcher"
-        fi
         echo -e "\n💡 Detailed log available at: $LOGFILE\n"
     } | tee -a "$LOGFILE"
-
     # Show SD Card status if detected
     if [[ "$steamdeck" -eq 1 ]]; then
-        # On Steam Deck, SD card is /run/media/deck/<UUID> or /run/media/mmcblk0p1
         if [[ "$modlist_dir" =~ ^/run/media/deck/[^/]+(/.*)?$ ]] || [[ "$modlist_dir" == "/run/media/mmcblk0p1"* ]]; then
             echo -e "SD Card: \e[32mDetected\e[0m" | tee -a "$LOGFILE"
         fi
     else
-        # On non-Deck, just show the path if it's /run/media, but don't call it SD card
         if [[ "$modlist_dir" == "/run/media"* ]]; then
             echo -e "Removable Media: \e[33mDetected at $modlist_dir\e[0m" | tee -a "$LOGFILE"
         fi
@@ -1705,7 +1781,3 @@ else
     cleaner_exit
 fi
 
-# After the block that prints the completion message and next steps:
-# (Find the line: echo -e "\n💡 Detailed log available at: $LOGFILE\n")
-# Add this immediately after:
-fnv_launch_options
