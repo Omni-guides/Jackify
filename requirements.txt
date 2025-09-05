@@ -1,0 +1,31 @@
+# Core GUI framework
+PySide6>=6.5.0
+
+# Process monitoring and system information
+psutil>=5.8.0
+
+# File downloads and HTTP requests
+requests>=2.25.0
+tqdm>=4.65.0
+
+# Configuration file handling
+PyYAML>=6.0
+
+# Steam VDF file parsing (latest available version)
+vdf>=3.4
+
+# Package version handling
+packaging>=21.0
+
+# Archive extraction (if needed)
+# zipfile and tarfile are in stdlib
+
+# File system utilities (stdlib: os, pathlib, shutil, tempfile)
+# Process management (stdlib: subprocess, threading)
+# JSON handling (stdlib: json)
+# Logging (stdlib: logging)
+# Regular expressions (stdlib: re)
+# Time handling (stdlib: time, datetime)
+# Collections (stdlib: collections, itertools, functools)
+# Configuration files (stdlib: configparser)
+# Hashing (stdlib: hashlib) 

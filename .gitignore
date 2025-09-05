@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+
+# Logs
+*.log
+jackify-install-engine/logs/ 
+logs/
+
+# Build artifacts
+build/
+dist/
+core/__pycache__/
+core/modules/__pycache__/
+
+# Jackify engine temp and output files
+jackify-install-engine/temp/
+jackify/engine/temp/
+jackify-install-engine/*.log
+jackify-install-engine/*.dds
+
+# Editor/OS temp files
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db 
+
+# NOTE: .dll, .json, .deps.json, .runtimeconfig.json in jackify-install-engine/
+# are currently tracked because it's unclear if they are required for runtime/distribution
+# or are build artifacts. Do not ignore until this is confirmed. 
