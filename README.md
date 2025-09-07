@@ -24,6 +24,7 @@ Jackify is an almost Linux-native application written in Python, with a GUI prod
 ### Requirements
 
 - Linux system (Most modern distributions supported)
+- Python 3.8+ installed
 - Steam installed and configured, Proton Experimental available
 
 ### Installation
