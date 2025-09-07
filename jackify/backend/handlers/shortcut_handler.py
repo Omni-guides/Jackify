@@ -1203,8 +1203,8 @@ class ShortcutHandler:
             return []
         
         if not matching_shortcuts:
-            # Changed log level to warning as this is an expected outcome sometimes
-             self.logger.warning(f"No shortcuts found pointing to '{executable_name}' in {vdf_path}.")
+            # Changed log level to debug as this is an expected outcome sometimes
+             self.logger.debug(f"No shortcuts found pointing to '{executable_name}' in {vdf_path}.")
 
         return matching_shortcuts
 

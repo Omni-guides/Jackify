@@ -592,6 +592,7 @@ class ModlistInstallCLI:
         """
         Run the configuration phase: execute the Linux-native Jackify Install Engine.
         """
+        import os
         import subprocess
         import time
         import sys

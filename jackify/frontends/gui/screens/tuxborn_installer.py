@@ -1098,7 +1098,6 @@ class TuxbornInstallerScreen(QWidget):
             
             # Use automated prefix service instead of manual steps
             self._safe_append_text("Starting automated Steam setup workflow...")
-            self._safe_append_text("This will automatically configure Steam integration without manual steps.")
             
             # Start automated prefix workflow
             modlist_name = self.modlist_name_edit.text().strip()
@@ -1110,24 +1109,56 @@ class TuxbornInstallerScreen(QWidget):
             MessageService.critical(self, "Steam Restart Failed", "Failed to restart Steam automatically. Please restart Steam manually, then try again.", safety_level="medium")
 
     def _start_automated_prefix_workflow(self, modlist_name, install_dir, mo2_exe_path):
-        """Start the automated prefix workflow using AutomatedPrefixService"""
+        """Start the automated prefix workflow using AutomatedPrefixService in a background thread"""
+        self._safe_append_text(f"Initializing automated Steam setup for '{modlist_name}'...")
+        self._safe_append_text("Starting automated Steam shortcut creation and configuration...")
+        
+        # Create and start the automated prefix thread
+        class AutomatedPrefixThread(QThread):
+            progress_update = Signal(str)
+            workflow_complete = Signal(object)  # Will emit the result tuple
+            error_occurred = Signal(str)
+            
+            def __init__(self, modlist_name, install_dir, mo2_exe_path):
+                super().__init__()
+                self.modlist_name = modlist_name
+                self.install_dir = install_dir
+                self.mo2_exe_path = mo2_exe_path
+                
+            def run(self):
+                try:
+                    from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
+                    
+                    # Initialize the automated prefix service
+                    prefix_service = AutomatedPrefixService()
+                    
+                    # Define progress callback for GUI updates
+                    def progress_callback(message):
+                        self.progress_update.emit(message)
+                    
+                    # Run the automated workflow (this contains the blocking operations)
+                    result = prefix_service.run_working_workflow(
+                        self.modlist_name, self.install_dir, self.mo2_exe_path, progress_callback
+                    )
+                    
+                    # Emit the result
+                    self.workflow_complete.emit(result)
+                    
+                except Exception as e:
+                    self.error_occurred.emit(str(e))
+        
+        # Create and start the thread
+        self.automated_prefix_thread = AutomatedPrefixThread(modlist_name, install_dir, mo2_exe_path)
+        self.automated_prefix_thread.progress_update.connect(self._safe_append_text)
+        self.automated_prefix_thread.workflow_complete.connect(self._on_automated_prefix_complete)
+        self.automated_prefix_thread.error_occurred.connect(self._on_automated_prefix_error)
+        self.automated_prefix_thread.start()
+    
+    def _on_automated_prefix_complete(self, result):
+        """Handle completion of the automated prefix workflow"""
         try:
-            from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
-            
-            self._safe_append_text(f"Initializing automated Steam setup for '{modlist_name}'...")
-            
-            # Initialize the automated prefix service
-            prefix_service = AutomatedPrefixService()
-            
-            # Define progress callback for GUI updates
-            def progress_callback(message):
-                self._safe_append_text(f"{message}")
-            
-            # Run the automated workflow
-            self._safe_append_text("Starting automated Steam shortcut creation and configuration...")
-            result = prefix_service.run_working_workflow(
-                modlist_name, install_dir, mo2_exe_path, progress_callback
-            )
+            modlist_name = self.modlist_name_edit.text().strip()
+            install_dir = self.install_dir_edit.text().strip()
             
             # Handle the result - check for conflicts
             if isinstance(result, tuple) and len(result) == 4:
@@ -1175,11 +1206,18 @@ class TuxbornInstallerScreen(QWidget):
                 self.cancel_install_btn.setVisible(False)
                 
         except Exception as e:
-            self._safe_append_text(f"Error during automated Steam setup: {str(e)}")
-            self._safe_append_text("Please check the logs for details.")
+            self._safe_append_text(f"Error handling automated prefix result: {str(e)}")
             self.start_btn.setEnabled(True)
             self.cancel_btn.setVisible(True)
             self.cancel_install_btn.setVisible(False)
+    
+    def _on_automated_prefix_error(self, error_message):
+        """Handle error from the automated prefix workflow"""
+        self._safe_append_text(f"Error during automated Steam setup: {error_message}")
+        self._safe_append_text("Please check the logs for details.")
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setVisible(True)
+        self.cancel_install_btn.setVisible(False)
 
     def show_shortcut_conflict_dialog(self, conflicts):
         """Show dialog to resolve shortcut name conflicts"""
@@ -1649,6 +1687,11 @@ class TuxbornInstallerScreen(QWidget):
 
     def on_configuration_complete(self, success, message, modlist_name):
         """Handle configuration completion on main thread"""
+        # Always re-enable the start button when workflow completes
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setVisible(True)
+        self.cancel_install_btn.setVisible(False)
+        
         if success:
             # Calculate time taken
             time_taken = self._calculate_time_taken()
@@ -1689,6 +1732,11 @@ class TuxbornInstallerScreen(QWidget):
     
     def on_configuration_error(self, error_message):
         """Handle configuration error on main thread"""
+        # Re-enable the start button on error
+        self.start_btn.setEnabled(True)
+        self.cancel_btn.setVisible(True)
+        self.cancel_install_btn.setVisible(False)
+        
         self._safe_append_text(f"Configuration failed with error: {error_message}")
         MessageService.critical(self, "Configuration Error", f"Configuration failed: {error_message}", safety_level="medium")
         
@@ -1755,7 +1803,19 @@ class TuxbornInstallerScreen(QWidget):
 
     def cleanup_processes(self):
         """Clean up any running processes when the window closes or is cancelled"""
-        debug_print("DEBUG: cleanup_processes called - cleaning up InstallationThread and other processes")
+        debug_print("DEBUG: cleanup_processes called - cleaning up all threads")
+        
+        # Clean up automated prefix thread if running
+        if hasattr(self, 'automated_prefix_thread') and self.automated_prefix_thread and self.automated_prefix_thread.isRunning():
+            debug_print("DEBUG: Terminating AutomatedPrefixThread")
+            try:
+                self.automated_prefix_thread.progress_update.disconnect()
+                self.automated_prefix_thread.workflow_complete.disconnect()
+                self.automated_prefix_thread.error_occurred.disconnect()
+            except:
+                pass
+            self.automated_prefix_thread.terminate()
+            self.automated_prefix_thread.wait(2000)  # Wait up to 2 seconds
         
         # Clean up InstallationThread if running
         if hasattr(self, 'install_thread') and self.install_thread.isRunning():

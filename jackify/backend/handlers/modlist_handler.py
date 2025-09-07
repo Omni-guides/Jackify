@@ -235,7 +235,7 @@ class ModlistHandler:
             # 2. Get shortcuts pointing to the executable from shortcuts.vdf
             matching_vdf_shortcuts = self.shortcut_handler.find_shortcuts_by_exe(executable_name)
             if not matching_vdf_shortcuts:
-                self.logger.warning(f"No shortcuts found pointing to '{executable_name}' in shortcuts.vdf.")
+                self.logger.debug(f"No shortcuts found pointing to '{executable_name}' in shortcuts.vdf.")
                 return []
             self.logger.debug(f"Shortcuts matching executable '{executable_name}' in VDF: {matching_vdf_shortcuts}")
 

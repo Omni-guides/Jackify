@@ -291,10 +291,50 @@ class PathHandler:
                 logger.error("Could not determine location for dxvk.conf")
                 return False
             
-            # Create simple dxvk.conf content - just one line
-            dxvk_conf_content = "dxvk.enableGraphicsPipelineLibrary = False\n"
+            # The required line that Jackify needs
+            required_line = "dxvk.enableGraphicsPipelineLibrary = False"
             
-            # Write dxvk.conf to the appropriate location
+            # Check if dxvk.conf already exists
+            if os.path.exists(dxvk_conf_path):
+                logger.info(f"Found existing dxvk.conf at {dxvk_conf_path}")
+                
+                # Read existing content
+                try:
+                    with open(dxvk_conf_path, 'r') as f:
+                        existing_content = f.read().strip()
+                    
+                    # Check if our required line is already present
+                    existing_lines = existing_content.split('\n') if existing_content else []
+                    has_required_line = any(line.strip() == required_line for line in existing_lines)
+                    
+                    if has_required_line:
+                        logger.info("Required DXVK setting already present in existing file")
+                        return True
+                    else:
+                        # Append our required line to existing content
+                        if existing_content:
+                            # File has content, append our line
+                            updated_content = existing_content + '\n' + required_line + '\n'
+                            logger.info("Appending required DXVK setting to existing file")
+                        else:
+                            # File is empty, just add our line
+                            updated_content = required_line + '\n'
+                            logger.info("Adding required DXVK setting to empty file")
+                        
+                        with open(dxvk_conf_path, 'w') as f:
+                            f.write(updated_content)
+                        
+                        logger.info(f"dxvk.conf updated successfully at {dxvk_conf_path}")
+                        return True
+                        
+                except Exception as e:
+                    logger.error(f"Error reading/updating existing dxvk.conf: {e}")
+                    # Fall back to creating new file
+                    logger.info("Falling back to creating new dxvk.conf file")
+            
+            # Create new dxvk.conf file (original behavior)
+            dxvk_conf_content = required_line + '\n'
+            
             with open(dxvk_conf_path, 'w') as f:
                 f.write(dxvk_conf_content)
             

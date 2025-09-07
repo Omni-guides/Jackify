@@ -1,5 +1,18 @@
 # Jackify Changelog
 
+## v0.0.31 - Pre-Alpha Polish Update
+**Release Date:** September 7, 2025
+
+### Engine Update
+- **jackify-engine Updated**: Latest engine version with improved compatibility and performance
+
+### Bug Fixes
+- **GUI Startup Warning**: Fixed cosmetic "No shortcuts found pointing to 'ModOrganizer.exe'" warning appearing on GUI startup
+  - Changed warning level to debug-only to reduce console noise for normal users
+  - Warning still available for debugging when debug mode is enabled
+
+---
+
 ## v0.0.30 - FNV/Enderal Support and better Modlist Selection
 **Release Date:** September 5, 2025
 

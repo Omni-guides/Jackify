@@ -9,7 +9,7 @@ from typing import Optional
 from jackify.shared.colors import (
     COLOR_SELECTION, COLOR_RESET, COLOR_ACTION, COLOR_PROMPT, COLOR_ERROR
 )
-from jackify.shared.ui_utils import print_jackify_banner
+from jackify.shared.ui_utils import print_jackify_banner, clear_screen
 
 class MainMenuHandler:
     """
@@ -22,9 +22,8 @@ class MainMenuHandler:
         self.dev_mode = dev_mode
     
     def _clear_screen(self):
-        """Clear the terminal screen"""
-        import os
-        os.system('cls' if os.name == 'nt' else 'clear')
+        """Clear the terminal screen with AppImage compatibility"""
+        clear_screen()
     
     def show_main_menu(self, cli_instance) -> str:
         """
@@ -43,8 +42,8 @@ class MainMenuHandler:
             print(f"{COLOR_SELECTION}{'-'*22}{COLOR_RESET}")  # Standard separator
             print(f"{COLOR_SELECTION}1.{COLOR_RESET} Modlist Tasks")
             print(f"   {COLOR_ACTION}→ Install & Configure Modlists{COLOR_RESET}")
-            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Tuxborn Automatic Installer")
-            print(f"   {COLOR_ACTION}→ Simple, fully automated Tuxborn installation{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Coming Soon...")
+            print(f"   {COLOR_ACTION}→ More features coming in future releases{COLOR_RESET}")
             if self.dev_mode:
                 print(f"{COLOR_SELECTION}3.{COLOR_RESET} Hoolamike Tasks")
                 print(f"   {COLOR_ACTION}→ Wabbajack alternative: Install Modlists, TTW, etc{COLOR_RESET}")
@@ -61,7 +60,13 @@ class MainMenuHandler:
             if choice == "1":
                 return "wabbajack"
             elif choice == "2":
-                return "tuxborn"  # Will be handled by TuxbornMenuHandler
+                # Additional features are coming in future releases
+                print(f"\n{COLOR_PROMPT}Coming Soon!{COLOR_RESET}")
+                print(f"More features will be added in future releases.")
+                print(f"Please use 'Modlist Tasks' for all current functionality.")
+                print(f"Press Enter to continue...")
+                input()
+                continue  # Return to main menu
             if self.dev_mode:
                 if choice == "3":
                     return "hoolamike"

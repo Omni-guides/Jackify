@@ -9,7 +9,7 @@ from pathlib import Path
 from jackify.shared.colors import (
     COLOR_SELECTION, COLOR_RESET, COLOR_PROMPT, COLOR_INFO, COLOR_ERROR
 )
-from jackify.shared.ui_utils import print_jackify_banner, print_section_header
+from jackify.shared.ui_utils import print_jackify_banner, print_section_header, clear_screen
 
 class RecoveryMenuHandler:
     """
@@ -21,9 +21,8 @@ class RecoveryMenuHandler:
         self.logger = logging.getLogger(__name__)
     
     def _clear_screen(self):
-        """Clear the terminal screen"""
-        import os
-        os.system('cls' if os.name == 'nt' else 'clear')
+        """Clear the terminal screen with AppImage compatibility"""
+        clear_screen()
     
     def show_recovery_menu(self, cli_instance):
         """Show the recovery tools menu."""

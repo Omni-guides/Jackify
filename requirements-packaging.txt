@@ -1,3 +1,0 @@
-# Requirements for packaging and distribution
-PyInstaller>=6.0.0
-pyinstaller-hooks-contrib>=2023.11 

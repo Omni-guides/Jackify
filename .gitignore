@@ -31,6 +31,18 @@ jackify-install-engine/*.dds
 .DS_Store
 Thumbs.db 
 
+# Development-only directories (should not be in public repo)
+docs/
+testing/
+
+# PyInstaller build files (development only)
+*.spec
+hook-*.py
+requirements-packaging.txt
+
+# Development logs
+logs/
+
 # NOTE: .dll, .json, .deps.json, .runtimeconfig.json in jackify-install-engine/
 # are currently tracked because it's unclear if they are required for runtime/distribution
 # or are build artifacts. Do not ignore until this is confirmed. 

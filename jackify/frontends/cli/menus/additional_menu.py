@@ -8,7 +8,7 @@ import time
 from jackify.shared.colors import (
     COLOR_SELECTION, COLOR_RESET, COLOR_ACTION, COLOR_PROMPT, COLOR_INFO, COLOR_DISABLED
 )
-from jackify.shared.ui_utils import print_jackify_banner, print_section_header
+from jackify.shared.ui_utils import print_jackify_banner, print_section_header, clear_screen
 
 class AdditionalMenuHandler:
     """
@@ -20,9 +20,8 @@ class AdditionalMenuHandler:
         self.logger = None  # Will be set by CLI when needed
     
     def _clear_screen(self):
-        """Clear the terminal screen"""
-        import os
-        os.system('cls' if os.name == 'nt' else 'clear')
+        """Clear the terminal screen with AppImage compatibility"""
+        clear_screen()
     
     def show_additional_tasks_menu(self, cli_instance):
         """Show the MO2, NXM Handling & Recovery submenu"""

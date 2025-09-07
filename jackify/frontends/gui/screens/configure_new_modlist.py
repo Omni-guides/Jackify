@@ -603,41 +603,75 @@ class ConfigureNewModlistScreen(QWidget):
         self._safe_append_text("")
         self._safe_append_text("=== Steam Integration Phase ===")
         self._safe_append_text("Starting automated Steam setup workflow...")
-        self._safe_append_text("This will automatically configure Steam integration without manual steps.")
         
         # Start automated prefix workflow
         self._start_automated_prefix_workflow(modlist_name, install_dir, mo2_exe_path, resolution)
 
     def _start_automated_prefix_workflow(self, modlist_name, install_dir, mo2_exe_path, resolution):
-        """Start the automated prefix workflow using AutomatedPrefixService"""
+        """Start the automated prefix workflow using AutomatedPrefixService in a background thread"""
+        self._safe_append_text(f"Initializing automated Steam setup for '{modlist_name}'...")
+        self._safe_append_text("Starting automated Steam shortcut creation and configuration...")
+        
+        # Disable the start button to prevent multiple workflows
+        self.start_btn.setEnabled(False)
+        
+        # Create and start the automated prefix thread
+        class AutomatedPrefixThread(QThread):
+            progress_update = Signal(str)
+            workflow_complete = Signal(object)  # Will emit the result tuple
+            error_occurred = Signal(str)
+            
+            def __init__(self, modlist_name, install_dir, mo2_exe_path, steamdeck):
+                super().__init__()
+                self.modlist_name = modlist_name
+                self.install_dir = install_dir
+                self.mo2_exe_path = mo2_exe_path
+                self.steamdeck = steamdeck
+                
+            def run(self):
+                try:
+                    from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
+                    
+                    # Initialize the automated prefix service
+                    prefix_service = AutomatedPrefixService()
+                    
+                    # Define progress callback for GUI updates
+                    def progress_callback(message):
+                        self.progress_update.emit(message)
+                    
+                    # Run the automated workflow (this contains the blocking operations)
+                    result = prefix_service.run_working_workflow(
+                        self.modlist_name, self.install_dir, self.mo2_exe_path, 
+                        progress_callback, steamdeck=self.steamdeck
+                    )
+                    
+                    # Emit the result
+                    self.workflow_complete.emit(result)
+                    
+                except Exception as e:
+                    self.error_occurred.emit(str(e))
+        
+        # Detect Steam Deck once
         try:
-            from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
-            
-            self._safe_append_text(f"Initializing automated Steam setup for '{modlist_name}'...")
-            
-            # Initialize the automated prefix service
-            prefix_service = AutomatedPrefixService()
-            
-            # Define progress callback for GUI updates
-            def progress_callback(message):
-                self._safe_append_text(message)
-            
-            # Run the automated workflow
-            self._safe_append_text("Starting automated Steam shortcut creation and configuration...")
-            # Detect Steam Deck once and pass through
-            try:
-                import os
-                _is_steamdeck = False
-                if os.path.exists('/etc/os-release'):
-                    with open('/etc/os-release') as f:
-                        if 'steamdeck' in f.read().lower():
-                            _is_steamdeck = True
-            except Exception:
-                _is_steamdeck = False
-            result = prefix_service.run_working_workflow(
-                modlist_name, install_dir, mo2_exe_path, progress_callback, steamdeck=_is_steamdeck
-            )
-            
+            import os
+            _is_steamdeck = False
+            if os.path.exists('/etc/os-release'):
+                with open('/etc/os-release') as f:
+                    if 'steamdeck' in f.read().lower():
+                        _is_steamdeck = True
+        except Exception:
+            _is_steamdeck = False
+        
+        # Create and start the thread
+        self.automated_prefix_thread = AutomatedPrefixThread(modlist_name, install_dir, mo2_exe_path, _is_steamdeck)
+        self.automated_prefix_thread.progress_update.connect(self._safe_append_text)
+        self.automated_prefix_thread.workflow_complete.connect(self._on_automated_prefix_complete)
+        self.automated_prefix_thread.error_occurred.connect(self._on_automated_prefix_error)
+        self.automated_prefix_thread.start()
+    
+    def _on_automated_prefix_complete(self, result):
+        """Handle completion of the automated prefix workflow"""
+        try:
             # Handle the result - check for conflicts
             if isinstance(result, tuple) and len(result) == 4:
                 if result[0] == "CONFLICT":
@@ -653,7 +687,9 @@ class ConfigureNewModlistScreen(QWidget):
                         self._safe_append_text(f"New AppID assigned: {new_appid}")
                         
                         # Continue with post-Steam configuration, passing the last timestamp
-                        self.continue_configuration_after_automated_prefix(new_appid, modlist_name, install_dir, last_timestamp)
+                        self.continue_configuration_after_automated_prefix(new_appid, self.modlist_name_edit.text().strip(), 
+                                                                         os.path.dirname(self.install_dir_edit.text().strip()) if self.install_dir_edit.text().strip().endswith('ModOrganizer.exe') else self.install_dir_edit.text().strip(), 
+                                                                         last_timestamp)
                     else:
                         self._safe_append_text(f"Automated Steam setup failed")
                         self._safe_append_text("Please check the logs for details.")
@@ -666,7 +702,8 @@ class ConfigureNewModlistScreen(QWidget):
                     self._safe_append_text(f"New AppID assigned: {new_appid}")
                     
                     # Continue with post-Steam configuration
-                    self.continue_configuration_after_automated_prefix(new_appid, modlist_name, install_dir)
+                    self.continue_configuration_after_automated_prefix(new_appid, self.modlist_name_edit.text().strip(), 
+                                                                     os.path.dirname(self.install_dir_edit.text().strip()) if self.install_dir_edit.text().strip().endswith('ModOrganizer.exe') else self.install_dir_edit.text().strip())
                 else:
                     self._safe_append_text(f"Automated Steam setup failed")
                     self._safe_append_text("Please check the logs for details.")
@@ -678,9 +715,14 @@ class ConfigureNewModlistScreen(QWidget):
                 self.start_btn.setEnabled(True)
                 
         except Exception as e:
-            self._safe_append_text(f"Error during automated Steam setup: {str(e)}")
-            self._safe_append_text("Please check the logs for details.")
+            self._safe_append_text(f"Error handling automated prefix result: {str(e)}")
             self.start_btn.setEnabled(True)
+    
+    def _on_automated_prefix_error(self, error_message):
+        """Handle error from the automated prefix workflow"""
+        self._safe_append_text(f"Error during automated Steam setup: {error_message}")
+        self._safe_append_text("Please check the logs for details.")
+        self.start_btn.setEnabled(True)
 
     def show_shortcut_conflict_dialog(self, conflicts):
         """Show dialog to resolve shortcut name conflicts"""
@@ -1120,6 +1162,9 @@ class ConfigureNewModlistScreen(QWidget):
 
     def on_configuration_complete(self, success, message, modlist_name):
         """Handle configuration completion (same as Tuxborn)"""
+        # Always re-enable the start button when workflow completes
+        self.start_btn.setEnabled(True)
+        
         if success:
             # Calculate time taken
             time_taken = self._calculate_time_taken()
@@ -1140,6 +1185,9 @@ class ConfigureNewModlistScreen(QWidget):
     
     def on_configuration_error(self, error_message):
         """Handle configuration error"""
+        # Re-enable the start button on error
+        self.start_btn.setEnabled(True)
+        
         self._safe_append_text(f"Configuration error: {error_message}")
         MessageService.critical(self, "Configuration Error", f"Configuration failed: {error_message}", safety_level="medium")
 
@@ -1208,7 +1256,19 @@ class ConfigureNewModlistScreen(QWidget):
 
     def cleanup(self):
         """Clean up any running threads when the screen is closed"""
-        debug_print("DEBUG: cleanup called - cleaning up ConfigThread")
+        debug_print("DEBUG: cleanup called - cleaning up threads")
+        
+        # Clean up automated prefix thread if running
+        if hasattr(self, 'automated_prefix_thread') and self.automated_prefix_thread and self.automated_prefix_thread.isRunning():
+            debug_print("DEBUG: Terminating AutomatedPrefixThread")
+            try:
+                self.automated_prefix_thread.progress_update.disconnect()
+                self.automated_prefix_thread.workflow_complete.disconnect()
+                self.automated_prefix_thread.error_occurred.disconnect()
+            except:
+                pass
+            self.automated_prefix_thread.terminate()
+            self.automated_prefix_thread.wait(2000)  # Wait up to 2 seconds
         
         # Clean up config thread if running
         if hasattr(self, 'config_thread') and self.config_thread and self.config_thread.isRunning():
