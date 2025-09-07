@@ -23,35 +23,16 @@ Jackify is an almost Linux-native application written in Python, with a GUI prod
 
 ### Requirements
 
-#### For AppImage (Recommended)
 - Linux system (Most modern distributions supported)
 - Steam installed and configured, Proton Experimental available
-- Python 3.10+ (built for Ubuntu 22.04 LTS compatibility)
-
-#### For Source Installation
-- Linux system (Most modern distributions supported)
-- Steam installed and configured, Proton Experimental available
-- Python 3.8+ (for source installation)
 
 ### Installation
 
-#### Recommended: Download AppImage (Easy!)
 ```bash
 # Download latest release
 wget https://github.com/your-repo/jackify/releases/latest/Jackify.AppImage
 chmod +x Jackify.AppImage
 ./Jackify.AppImage
-```
-
-#### Advanced: From Source (Not Recommended)
-Note: We strongly recommend using the AppImage above. Source installation is for developers only.
-
-```bash
-git clone https://github.com/your-repo/jackify.git
-cd jackify/src
-pip install -r requirements.txt
-python -m jackify.frontends.gui  # GUI mode
-python -m jackify.frontends.cli  # CLI mode
 ```
 
 ## Usage
