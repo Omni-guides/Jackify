@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Download](https://www.nexusmods.com/site/mods/xxx) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](Legacy/) | [Ko-fi](https://ko-fi.com/omni1)
+[Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Download](https://www.nexusmods.com/site/mods/xxx) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](https://github.com/Omni-guides/Jackify-Temp/tree/master/Legacy) | [Ko-fi](https://ko-fi.com/omni1)
 
 </div>
   
@@ -36,6 +36,8 @@ Jackify is an almost Linux-native application written in Python, with a GUI prod
 - Install Wabbajack modlists using jackify-engine (more on jackify-engine in the full Introduction wiki linked above).
 - Fully automate the configuration of the Steam shortcut, modlist paths, prefix components, launch options and various other tweaks required to run Wabbajack Modlists on Linux.
 - With both of the above combined, Jackify provides an end-to-end modlist installation and configuration process, automatically.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D8H8WBD)
 
 ## Features
 - Linux-First Python Application: Designed specifically for Linux with minimal external dependencies
@@ -142,5 +144,7 @@ At this early stage of development, where basic functionality is the primary foc
 - Modlist Authors for their tireless effort in creating modlists in the first place
 
 ---
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D8H8WBD)
 
 **Jackify** - Simplifying Wabbajack modlist installation and configuration on Linux
