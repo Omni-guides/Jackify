@@ -1,0 +1,87 @@
+# ~-= omni-guides.sh Changelog =-~
+# =====================================
+# - v0.69 - Fixed regression with game detection logic. Promoting testing script variant to stable. (11-May-25)
+# - v0.68 - Fixed re-prompt when user enters nothing in the modlist choice. User will be asked to re-try, rather than the script exiting. (08-May-25)
+# - v0.67 - Fixed regression that broke the correct forming of the gamePath line in ModOrganizer.ini (08-May-25)
+# - v0.66 - Fixed bug where dxvk.conf file wasn't correctly created. (05-May-25)
+# - v0.65 - Added a "Strip non-numerical characters" to numeric user choices to fix rare case of additional blank characters being added (e.g.via SteamDeck virtual Keyboard
+# - v0.65 - Switched from '#!/bin/bash' to '#!/usr/bin/env bash' for wider compatibility.
+# - v0.64 - Added Tuxborn-specific functionality for automatic implementation of Steam Graphics.
+# - v0.64 - First upload of heavily refactored script.
+# - v0.63 - Added initial attempt at handling failed protontricks wine component install, now attempts to retry..
+# - v0.63 - Added handling for spaces in the modlist directory name.
+# - v0.62 - Added initial support for Fallout New Vegas modlsits (tested with Begin Again so far)
+# - v0.61 - Minor tidy up of protontricks output and output displayed to user.
+# - v0.60 - Rewrite protontricks version check to be more accurate.
+# - v0.59 - Rewrite Modlist Directory and Steam Library detection mechanisms completely, utilising Steam's .vdf files and reducing the ambiguity and user intput required.
+# - v0.58 - Minor correction for exit handling if APPID isn't detected
+# - v0.57 - Added handling for UUID-based SDCard/additional directory paths
+# - v0.56 - Added a check to catch a rare scenario where $APPID is not set correctly - the script will now exit rather than continuing and failing in odd ways. More work may be needed on this to find out why $APPID is empty on rare occasions
+# - v0.55 - Removed check for MO2 2.5 preventing an incorrect errorfrom MO2 version check when APPID is not passed correctly - Proton9/MO2 2.5 are old enough now that the check is redundant.
+# - v0.54 - Add creation of protontricks alias to ease user troubleshooting post-install
+# - v0.53 - First pass at optimizing the time taken to complete the tasks. (bwrap change for protontricks commands)
+# - v0.52 - Added download of seguisym.ttf font file to support Bethini
+# - v0.51 - Added some cleanup of wine and winetricks processes on script exit in case some rogue processes are left over.
+# - v0.51 - Switch to Beta as this should now be feature complete - barring modlist-specific additions in future.
+# - v0.50 - Re-enabled the protontricks workaround after discovering that SteamOS doesn't yet have access to v.1.22
+# - v0.49 - Tidied up logging. Not great, but better than it was.
+# - v0.48 - Better handling of ModOrganizer.ini location for both autodetection and manual input of modlist directory.
+# - v0.47 - Add check for protontricks version, exit if older than 1.11
+# - v0.46 - Remove function replacing MO2 2.5 with 2.4, everything should have Proton 9 by now
+# - v0.45 - Add dotnet40 install specifically for Nordic Souls
+# - v0.44 - Custom Steps for Nordic Souls and Living Skyrim 4 to work around hang-before-menu issue.
+# - v0.43 - Better Handling of spaces in the Steam Entry Name for modlist filepath location detection
+# - v0.42 - Add custom steps for Librum: game path, executable paths, dotnet4.8 and dotnet8 installation.
+# - v0.41 - Skip setting flatpak permissions for protontricks if using native protontricks.
+# - v0.40 - Fixed Modlist on SDCard detection and path generation
+# - v0.39 - Added check and handling/message if no modlists are detected.
+# - v0.39 - Added better exit handling for log merging.
+# - v0.38 - Added detection of a space in the modlist directory name, request user rename the directory and rerun the script.
+# - v0.38 - Tweaked Modlist Directory detection to check for ModOrganizer.ini rather than trust the user input :)
+# - v0.37 - Fixed incorrect chown/chmod assuming user 'deck'. Now detects and sets as user who ran the script.
+# - v0.36 - Complete rewrite of protontricks alias and commands into a function, to handle both flatpak and native protontricks, without the need of an alias.
+# - v0.36 - Add detection for Natively installed protontricks as well as flatpak. Alter protontricks alias generation to only be created if using flatpak protontricks.
+# - v0.35 - Some small tweaks to record the Script Version, Date and Time, setting $APPID in a more suitable place.
+# - v0.35 - More accurately detect compatdata path, the use to correctly identify Proton Version set for Modlist
+# - v0.34 - Fixed issue where protontricks could be installed in user space or system space, now handle both possibilities.
+# - v0.33 - Fixed bug introduced by 0.32 when detecting Modlist Directory on Steam Deck
+# - v0.32 - Complete rewrite of the detect_modlist function to better support unexpected directory paths.
+# - v0.31 - Fixed a bug with detecting the proton version set for a modlist Steam entry. Also general tidy up of command outputs.
+# - v0.30 - Fixed a bug with the detection and listing of possible Modlist Install Directories if multiple possibilities are found.
+# - v0.29 - Fixed Default Library detection on Ubuntu/Debian and derivatives, at last.
+# - v0.28 - Fixed a bug with forming the required binary and workingDirectory paths when the modlist uses steamapps location
+# - v0.27 - Added handling of "Skyrim Stock" to enable compatibility with OCM
+# - v0.26 - Added creation of dxvk.conf file to handle rare instances of an Assertion Failed error when running ENB.
+# - v0.25 - Added handling of "Stock Folder" to enable compatibility with Modlist Fallout Anomaly
+# - v0.24 - Remove setting of Fullscreen and Borderless options due to some odd scaling issues with some lists.
+# - v0.24 - Added match for Proton GE 9
+# - v0.24 - Merged Log Files
+# - v0.23 - Added steps to ensure Prefix is set to Windows 10 level, and install dotnet6 and dotnet7
+# - v0.22 - Additional colouring for clarity of user-actions.
+# - v0.21 - Fix Protontricks Install on deck
+# - v0.21 - Require 'Enter' to be pressed after 'Y'
+# - v0.21 - Add colouring to each user-interactive step
+# - v0.21 - Check Swap Space (Deck)
+# - v0.20 - Convert remaining steps to functions - Detect Deck, Protontricks
+# - v0.19 - Add Check for Proton 9 to skip MO2 2.5 replacement
+# - v0.18 - Handle & test SDCard location (Deck Only)
+# - v0.17 - Set Resolution (skyrimprefs.ini, Fallout4Prefs.ini and SSEDisplayTweaks.ini)
+# - v0.17 - Detect Steam Library Path or ask
+# - v0.17 - Detect if game is Skyrim or Fallout or ask
+# - v0.16 - Edit Managed Game path and Custom Executables for Vanilla Game Directory
+# - v0.15 - Edit custom Executables if possible (Game Root/Stock Game)
+# - v0.14 - replace path to Managed Game in MO2 (Game Root/Stock Game)
+# - v0.13 - Overwrite MO2 2.5 with MO2 2.4.4
+# - v0.13 - Chown/Chmod Modlist Directory
+# - v0.11 - Blank or set MO2 Downloads Directory
+# - v0.11 - Detect MO2 version
+# - v0.10 - Detect Modlist Directory
+# - v0.09 - Install VCRedist 2022
+# - v0.09 - Install Wine Components
+# - v0.08 - Enable Visibility of (.)dot files
+# - v0.07 - Set protontricks permissions on $modlist_dir
+# - v0.06 - Check if Protontricks is installed (flatpak or 'which')
+# - v0.06 - Detect if running on deck
+# - v0.05 - Detect Modlists and present a choice
+# - v0->0.04 Initial testing and theory
+
