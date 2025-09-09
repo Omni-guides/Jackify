@@ -1718,18 +1718,21 @@ echo Prefix creation complete.
             progress_callback("=== Steam Integration ===")
             progress_callback(f"{self._get_progress_timestamp()} Creating Steam shortcut with native service")
         
-        # Detect special game types early to generate proper launch options
-        from ..handlers.modlist_handler import ModlistHandler
-        modlist_handler = ModlistHandler()
-        special_game_type = modlist_handler.detect_special_game_type(modlist_install_dir)
+        # DISABLED: Special game launch options - now using registry injection approach
+        # from ..handlers.modlist_handler import ModlistHandler
+        # modlist_handler = ModlistHandler()
+        # special_game_type = modlist_handler.detect_special_game_type(modlist_install_dir)
+        # 
+        # # Generate complete launch options for special games
+        # custom_launch_options = None
+        # if special_game_type in ["fnv", "enderal"]:
+        #     custom_launch_options = self._generate_special_game_launch_options(special_game_type, modlist_install_dir)
+        #     if not custom_launch_options:
+        #         logger.error(f"Failed to generate launch options for {special_game_type.upper()} modlist")
+        #         return False, None, None, None
         
-        # Generate complete launch options for special games
+        # All modlists now use standard shortcut creation without custom launch options
         custom_launch_options = None
-        if special_game_type in ["fnv", "enderal"]:
-            custom_launch_options = self._generate_special_game_launch_options(special_game_type, modlist_install_dir)
-            if not custom_launch_options:
-                logger.error(f"Failed to generate launch options for {special_game_type.upper()} modlist")
-                return False, None, None, None
         
         try:
             # Step 1: Create shortcut with native Steam service (pointing to ModOrganizer.exe initially)
@@ -1803,8 +1806,17 @@ echo Prefix creation complete.
             if progress_callback:
                 progress_callback(f"{self._get_progress_timestamp()} Setup verification completed")
             
-            # Get the prefix path
+            # Step 5: Inject game registry entries for FNV/Enderal modlists
+            logger.info("Step 5: Injecting game registry entries")
+            if progress_callback:
+                progress_callback(f"{self._get_progress_timestamp()} Injecting game registry entries...")
+            
+            # Get prefix path for registry injection
             prefix_path = self.get_prefix_path(appid)
+            if prefix_path:
+                self._inject_game_registry_entries(str(prefix_path))
+            else:
+                logger.warning("Could not find prefix path for registry injection")
             
             last_timestamp = self._get_progress_timestamp()
             logger.info(f" Working workflow completed successfully! AppID: {appid}, Prefix: {prefix_path}")
@@ -2736,4 +2748,139 @@ echo Prefix creation complete.
             return prefix_dir
         else:
             return None
+
+    def _find_steam_game(self, app_id: str, common_names: list) -> Optional[str]:
+        """Find a Steam game installation path by AppID and common names"""
+        import os
+        from pathlib import Path
+        
+        # Get Steam libraries from libraryfolders.vdf
+        steam_config_path = Path.home() / ".steam/steam/config/libraryfolders.vdf"
+        if not steam_config_path.exists():
+            return None
+            
+        steam_libraries = []
+        try:
+            with open(steam_config_path, 'r') as f:
+                content = f.read()
+                # Parse library paths from VDF
+                import re
+                library_matches = re.findall(r'"path"\s+"([^"]+)"', content)
+                steam_libraries = [Path(path) / "steamapps" / "common" for path in library_matches]
+        except Exception as e:
+            logger.warning(f"Failed to parse Steam library folders: {e}")
+            return None
+        
+        # Search for game in each library
+        for library_path in steam_libraries:
+            if not library_path.exists():
+                continue
+                
+            # Check manifest file first (more reliable)
+            manifest_path = library_path.parent / "appmanifest_{}.acf".format(app_id)
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as f:
+                        content = f.read()
+                        install_dir_match = re.search(r'"installdir"\s+"([^"]+)"', content)
+                        if install_dir_match:
+                            game_path = library_path / install_dir_match.group(1)
+                            if game_path.exists():
+                                return str(game_path)
+                except Exception:
+                    pass
+            
+            # Fallback: check common folder names
+            for name in common_names:
+                game_path = library_path / name
+                if game_path.exists():
+                    return str(game_path)
+                    
+        return None
+
+    def _update_registry_path(self, system_reg_path: str, section_name: str, path_key: str, new_path: str) -> bool:
+        """Update a specific path value in Wine registry, preserving other entries"""
+        if not os.path.exists(system_reg_path):
+            return False
+            
+        try:
+            # Read existing content
+            with open(system_reg_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+            
+            in_target_section = False
+            path_updated = False
+            wine_path = new_path.replace('/', '\\\\')
+            
+            # Update existing path if found
+            for i, line in enumerate(lines):
+                stripped_line = line.strip()
+                if stripped_line == section_name:
+                    in_target_section = True
+                elif stripped_line.startswith('[') and in_target_section:
+                    in_target_section = False
+                elif in_target_section and f'"{path_key}"' in line:
+                    lines[i] = f'"{path_key}"="Z:\\\\{wine_path}\\\\"\n'  # Add trailing backslashes
+                    path_updated = True
+                    break
+            
+            # Add new section if path wasn't updated
+            if not path_updated:
+                lines.append(f'\n{section_name}\n')
+                lines.append(f'"{path_key}"="Z:\\\\{wine_path}\\\\"\n')  # Add trailing backslashes
+            
+            # Write updated content
+            with open(system_reg_path, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to update registry path: {e}")
+            return False
+
+    def _inject_game_registry_entries(self, modlist_compatdata_path: str):
+        """Detect and inject FNV/Enderal game paths into modlist's system.reg"""
+        system_reg_path = os.path.join(modlist_compatdata_path, "pfx", "system.reg")
+        if not os.path.exists(system_reg_path):
+            logger.warning("system.reg not found, skipping game path injection")
+            return
+        
+        logger.info("Detecting and injecting game registry entries...")
+        
+        # Game configurations
+        games_config = {
+            "22380": {  # Fallout New Vegas AppID
+                "name": "Fallout New Vegas",
+                "common_names": ["Fallout New Vegas", "FalloutNV"],
+                "registry_section": "[Software\\\\WOW6432Node\\\\bethesda softworks\\\\falloutnv]",
+                "path_key": "Installed Path"
+            },
+            "976620": {  # Enderal Special Edition AppID
+                "name": "Enderal",
+                "common_names": ["Enderal: Forgotten Stories (Special Edition)", "Enderal Special Edition", "Enderal"],
+                "registry_section": "[Software\\\\Wow6432Node\\\\SureAI\\\\Enderal SE]", 
+                "path_key": "installed path"
+            }
+        }
+        
+        # Detect and inject each game
+        for app_id, config in games_config.items():
+            game_path = self._find_steam_game(app_id, config["common_names"])
+            if game_path:
+                logger.info(f"Detected {config['name']} at: {game_path}")
+                success = self._update_registry_path(
+                    system_reg_path,
+                    config["registry_section"], 
+                    config["path_key"],
+                    game_path
+                )
+                if success:
+                    logger.info(f"Updated registry entry for {config['name']}")
+                else:
+                    logger.warning(f"Failed to update registry entry for {config['name']}")
+            else:
+                logger.debug(f"{config['name']} not found in Steam libraries")
+                
+        logger.info("Game registry injection completed")
     

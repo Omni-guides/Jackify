@@ -7,7 +7,7 @@
   "targets": {
     ".NETCoreApp,Version=v8.0": {},
     ".NETCoreApp,Version=v8.0/linux-x64": {
-      "jackify-engine/0.3.11": {
+      "jackify-engine/0.3.12": {
         "dependencies": {
           "Markdig": "0.40.0",
           "Microsoft.Extensions.Configuration.Json": "9.0.1",
@@ -22,16 +22,16 @@
           "SixLabors.ImageSharp": "3.1.6",
           "System.CommandLine": "2.0.0-beta4.22272.1",
           "System.CommandLine.NamingConventionBinder": "2.0.0-beta4.22272.1",
-          "Wabbajack.CLI.Builder": "0.3.11",
-          "Wabbajack.Downloaders.Bethesda": "0.3.11",
-          "Wabbajack.Downloaders.Dispatcher": "0.3.11",
-          "Wabbajack.Hashing.xxHash64": "0.3.11",
-          "Wabbajack.Networking.Discord": "0.3.11",
-          "Wabbajack.Networking.GitHub": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11",
-          "Wabbajack.Server.Lib": "0.3.11",
-          "Wabbajack.Services.OSIntegrated": "0.3.11",
-          "Wabbajack.VFS": "0.3.11",
+          "Wabbajack.CLI.Builder": "0.3.12",
+          "Wabbajack.Downloaders.Bethesda": "0.3.12",
+          "Wabbajack.Downloaders.Dispatcher": "0.3.12",
+          "Wabbajack.Hashing.xxHash64": "0.3.12",
+          "Wabbajack.Networking.Discord": "0.3.12",
+          "Wabbajack.Networking.GitHub": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12",
+          "Wabbajack.Server.Lib": "0.3.12",
+          "Wabbajack.Services.OSIntegrated": "0.3.12",
+          "Wabbajack.VFS": "0.3.12",
           "MegaApiClient": "1.0.0.0",
           "runtimepack.Microsoft.NETCore.App.Runtime.linux-x64": "8.0.19"
         },
@@ -1781,7 +1781,7 @@
           }
         }
       },
-      "Wabbajack.CLI.Builder/0.3.11": {
+      "Wabbajack.CLI.Builder/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.Configuration.Json": "9.0.1",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
@@ -1791,109 +1791,109 @@
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "System.CommandLine": "2.0.0-beta4.22272.1",
           "System.CommandLine.NamingConventionBinder": "2.0.0-beta4.22272.1",
-          "Wabbajack.Paths": "0.3.11"
+          "Wabbajack.Paths": "0.3.12"
         },
         "runtime": {
           "Wabbajack.CLI.Builder.dll": {}
         }
       },
-      "Wabbajack.Common/0.3.11": {
+      "Wabbajack.Common/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "System.Reactive": "6.0.1",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11"
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Common.dll": {}
         }
       },
-      "Wabbajack.Compiler/0.3.11": {
+      "Wabbajack.Compiler/0.3.12": {
         "dependencies": {
           "F23.StringSimilarity": "6.0.0",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Newtonsoft.Json": "13.0.3",
           "SixLabors.ImageSharp": "3.1.6",
-          "Wabbajack.Downloaders.Dispatcher": "0.3.11",
-          "Wabbajack.Installer": "0.3.11",
-          "Wabbajack.VFS": "0.3.11",
+          "Wabbajack.Downloaders.Dispatcher": "0.3.12",
+          "Wabbajack.Installer": "0.3.12",
+          "Wabbajack.VFS": "0.3.12",
           "ini-parser-netstandard": "2.5.2"
         },
         "runtime": {
           "Wabbajack.Compiler.dll": {}
         }
       },
-      "Wabbajack.Compression.BSA/0.3.11": {
+      "Wabbajack.Compression.BSA/0.3.12": {
         "dependencies": {
           "K4os.Compression.LZ4.Streams": "1.3.8",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "SharpZipLib": "1.4.2",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.DTOs": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.DTOs": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Compression.BSA.dll": {}
         }
       },
-      "Wabbajack.Compression.Zip/0.3.11": {
+      "Wabbajack.Compression.Zip/0.3.12": {
         "dependencies": {
-          "Wabbajack.IO.Async": "0.3.11"
+          "Wabbajack.IO.Async": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Compression.Zip.dll": {}
         }
       },
-      "Wabbajack.Configuration/0.3.11": {
+      "Wabbajack.Configuration/0.3.12": {
         "runtime": {
           "Wabbajack.Configuration.dll": {}
         }
       },
-      "Wabbajack.Downloaders.Bethesda/0.3.11": {
+      "Wabbajack.Downloaders.Bethesda/0.3.12": {
         "dependencies": {
           "LibAES-CTR": "1.1.0",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "SharpZipLib": "1.4.2",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Networking.BethesdaNet": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Networking.BethesdaNet": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.Bethesda.dll": {}
         }
       },
-      "Wabbajack.Downloaders.Dispatcher/0.3.11": {
+      "Wabbajack.Downloaders.Dispatcher/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "Newtonsoft.Json": "13.0.3",
           "SixLabors.ImageSharp": "3.1.6",
-          "Wabbajack.Downloaders.Bethesda": "0.3.11",
-          "Wabbajack.Downloaders.GameFile": "0.3.11",
-          "Wabbajack.Downloaders.GoogleDrive": "0.3.11",
-          "Wabbajack.Downloaders.Http": "0.3.11",
-          "Wabbajack.Downloaders.IPS4OAuth2Downloader": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Downloaders.Manual": "0.3.11",
-          "Wabbajack.Downloaders.MediaFire": "0.3.11",
-          "Wabbajack.Downloaders.Mega": "0.3.11",
-          "Wabbajack.Downloaders.ModDB": "0.3.11",
-          "Wabbajack.Downloaders.Nexus": "0.3.11",
-          "Wabbajack.Downloaders.VerificationCache": "0.3.11",
-          "Wabbajack.Downloaders.WabbajackCDN": "0.3.11",
-          "Wabbajack.Networking.WabbajackClientApi": "0.3.11"
+          "Wabbajack.Downloaders.Bethesda": "0.3.12",
+          "Wabbajack.Downloaders.GameFile": "0.3.12",
+          "Wabbajack.Downloaders.GoogleDrive": "0.3.12",
+          "Wabbajack.Downloaders.Http": "0.3.12",
+          "Wabbajack.Downloaders.IPS4OAuth2Downloader": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Downloaders.Manual": "0.3.12",
+          "Wabbajack.Downloaders.MediaFire": "0.3.12",
+          "Wabbajack.Downloaders.Mega": "0.3.12",
+          "Wabbajack.Downloaders.ModDB": "0.3.12",
+          "Wabbajack.Downloaders.Nexus": "0.3.12",
+          "Wabbajack.Downloaders.VerificationCache": "0.3.12",
+          "Wabbajack.Downloaders.WabbajackCDN": "0.3.12",
+          "Wabbajack.Networking.WabbajackClientApi": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.Dispatcher.dll": {}
         }
       },
-      "Wabbajack.Downloaders.GameFile/0.3.11": {
+      "Wabbajack.Downloaders.GameFile/0.3.12": {
         "dependencies": {
           "GameFinder.StoreHandlers.EADesktop": "4.5.0",
           "GameFinder.StoreHandlers.EGS": "4.5.0",
@@ -1903,360 +1903,360 @@
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "SixLabors.ImageSharp": "3.1.6",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.VFS": "0.3.11"
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.VFS": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.GameFile.dll": {}
         }
       },
-      "Wabbajack.Downloaders.GoogleDrive/0.3.11": {
+      "Wabbajack.Downloaders.GoogleDrive/0.3.12": {
         "dependencies": {
           "HtmlAgilityPack": "1.11.72",
           "Microsoft.AspNetCore.Http.Extensions": "2.3.0",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.GoogleDrive.dll": {}
         }
       },
-      "Wabbajack.Downloaders.Http/0.3.11": {
+      "Wabbajack.Downloaders.Http/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Networking.BethesdaNet": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Networking.BethesdaNet": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.Http.dll": {}
         }
       },
-      "Wabbajack.Downloaders.Interfaces/0.3.11": {
+      "Wabbajack.Downloaders.Interfaces/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
-          "Wabbajack.Compression.Zip": "0.3.11",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11"
+          "Wabbajack.Compression.Zip": "0.3.12",
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.Interfaces.dll": {}
         }
       },
-      "Wabbajack.Downloaders.IPS4OAuth2Downloader/0.3.11": {
+      "Wabbajack.Downloaders.IPS4OAuth2Downloader/0.3.12": {
         "dependencies": {
           "F23.StringSimilarity": "6.0.0",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.IPS4OAuth2Downloader.dll": {}
         }
       },
-      "Wabbajack.Downloaders.Manual/0.3.11": {
+      "Wabbajack.Downloaders.Manual/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.Manual.dll": {}
         }
       },
-      "Wabbajack.Downloaders.MediaFire/0.3.11": {
+      "Wabbajack.Downloaders.MediaFire/0.3.12": {
         "dependencies": {
           "HtmlAgilityPack": "1.11.72",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.MediaFire.dll": {}
         }
       },
-      "Wabbajack.Downloaders.Mega/0.3.11": {
+      "Wabbajack.Downloaders.Mega/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "Newtonsoft.Json": "13.0.3",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.Mega.dll": {}
         }
       },
-      "Wabbajack.Downloaders.ModDB/0.3.11": {
+      "Wabbajack.Downloaders.ModDB/0.3.12": {
         "dependencies": {
           "HtmlAgilityPack": "1.11.72",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "Newtonsoft.Json": "13.0.3",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.ModDB.dll": {}
         }
       },
-      "Wabbajack.Downloaders.Nexus/0.3.11": {
+      "Wabbajack.Downloaders.Nexus/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Hashing.xxHash64": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11",
-          "Wabbajack.Networking.NexusApi": "0.3.11",
-          "Wabbajack.Paths": "0.3.11"
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Hashing.xxHash64": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12",
+          "Wabbajack.Networking.NexusApi": "0.3.12",
+          "Wabbajack.Paths": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.Nexus.dll": {}
         }
       },
-      "Wabbajack.Downloaders.VerificationCache/0.3.11": {
+      "Wabbajack.Downloaders.VerificationCache/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "Stub.System.Data.SQLite.Core.NetStandard": "1.0.119",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11"
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.VerificationCache.dll": {}
         }
       },
-      "Wabbajack.Downloaders.WabbajackCDN/0.3.11": {
+      "Wabbajack.Downloaders.WabbajackCDN/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "Microsoft.Toolkit.HighPerformance": "7.1.2",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.RateLimiter": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.RateLimiter": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Downloaders.WabbajackCDN.dll": {}
         }
       },
-      "Wabbajack.DTOs/0.3.11": {
+      "Wabbajack.DTOs/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
-          "Wabbajack.Hashing.xxHash64": "0.3.11",
-          "Wabbajack.Paths": "0.3.11"
+          "Wabbajack.Hashing.xxHash64": "0.3.12",
+          "Wabbajack.Paths": "0.3.12"
         },
         "runtime": {
           "Wabbajack.DTOs.dll": {}
         }
       },
-      "Wabbajack.FileExtractor/0.3.11": {
+      "Wabbajack.FileExtractor/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "OMODFramework": "3.0.1",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Compression.BSA": "0.3.11",
-          "Wabbajack.Hashing.PHash": "0.3.11",
-          "Wabbajack.Paths": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Compression.BSA": "0.3.12",
+          "Wabbajack.Hashing.PHash": "0.3.12",
+          "Wabbajack.Paths": "0.3.12"
         },
         "runtime": {
           "Wabbajack.FileExtractor.dll": {}
         }
       },
-      "Wabbajack.Hashing.PHash/0.3.11": {
+      "Wabbajack.Hashing.PHash/0.3.12": {
         "dependencies": {
           "BCnEncoder.Net.ImageSharp": "1.1.1",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Shipwreck.Phash": "0.5.0",
           "SixLabors.ImageSharp": "3.1.6",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Paths": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Paths": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Hashing.PHash.dll": {}
         }
       },
-      "Wabbajack.Hashing.xxHash64/0.3.11": {
+      "Wabbajack.Hashing.xxHash64/0.3.12": {
         "dependencies": {
-          "Wabbajack.Paths": "0.3.11",
-          "Wabbajack.RateLimiter": "0.3.11"
+          "Wabbajack.Paths": "0.3.12",
+          "Wabbajack.RateLimiter": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Hashing.xxHash64.dll": {}
         }
       },
-      "Wabbajack.Installer/0.3.11": {
+      "Wabbajack.Installer/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Newtonsoft.Json": "13.0.3",
           "Octopus.Octodiff": "2.0.548",
           "SixLabors.ImageSharp": "3.1.6",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Downloaders.Dispatcher": "0.3.11",
-          "Wabbajack.Downloaders.GameFile": "0.3.11",
-          "Wabbajack.FileExtractor": "0.3.11",
-          "Wabbajack.Networking.WabbajackClientApi": "0.3.11",
-          "Wabbajack.Paths": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11",
-          "Wabbajack.VFS": "0.3.11",
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Downloaders.Dispatcher": "0.3.12",
+          "Wabbajack.Downloaders.GameFile": "0.3.12",
+          "Wabbajack.FileExtractor": "0.3.12",
+          "Wabbajack.Networking.WabbajackClientApi": "0.3.12",
+          "Wabbajack.Paths": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12",
+          "Wabbajack.VFS": "0.3.12",
           "ini-parser-netstandard": "2.5.2"
         },
         "runtime": {
           "Wabbajack.Installer.dll": {}
         }
       },
-      "Wabbajack.IO.Async/0.3.11": {
+      "Wabbajack.IO.Async/0.3.12": {
         "runtime": {
           "Wabbajack.IO.Async.dll": {}
         }
       },
-      "Wabbajack.Networking.BethesdaNet/0.3.11": {
+      "Wabbajack.Networking.BethesdaNet/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11"
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Networking.BethesdaNet.dll": {}
         }
       },
-      "Wabbajack.Networking.Discord/0.3.11": {
+      "Wabbajack.Networking.Discord/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11"
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Networking.Discord.dll": {}
         }
       },
-      "Wabbajack.Networking.GitHub/0.3.11": {
+      "Wabbajack.Networking.GitHub/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "Octokit": "14.0.0",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11"
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Networking.GitHub.dll": {}
         }
       },
-      "Wabbajack.Networking.Http/0.3.11": {
+      "Wabbajack.Networking.Http/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Http": "9.0.1",
           "Microsoft.Extensions.Logging": "9.0.1",
-          "Wabbajack.Configuration": "0.3.11",
-          "Wabbajack.Downloaders.Interfaces": "0.3.11",
-          "Wabbajack.Hashing.xxHash64": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11",
-          "Wabbajack.Paths": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11"
+          "Wabbajack.Configuration": "0.3.12",
+          "Wabbajack.Downloaders.Interfaces": "0.3.12",
+          "Wabbajack.Hashing.xxHash64": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12",
+          "Wabbajack.Paths": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Networking.Http.dll": {}
         }
       },
-      "Wabbajack.Networking.Http.Interfaces/0.3.11": {
+      "Wabbajack.Networking.Http.Interfaces/0.3.12": {
         "dependencies": {
-          "Wabbajack.Hashing.xxHash64": "0.3.11"
+          "Wabbajack.Hashing.xxHash64": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Networking.Http.Interfaces.dll": {}
         }
       },
-      "Wabbajack.Networking.NexusApi/0.3.11": {
+      "Wabbajack.Networking.NexusApi/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Networking.Http": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11",
-          "Wabbajack.Networking.WabbajackClientApi": "0.3.11"
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Networking.Http": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12",
+          "Wabbajack.Networking.WabbajackClientApi": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Networking.NexusApi.dll": {}
         }
       },
-      "Wabbajack.Networking.WabbajackClientApi/0.3.11": {
+      "Wabbajack.Networking.WabbajackClientApi/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "Octokit": "14.0.0",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11",
-          "Wabbajack.VFS.Interfaces": "0.3.11",
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12",
+          "Wabbajack.VFS.Interfaces": "0.3.12",
           "YamlDotNet": "16.3.0"
         },
         "runtime": {
           "Wabbajack.Networking.WabbajackClientApi.dll": {}
         }
       },
-      "Wabbajack.Paths/0.3.11": {
+      "Wabbajack.Paths/0.3.12": {
         "runtime": {
           "Wabbajack.Paths.dll": {}
         }
       },
-      "Wabbajack.Paths.IO/0.3.11": {
+      "Wabbajack.Paths.IO/0.3.12": {
         "dependencies": {
-          "Wabbajack.Paths": "0.3.11",
+          "Wabbajack.Paths": "0.3.12",
           "shortid": "4.0.0"
         },
         "runtime": {
           "Wabbajack.Paths.IO.dll": {}
         }
       },
-      "Wabbajack.RateLimiter/0.3.11": {
+      "Wabbajack.RateLimiter/0.3.12": {
         "runtime": {
           "Wabbajack.RateLimiter.dll": {}
         }
       },
-      "Wabbajack.Server.Lib/0.3.11": {
+      "Wabbajack.Server.Lib/0.3.12": {
         "dependencies": {
           "FluentFTP": "52.0.0",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
@@ -2264,58 +2264,58 @@
           "Nettle": "3.0.0",
           "Newtonsoft.Json": "13.0.3",
           "SixLabors.ImageSharp": "3.1.6",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.Networking.Http.Interfaces": "0.3.11",
-          "Wabbajack.Services.OSIntegrated": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.Networking.Http.Interfaces": "0.3.12",
+          "Wabbajack.Services.OSIntegrated": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Server.Lib.dll": {}
         }
       },
-      "Wabbajack.Services.OSIntegrated/0.3.11": {
+      "Wabbajack.Services.OSIntegrated/0.3.12": {
         "dependencies": {
           "DeviceId": "6.8.0",
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Newtonsoft.Json": "13.0.3",
           "SixLabors.ImageSharp": "3.1.6",
-          "Wabbajack.Compiler": "0.3.11",
-          "Wabbajack.Downloaders.Dispatcher": "0.3.11",
-          "Wabbajack.Installer": "0.3.11",
-          "Wabbajack.Networking.BethesdaNet": "0.3.11",
-          "Wabbajack.Networking.Discord": "0.3.11",
-          "Wabbajack.VFS": "0.3.11"
+          "Wabbajack.Compiler": "0.3.12",
+          "Wabbajack.Downloaders.Dispatcher": "0.3.12",
+          "Wabbajack.Installer": "0.3.12",
+          "Wabbajack.Networking.BethesdaNet": "0.3.12",
+          "Wabbajack.Networking.Discord": "0.3.12",
+          "Wabbajack.VFS": "0.3.12"
         },
         "runtime": {
           "Wabbajack.Services.OSIntegrated.dll": {}
         }
       },
-      "Wabbajack.VFS/0.3.11": {
+      "Wabbajack.VFS/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
           "Microsoft.Extensions.Logging.Abstractions": "9.0.1",
           "SixLabors.ImageSharp": "3.1.6",
           "System.Data.SQLite.Core": "1.0.119",
-          "Wabbajack.Common": "0.3.11",
-          "Wabbajack.FileExtractor": "0.3.11",
-          "Wabbajack.Hashing.PHash": "0.3.11",
-          "Wabbajack.Hashing.xxHash64": "0.3.11",
-          "Wabbajack.Paths": "0.3.11",
-          "Wabbajack.Paths.IO": "0.3.11",
-          "Wabbajack.VFS.Interfaces": "0.3.11"
+          "Wabbajack.Common": "0.3.12",
+          "Wabbajack.FileExtractor": "0.3.12",
+          "Wabbajack.Hashing.PHash": "0.3.12",
+          "Wabbajack.Hashing.xxHash64": "0.3.12",
+          "Wabbajack.Paths": "0.3.12",
+          "Wabbajack.Paths.IO": "0.3.12",
+          "Wabbajack.VFS.Interfaces": "0.3.12"
         },
         "runtime": {
           "Wabbajack.VFS.dll": {}
         }
       },
-      "Wabbajack.VFS.Interfaces/0.3.11": {
+      "Wabbajack.VFS.Interfaces/0.3.12": {
         "dependencies": {
           "Microsoft.Extensions.DependencyInjection": "9.0.1",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.1",
-          "Wabbajack.DTOs": "0.3.11",
-          "Wabbajack.Hashing.xxHash64": "0.3.11",
-          "Wabbajack.Paths": "0.3.11"
+          "Wabbajack.DTOs": "0.3.12",
+          "Wabbajack.Hashing.xxHash64": "0.3.12",
+          "Wabbajack.Paths": "0.3.12"
         },
         "runtime": {
           "Wabbajack.VFS.Interfaces.dll": {}
@@ -2332,7 +2332,7 @@
     }
   },
   "libraries": {
-    "jackify-engine/0.3.11": {
+    "jackify-engine/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
@@ -3021,202 +3021,202 @@
       "path": "yamldotnet/16.3.0",
       "hashPath": "yamldotnet.16.3.0.nupkg.sha512"
     },
-    "Wabbajack.CLI.Builder/0.3.11": {
+    "Wabbajack.CLI.Builder/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Common/0.3.11": {
+    "Wabbajack.Common/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Compiler/0.3.11": {
+    "Wabbajack.Compiler/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Compression.BSA/0.3.11": {
+    "Wabbajack.Compression.BSA/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Compression.Zip/0.3.11": {
+    "Wabbajack.Compression.Zip/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Configuration/0.3.11": {
+    "Wabbajack.Configuration/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.Bethesda/0.3.11": {
+    "Wabbajack.Downloaders.Bethesda/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.Dispatcher/0.3.11": {
+    "Wabbajack.Downloaders.Dispatcher/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.GameFile/0.3.11": {
+    "Wabbajack.Downloaders.GameFile/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.GoogleDrive/0.3.11": {
+    "Wabbajack.Downloaders.GoogleDrive/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.Http/0.3.11": {
+    "Wabbajack.Downloaders.Http/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.Interfaces/0.3.11": {
+    "Wabbajack.Downloaders.Interfaces/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.IPS4OAuth2Downloader/0.3.11": {
+    "Wabbajack.Downloaders.IPS4OAuth2Downloader/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.Manual/0.3.11": {
+    "Wabbajack.Downloaders.Manual/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.MediaFire/0.3.11": {
+    "Wabbajack.Downloaders.MediaFire/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.Mega/0.3.11": {
+    "Wabbajack.Downloaders.Mega/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.ModDB/0.3.11": {
+    "Wabbajack.Downloaders.ModDB/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.Nexus/0.3.11": {
+    "Wabbajack.Downloaders.Nexus/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.VerificationCache/0.3.11": {
+    "Wabbajack.Downloaders.VerificationCache/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Downloaders.WabbajackCDN/0.3.11": {
+    "Wabbajack.Downloaders.WabbajackCDN/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.DTOs/0.3.11": {
+    "Wabbajack.DTOs/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.FileExtractor/0.3.11": {
+    "Wabbajack.FileExtractor/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Hashing.PHash/0.3.11": {
+    "Wabbajack.Hashing.PHash/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Hashing.xxHash64/0.3.11": {
+    "Wabbajack.Hashing.xxHash64/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Installer/0.3.11": {
+    "Wabbajack.Installer/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.IO.Async/0.3.11": {
+    "Wabbajack.IO.Async/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Networking.BethesdaNet/0.3.11": {
+    "Wabbajack.Networking.BethesdaNet/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Networking.Discord/0.3.11": {
+    "Wabbajack.Networking.Discord/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Networking.GitHub/0.3.11": {
+    "Wabbajack.Networking.GitHub/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Networking.Http/0.3.11": {
+    "Wabbajack.Networking.Http/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Networking.Http.Interfaces/0.3.11": {
+    "Wabbajack.Networking.Http.Interfaces/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Networking.NexusApi/0.3.11": {
+    "Wabbajack.Networking.NexusApi/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Networking.WabbajackClientApi/0.3.11": {
+    "Wabbajack.Networking.WabbajackClientApi/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Paths/0.3.11": {
+    "Wabbajack.Paths/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Paths.IO/0.3.11": {
+    "Wabbajack.Paths.IO/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.RateLimiter/0.3.11": {
+    "Wabbajack.RateLimiter/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Server.Lib/0.3.11": {
+    "Wabbajack.Server.Lib/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.Services.OSIntegrated/0.3.11": {
+    "Wabbajack.Services.OSIntegrated/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.VFS/0.3.11": {
+    "Wabbajack.VFS/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
     },
-    "Wabbajack.VFS.Interfaces/0.3.11": {
+    "Wabbajack.VFS.Interfaces/0.3.12": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

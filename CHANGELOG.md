@@ -1,5 +1,17 @@
 # Jackify Changelog
 
+## v0.0.32 - Engine Update and FNV Simplification  
+**Release Date:** September 8, 2025
+
+### Engine Update
+- **jackify-engine v0.3.12**: Fixed file extraction encoding issues
+
+### Improvements  
+- **FNV Modlists**: Simplified configuration using registry injection instead of launch options
+- **Code Cleanup**: Removed special-case launch option handling for FNV
+
+---
+
 ## v0.0.31 - Pre-Alpha Polish Update
 **Release Date:** September 7, 2025
 

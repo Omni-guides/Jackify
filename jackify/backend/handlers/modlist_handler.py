@@ -673,17 +673,17 @@ class ModlistHandler:
         # Use canonical logic for all modlists/games
         components = self.get_modlist_wine_components(self.game_name, self.game_var_full)
         
-        # Detect special games and use vanilla AppID instead of modlist AppID
-        special_game_type = self.detect_special_game_type(self.modlist_dir)
-        self.logger.debug(f"Wine components step - modlist_dir='{self.modlist_dir}', special_game_type='{special_game_type}'")
-        if special_game_type == "fnv":
-            target_appid = "22380"  # Vanilla Fallout New Vegas AppID
-            self.logger.info("Installing wine components to vanilla FNV compatdata (AppID 22380)")
-        elif special_game_type == "enderal":
-            target_appid = "976620"  # Enderal: Forgotten Stories Special Edition AppID  
-            self.logger.info("Installing wine components to vanilla Enderal compatdata (AppID 976620)")
-        else:
-            target_appid = self.appid  # Normal modlist AppID
+        # DISABLED: Special game wine component routing - now using registry injection approach
+        # special_game_type = self.detect_special_game_type(self.modlist_dir)
+        # if special_game_type == "fnv":
+        #     target_appid = "22380"  # Vanilla Fallout New Vegas AppID
+        # elif special_game_type == "enderal":
+        #     target_appid = "976620"  # Enderal: Forgotten Stories Special Edition AppID  
+        # else:
+        #     target_appid = self.appid  # Normal modlist AppID
+        
+        # All modlists now use their own AppID for wine components
+        target_appid = self.appid
         
         if not self.protontricks_handler.install_wine_components(target_appid, self.game_var_full, specific_components=components):
             self.logger.error("Failed to install Wine components. Configuration aborted.")
