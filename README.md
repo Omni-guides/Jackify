@@ -1,7 +1,10 @@
 ![Jackify Banner](assets/images/readme/Jackify_Github_Banner.png)
 
-| [Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Download](https://www.nexusmods.com/site/mods/xxx) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](Legacy/) | [Ko-fi](https://ko-fi.com/omni1) |
-|:---:|:---:|:---:|:---:|:---:|:---:|
+<div align="center">
+
+[Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Download](https://www.nexusmods.com/site/mods/xxx) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](Legacy/) | [Ko-fi](https://ko-fi.com/omni1)
+
+</div>
   
 ---
   
