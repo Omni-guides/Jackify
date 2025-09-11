@@ -38,6 +38,8 @@ Jackify is an almost Linux-native application written in Python, with a GUI prod
 - I am not a UI developer, so the current interface is functional but not polished
 - Please report any issues you encounter to help improve the application
 
+**Prefer Manual Installation?** If you'd rather use the proven bash scripts and manual guides that have been tested over many months, see the [Legacy Guides](https://github.com/Omni-guides/Jackify/wiki/Legacy-Wiki-Home) for the old installation methods.
+
 Currently, there are two main functions that Jackify will perform at this stage of development:
 
 - Install Wabbajack modlists using jackify-engine (more on jackify-engine in the full Introduction wiki linked above).
