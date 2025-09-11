@@ -31,7 +31,14 @@ This repository has evolved from the original [Wabbajack-Modlist-Linux](https://
 
 Thank you for your interest in Jackify - the next step, and a giant leap forward from my automated Wabbajack and modlist post-install scripts. So, Jackify - What is it?
 
-Jackify is an almost Linux-native application written in Python, with a GUI produced with PySide6, and a full featured CLI interface if preferred. More info on the "almost" can be found in the full Introduction Wiki page. Currently, there are two main functions that Jackify will perform at this stage of development:
+Jackify is an almost Linux-native application written in Python, with a GUI produced with PySide6, and a full featured CLI interface if preferred. More info on the "almost" can be found in the full Introduction Wiki page. 
+
+**Important Notes for Alpha Users:**
+- This is the first alpha release - there WILL be bugs and issues that need to be resolved
+- I am not a UI developer, so the current interface is functional but not polished
+- Please report any issues you encounter to help improve the application
+
+Currently, there are two main functions that Jackify will perform at this stage of development:
 
 - Install Wabbajack modlists using jackify-engine (more on jackify-engine in the full Introduction wiki linked above).
 - Fully automate the configuration of the Steam shortcut, modlist paths, prefix components, launch options and various other tweaks required to run Wabbajack Modlists on Linux.
@@ -63,6 +70,11 @@ Jackify is an almost Linux-native application written in Python, with a GUI prod
 - Linux system (Most modern distributions supported)
 - Python 3.8+ installed
 - Steam installed and configured, Proton Experimental available
+- **Nexus Mods Premium subscription** (required for automated downloads)
+  - Non-premium support planned for future releases
+- **FUSE** (required for AppImage execution)
+  - Pre-installed on most Linux distributions
+  - If AppImage fails to run, install FUSE using your distribution's package manager
 
 ### Installation
 

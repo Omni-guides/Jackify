@@ -443,7 +443,7 @@ exit"""
                 try:
                     # Use the existing protontricks handler
                     from jackify.backend.handlers.protontricks_handler import ProtontricksHandler
-                    protontricks_handler = ProtontricksHandler(steamdeck=False)
+                    protontricks_handler = ProtontricksHandler(steamdeck=steamdeck or False)
                     result = protontricks_handler.run_protontricks('-l')
                     
                     if result.returncode == 0:
@@ -1718,21 +1718,23 @@ echo Prefix creation complete.
             progress_callback("=== Steam Integration ===")
             progress_callback(f"{self._get_progress_timestamp()} Creating Steam shortcut with native service")
         
-        # DISABLED: Special game launch options - now using registry injection approach
-        # from ..handlers.modlist_handler import ModlistHandler
-        # modlist_handler = ModlistHandler()
-        # special_game_type = modlist_handler.detect_special_game_type(modlist_install_dir)
-        # 
-        # # Generate complete launch options for special games
-        # custom_launch_options = None
-        # if special_game_type in ["fnv", "enderal"]:
-        #     custom_launch_options = self._generate_special_game_launch_options(special_game_type, modlist_install_dir)
-        #     if not custom_launch_options:
-        #         logger.error(f"Failed to generate launch options for {special_game_type.upper()} modlist")
-        #         return False, None, None, None
+        # Dual approach: Registry injection for FNV, launch options for Enderal
+        from ..handlers.modlist_handler import ModlistHandler
+        modlist_handler = ModlistHandler()
+        special_game_type = modlist_handler.detect_special_game_type(modlist_install_dir)
         
-        # All modlists now use standard shortcut creation without custom launch options
+        # Generate launch options only for Enderal (FNV uses registry injection)
         custom_launch_options = None
+        if special_game_type == "enderal":
+            custom_launch_options = self._generate_special_game_launch_options(special_game_type, modlist_install_dir)
+            if not custom_launch_options:
+                logger.error(f"Failed to generate launch options for Enderal modlist")
+                return False, None, None, None
+            logger.info("Using launch options approach for Enderal modlist")
+        elif special_game_type == "fnv":
+            logger.info("Using registry injection approach for FNV modlist")
+        else:
+            logger.debug("Standard modlist - no special game handling needed")
         
         try:
             # Step 1: Create shortcut with native Steam service (pointing to ModOrganizer.exe initially)
@@ -1806,17 +1808,27 @@ echo Prefix creation complete.
             if progress_callback:
                 progress_callback(f"{self._get_progress_timestamp()} Setup verification completed")
             
-            # Step 5: Inject game registry entries for FNV/Enderal modlists
-            logger.info("Step 5: Injecting game registry entries")
-            if progress_callback:
-                progress_callback(f"{self._get_progress_timestamp()} Injecting game registry entries...")
-            
-            # Get prefix path for registry injection
+            # Step 5: Inject game registry entries for FNV modlists (Enderal uses launch options)
+            # Get prefix path (needed for logging regardless of game type)
             prefix_path = self.get_prefix_path(appid)
-            if prefix_path:
-                self._inject_game_registry_entries(str(prefix_path))
+            
+            if special_game_type == "fnv":
+                logger.info("Step 5: Injecting FNV game registry entries")
+                if progress_callback:
+                    progress_callback(f"{self._get_progress_timestamp()} Injecting FNV game registry entries...")
+                
+                if prefix_path:
+                    self._inject_game_registry_entries(str(prefix_path))
+                else:
+                    logger.warning("Could not find prefix path for registry injection")
+            elif special_game_type == "enderal":
+                logger.info("Step 5: Skipping registry injection for Enderal (using launch options)")
+                if progress_callback:
+                    progress_callback(f"{self._get_progress_timestamp()} Skipping registry injection for Enderal")
             else:
-                logger.warning("Could not find prefix path for registry injection")
+                logger.info("Step 5: Skipping registry injection for standard modlist")
+                if progress_callback:
+                    progress_callback(f"{self._get_progress_timestamp()} No special game registry injection needed")
             
             last_timestamp = self._get_progress_timestamp()
             logger.info(f" Working workflow completed successfully! AppID: {appid}, Prefix: {prefix_path}")

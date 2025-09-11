@@ -996,7 +996,7 @@ class InstallModlistScreen(QWidget):
             for line in lines[1:]:
                 line_lower = line.lower()
                 if (
-                    ("jackify-engine" in line_lower or "7zz" in line_lower or "compressonator" in line_lower or
+                    ("jackify-engine" in line_lower or "7zz" in line_lower or "texconv" in line_lower or
                      "wine" in line_lower or "wine64" in line_lower or "protontricks" in line_lower)
                     and "jackify-gui.py" not in line_lower
                 ):

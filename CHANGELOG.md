@@ -1,5 +1,36 @@
 # Jackify Changelog
 
+## v0.1.0 - First Public Release  
+**Release Date:** September 11, 2025
+
+**MILESTONE**: Jackify is now ready for public release! This marks the transition from private development to open-source availability.
+
+### Major Milestone Features
+- **Native Linux Engine**: jackify-engine v0.3.12+ providing optimal performance without Wine dependencies
+- **Dual Interface**: Full-featured GUI and interactive CLI for all user preferences  
+- **Steam Deck Optimized**: Native Steam integration with proper Proton configuration
+- **Comprehensive Modlist Support**: Wide compatibility with Wabbajack modlists
+- **Production Ready**: Stable, tested, and ready for community use
+
+### Recent Critical Fixes
+- **Steam Deck Proton Setting**: Fixed critical bug where Proton version was not being set for shortcuts on Steam Deck
+  - Root cause: Steam AppID caching conflicts with deterministic AppID generation
+  - Solution: Reverted to random AppID generation to avoid cache conflicts
+  - Also fixes long-standing "Installed Locally" visibility issue
+- **ProtontricksHandler Steam Deck Detection**: Fixed hardcoded steamdeck=False parameter
+
+### New Features  
+- **Ko-Fi Support Links**: Added official Ko-Fi support links using official brand colors
+  - Centered link in bottom status bar: "♥ Support on Ko-fi"
+  - Subtle link in success dialogs: "Enjoying Jackify? Support development ♥"
+  - Uses official Ko-Fi blue color (#72A5F2) from brand guidelines
+
+### Improvements
+- **Process Monitor**: Updated to show texconv.exe processes and removed obsolete compressonator references
+- **Terminal Output**: Suppressed GPU driver detection messages in normal mode (still visible with --debug)
+
+---
+
 ## v0.0.32 - Engine Update and FNV Simplification  
 **Release Date:** September 8, 2025
 

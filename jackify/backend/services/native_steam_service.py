@@ -125,32 +125,25 @@ class NativeSteamService:
     
     def generate_app_id(self, app_name: str, exe_path: str) -> Tuple[int, int]:
         """
-        Generate AppID using STL's exact algorithm (MD5-based).
+        Generate random AppID to avoid Steam cache conflicts.
         
-        This matches STL's generateShortcutVDFAppId and generateSteamShortID functions:
-        1. Combine AppName + ExePath  
-        2. Generate MD5 hash, take first 8 characters
-        3. Convert to decimal, make negative, ensure < 1 billion
-        4. Convert signed to unsigned for CompatToolMapping
+        Uses random negative AppID similar to old working method to avoid
+        Steam's cache conflicts that break Proton setting and "Installed Locally" visibility.
+        AppID will be re-detected after Steam restart using existing detection logic.
         
         Returns:
             (signed_app_id, unsigned_app_id) - Both the signed and unsigned versions
         """
-        # STL's algorithm: MD5 of app_name + exe_path
-        input_string = f"{app_name}{exe_path}"
+        import random
         
-        # Generate MD5 hash and take first 8 characters
-        md5_hash = hashlib.md5(input_string.encode('utf-8')).hexdigest()
-        seed = md5_hash[:8]
+        # Generate random negative AppID in Steam's non-Steam app range
+        # Use range that avoids conflicts with real Steam apps
+        signed_app_id = -random.randint(100000000, 999999999)
         
-        # Convert hex to decimal and make it negative with modulo 1 billion
-        seed_decimal = int(seed, 16)
-        signed_app_id = -(seed_decimal % 1000000000)
-        
-        # Convert to unsigned using steam-conductor/trentondyck method (signed_app_id + 2^32)
+        # Convert to unsigned for CompatToolMapping
         unsigned_app_id = signed_app_id + 2**32
         
-        logger.info(f"Generated AppID using STL algorithm for '{app_name}' + '{exe_path}': {signed_app_id} (unsigned: {unsigned_app_id})")
+        logger.info(f"Generated random AppID for '{app_name}': {signed_app_id} (unsigned: {unsigned_app_id})")
         return signed_app_id, unsigned_app_id
     
     def create_shortcut(self, app_name: str, exe_path: str, start_dir: str = None, 

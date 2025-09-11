@@ -439,7 +439,7 @@ class ConfigureNewModlistScreen(QWidget):
                 # Include jackify-engine and related heavy processes
                 heavy_processes = (
                     "jackify-engine" in line_lower or "7zz" in line_lower or 
-                    "compressonator" in line_lower or "wine" in line_lower or 
+                    "texconv" in line_lower or "wine" in line_lower or 
                     "wine64" in line_lower or "protontricks" in line_lower
                 )
                 # Include Python processes running configure-modlist command

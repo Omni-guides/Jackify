@@ -150,6 +150,22 @@ class SuccessDialog(QDialog):
         )
         card_layout.addWidget(next_steps_label)
 
+        # Subtle Ko-Fi support link
+        kofi_label = QLabel('<a href="https://ko-fi.com/omni1" style="color:#72A5F2; text-decoration:none;">Enjoying Jackify? Support development ♥</a>')
+        kofi_label.setAlignment(Qt.AlignCenter)
+        kofi_label.setStyleSheet(
+            "QLabel { "
+            "  color: #72A5F2; "
+            "  font-size: 11px; "
+            "  margin-top: 8px; "
+            "  padding: 4px; "
+            "  background-color: transparent; "
+            "}"
+        )
+        kofi_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        kofi_label.setOpenExternalLinks(True)
+        card_layout.addWidget(kofi_label)
+
         layout.addStretch()
         layout.addWidget(card, alignment=Qt.AlignCenter)
         layout.addStretch()

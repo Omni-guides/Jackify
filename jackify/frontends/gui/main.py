@@ -616,6 +616,17 @@ class JackifyMainWindow(QMainWindow):
         # Spacer
         bottom_bar_layout.addStretch(1)
 
+        # Ko-Fi support link (center)
+        kofi_link = QLabel('<a href="https://ko-fi.com/omni1" style="color:#72A5F2; text-decoration:none;">♥ Support on Ko-fi</a>')
+        kofi_link.setStyleSheet("color: #72A5F2; font-size: 13px;")
+        kofi_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        kofi_link.setOpenExternalLinks(True)
+        kofi_link.setToolTip("Support Jackify development")
+        bottom_bar_layout.addWidget(kofi_link, alignment=Qt.AlignCenter)
+
+        # Spacer
+        bottom_bar_layout.addStretch(1)
+
         # Settings button (right)
         settings_btn = QLabel('<a href="#" style="color:#6cf; text-decoration:none;">Settings</a>')
         settings_btn.setStyleSheet("color: #6cf; font-size: 13px; padding-right: 8px;")
