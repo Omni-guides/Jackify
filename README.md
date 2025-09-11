@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Download](https://www.nexusmods.com/site/mods/xxx) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](https://github.com/Omni-guides/Jackify-Temp/tree/master/Legacy) | [Ko-fi](https://ko-fi.com/omni1)
+[Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Nexus](https://www.nexusmods.com/site/mods/1427) | [Download](https://www.nexusmods.com/Core/Libs/Common/Widgets/DownloadPopUp?id=5807&game_id=2295) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](https://github.com/Omni-guides/Jackify-Temp/tree/master/Legacy) | [Ko-fi](https://ko-fi.com/omni1)
 
 </div>
   
@@ -91,7 +91,7 @@ For a complete step-by-step guide with screenshots, see the [User Guide](https:/
 
 ### Quick Start
 
-1. **Download**: Get the latest release from [NexusMods](https://www.nexusmods.com/site/mods/xxx)
+1. **Download**: Get the latest release from [NexusMods](https://www.nexusmods.com/Core/Libs/Common/Widgets/DownloadPopUp?id=5807&game_id=2295)
 2. **Extract**: Unzip the .7z archive to get `Jackify.AppImage`
 3. **Run**: `chmod +x Jackify.AppImage && ./Jackify.AppImage`
 4. **Install**: Choose "Install a Modlist", select your game and modlist, configure directories and API key
