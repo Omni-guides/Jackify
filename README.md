@@ -87,20 +87,16 @@ chmod +x Jackify.AppImage
 
 ## Usage
 
-### GUI Mode
-Launch the GUI AppImage as above, then navigate through the interface:
+For a complete step-by-step guide with screenshots, see the [User Guide](https://github.com/Omni-guides/Jackify/wiki/User-Guide).
 
-1. Select "Modlist Tasks" → "Install a Modlist" (or your desired option)
-2. Choose your game type and modlist
-3. Set the installation and download directories
-4. Enter your Nexus API key and select your resolution
-5. Let Jackify handle the rest
+### Quick Start
 
-### CLI Mode
-```bash
-./Jackify.AppImage --cli
-```
-Follow the interactive prompts to configure and install modlists.
+1. **Download**: Get the latest release from [NexusMods](https://www.nexusmods.com/site/mods/xxx)
+2. **Extract**: Unzip the .7z archive to get `Jackify.AppImage`
+3. **Run**: `chmod +x Jackify.AppImage && ./Jackify.AppImage`
+4. **Install**: Choose "Install a Modlist", select your game and modlist, configure directories and API key
+
+**CLI Mode**: Run `./Jackify.AppImage --cli` for command-line interface
 
 ## Supported Games
 - Skyrim Special Edition
