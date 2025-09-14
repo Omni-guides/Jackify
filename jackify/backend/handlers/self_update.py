@@ -37,8 +37,8 @@ def get_latest_release_info():
 def get_current_version():
     # This should match however Jackify stores its version
     try:
-        from src import version
-        return version.__version__
+        from jackify import __version__
+        return __version__
     except ImportError:
         return None
 

@@ -528,6 +528,10 @@ class JackifyMainWindow(QMainWindow):
         from jackify.backend.services.protontricks_detection_service import ProtontricksDetectionService
         self.protontricks_service = ProtontricksDetectionService(steamdeck=self.system_info.is_steamdeck)
         
+        # Initialize update service
+        from jackify.backend.services.update_service import UpdateService
+        self.update_service = UpdateService(__version__)
+        
         debug_print(f"GUI Backend initialized - Steam Deck: {self.system_info.is_steamdeck}")
     
     def _is_steamdeck(self):
@@ -735,6 +739,32 @@ class JackifyMainWindow(QMainWindow):
             print(f"Error checking protontricks: {e}")
             # Continue anyway - don't block startup on detection errors
     
+    def _check_for_updates_on_startup(self):
+        """Check for updates on startup in background thread"""
+        try:
+            debug_print("Checking for updates on startup...")
+            
+            def update_check_callback(update_info):
+                """Handle update check results"""
+                try:
+                    if update_info:
+                        debug_print(f"Update available: v{update_info.version}")
+                        # Show update dialog
+                        from jackify.frontends.gui.dialogs.update_dialog import UpdateDialog
+                        dialog = UpdateDialog(update_info, self.update_service, self)
+                        dialog.show()  # Non-blocking
+                    else:
+                        debug_print("No updates available")
+                except Exception as e:
+                    debug_print(f"Error showing update dialog: {e}")
+            
+            # Check for updates in background
+            self.update_service.check_for_updates_async(update_check_callback)
+            
+        except Exception as e:
+            debug_print(f"Error checking for updates on startup: {e}")
+            # Continue anyway - don't block startup on update check errors
+    
     def cleanup_processes(self):
         """Clean up any running processes before closing"""
         try:
@@ -842,6 +872,9 @@ def main():
     app.setWindowIcon(QIcon(icon_path))
     window = JackifyMainWindow(dev_mode=dev_mode)
     window.show()
+    
+    # Start background update check after window is shown
+    window._check_for_updates_on_startup()
     
     # Ensure cleanup on exit
     import atexit

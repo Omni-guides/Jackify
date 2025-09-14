@@ -174,12 +174,102 @@ class JackifyCLI:
         Returns:
             Dictionary of backend service instances
         """
-        # For now, create a basic modlist service
-        # TODO: Add other services as needed
+        # Initialize update service
+        from jackify.backend.services.update_service import UpdateService
+        update_service = UpdateService(jackify_version)
+        
         services = {
-            'modlist_service': ModlistService(self.system_info)
+            'modlist_service': ModlistService(self.system_info),
+            'update_service': update_service
         }
         return services
+    
+    def _check_for_updates_on_startup(self):
+        """Check for updates on startup in background thread"""
+        try:
+            self._debug_print("Checking for updates on startup...")
+            
+            def update_check_callback(update_info):
+                """Handle update check results"""
+                try:
+                    if update_info:
+                        print(f"\n{COLOR_INFO}Update available: v{update_info.version}{COLOR_RESET}")
+                        print(f"Current version: v{jackify_version}")
+                        print(f"Release date: {update_info.release_date}")
+                        if update_info.changelog:
+                            print(f"Changelog: {update_info.changelog[:200]}...")
+                        print(f"Download size: {update_info.file_size / (1024*1024):.1f} MB" if update_info.file_size else "Download size: Unknown")
+                        print(f"\nTo update, run: jackify --update")
+                        print("Or visit: https://github.com/Omni-guides/Jackify/releases")
+                    else:
+                        self._debug_print("No updates available")
+                except Exception as e:
+                    self._debug_print(f"Error showing update info: {e}")
+            
+            # Check for updates in background
+            self.backend_services['update_service'].check_for_updates_async(update_check_callback)
+            
+        except Exception as e:
+            self._debug_print(f"Error checking for updates on startup: {e}")
+            # Continue anyway - don't block startup on update check errors
+    
+    def _handle_update(self):
+        """Handle manual update check and installation"""
+        try:
+            print("Checking for updates...")
+            update_service = self.backend_services['update_service']
+            
+            # Check if updating is possible
+            if not update_service.can_update():
+                print(f"{COLOR_ERROR}Update not possible: not running as AppImage or insufficient permissions{COLOR_RESET}")
+                return 1
+            
+            # Check for updates
+            update_info = update_service.check_for_updates()
+            
+            if update_info:
+                print(f"{COLOR_INFO}Update available: v{update_info.version}{COLOR_RESET}")
+                print(f"Current version: v{jackify_version}")
+                print(f"Release date: {update_info.release_date}")
+                if update_info.changelog:
+                    print(f"Changelog: {update_info.changelog}")
+                print(f"Download size: {update_info.file_size / (1024*1024):.1f} MB" if update_info.file_size else "Download size: Unknown")
+                
+                # Ask for confirmation
+                response = input("\nDo you want to download and install this update? (y/N): ").strip().lower()
+                if response in ['y', 'yes']:
+                    print("Downloading update...")
+                    
+                    def progress_callback(downloaded, total):
+                        if total > 0:
+                            percentage = int((downloaded / total) * 100)
+                            downloaded_mb = downloaded / (1024 * 1024)
+                            total_mb = total / (1024 * 1024)
+                            print(f"\rDownloaded {downloaded_mb:.1f} MB of {total_mb:.1f} MB ({percentage}%)", end='', flush=True)
+                    
+                    downloaded_path = update_service.download_update(update_info, progress_callback)
+                    
+                    if downloaded_path:
+                        print(f"\nDownload completed. Installing update...")
+                        if update_service.apply_update(downloaded_path):
+                            print(f"{COLOR_INFO}Update applied successfully! Jackify will restart...{COLOR_RESET}")
+                            return 0
+                        else:
+                            print(f"{COLOR_ERROR}Failed to apply update{COLOR_RESET}")
+                            return 1
+                    else:
+                        print(f"\n{COLOR_ERROR}Failed to download update{COLOR_RESET}")
+                        return 1
+                else:
+                    print("Update cancelled.")
+                    return 0
+            else:
+                print(f"{COLOR_INFO}You are already running the latest version (v{jackify_version}){COLOR_RESET}")
+                return 0
+                
+        except Exception as e:
+            print(f"{COLOR_ERROR}Update failed: {e}{COLOR_RESET}")
+            return 1
     
     def _initialize_command_handlers(self):
         """Initialize command handler instances.
@@ -271,6 +361,11 @@ class JackifyCLI:
         self._debug_print('JackifyCLI.run() called')
         self._debug_print(f'Parsed args: {self.args}')
         
+        # Handle update functionality
+        if getattr(self.args, 'update', False):
+            self._debug_print('Entering update workflow')
+            return self._handle_update()
+        
         # Handle legacy restart-steam functionality (temporary)
         if getattr(self.args, 'restart_steam', False):
             self._debug_print('Entering restart_steam workflow')
@@ -290,6 +385,9 @@ class JackifyCLI:
         if getattr(self.args, 'command', None):
             return self._run_command(self.args.command, self.args)
         
+        # Check for updates on startup (non-blocking)
+        self._check_for_updates_on_startup()
+        
         # Run interactive mode (legacy for now)
         self._run_interactive()
     
@@ -303,6 +401,7 @@ class JackifyCLI:
         parser.add_argument("--resolution", type=str, help="Resolution to set (optional)")
         parser.add_argument('--restart-steam', action='store_true', help='Restart Steam (native, for GUI integration)')
         parser.add_argument('--dev', action='store_true', help='Enable development features (show hidden menu items)')
+        parser.add_argument('--update', action='store_true', help='Check for and install updates')
         
         # Add command-specific arguments
         self.commands['tuxborn'].add_args(parser)
