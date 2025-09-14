@@ -213,11 +213,14 @@ class ConfigHandler:
     def get_api_key(self):
         """
         Retrieve and decode the saved Nexus API key
+        Always reads fresh from disk to pick up changes from other instances
         
         Returns:
             str: Decoded API key or None if not saved
         """
         try:
+            # Reload config from disk to pick up changes from Settings dialog
+            self._load_config()
             encoded_key = self.settings.get("nexus_api_key")
             if encoded_key:
                 # Decode the base64 encoded key
@@ -231,10 +234,13 @@ class ConfigHandler:
     def has_saved_api_key(self):
         """
         Check if an API key is saved in configuration
+        Always reads fresh from disk to pick up changes from other instances
         
         Returns:
             bool: True if API key exists, False otherwise
         """
+        # Reload config from disk to pick up changes from Settings dialog
+        self._load_config()
         return self.settings.get("nexus_api_key") is not None
     
     def clear_api_key(self):

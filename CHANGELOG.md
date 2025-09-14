@@ -1,5 +1,30 @@
 # Jackify Changelog
 
+## v0.1.0.1 - Engine Update and Stability Improvements
+**Release Date:** September 14, 2025
+
+### Engine Updates
+- **jackify-engine v0.3.13**: Major stability and resource management improvements
+  - **Wine Prefix Cleanup**: Automatic cleanup of ~281MB Wine prefix directories after each modlist installation
+  - **Manual Download Handling**: Fixed installation crashes when manual downloads are required
+  - **Enhanced Error Messaging**: Detailed mod information for failed downloads (Nexus ModID/FileID, Google Drive, HTTP sources)
+  - **Resource Settings Compliance**: Fixed resource settings not being respected during VFS and Installer operations
+  - **VFS Crash Prevention**: Fixed KeyNotFoundException crashes during "Priming VFS" phase with missing archives
+  - **Creation Club File Handling**: Fixed incorrect re-download attempts for Creation Club files
+  - **BSA Extraction Fix**: Fixed DirectoryNotFoundException during BSA building operations
+
+### Improvements
+- **Disk Space Management**: No more accumulation of Wine prefix directories consuming hundreds of MB per installation
+- **Clean Error Handling**: Manual download requirements now show clear summary instead of stack traces  
+- **Better Resource Control**: Users can now properly control CPU usage during installation via resource_settings.json
+
+### Bug Fixes
+- **Download System**: Fixed GoogleDrive and MEGA download regressions
+- **Configuration Integration**: MEGA tokens properly stored in Jackify's config directory structure
+- **Installation Reliability**: Enhanced error handling prevents crashes with missing or corrupted archives
+
+---
+
 ## v0.1.0 - First Public Release  
 **Release Date:** September 11, 2025
 

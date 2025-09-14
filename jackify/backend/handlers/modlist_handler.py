@@ -1117,6 +1117,7 @@ class ModlistHandler:
                 ("grid-hero.png", f"{appid}_hero.png"),
                 ("grid-logo.png", f"{appid}_logo.png"),
                 ("grid-tall.png", f"{appid}.png"),
+                ("grid-tall.png", f"{appid}p.png"),
             ]
 
             for src_name, dest_name in images:

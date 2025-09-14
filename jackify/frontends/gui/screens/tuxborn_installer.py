@@ -461,19 +461,22 @@ class TuxbornInstallerScreen(QWidget):
         self.console.setMinimumHeight(50)  # Keep minimum height for usability
 
     def showEvent(self, event):
-        """Called when the widget becomes visible - reload saved API key and parent directories"""
+        """Called when the widget becomes visible - always reload saved API key and parent directories"""
         super().showEvent(event)
-        # Reload saved API key if available and field is empty
-        if not self.api_key_edit.text().strip() or (self.api_key_is_obfuscated and not self.api_key_original_text.strip()):
-            saved_key = self.api_key_service.get_saved_api_key()
-            if saved_key:
-                self.api_key_original_text = saved_key
-                self.api_key_edit.setText(saved_key)
-                self.api_key_is_obfuscated = False  # Start unobfuscated
-                # Set checkbox state
-                self.save_api_key_checkbox.setChecked(True)
-                # Start obfuscation timer
-                self.api_key_obfuscation_timer.start(3000)
+        # Always reload saved API key to pick up changes from Settings dialog
+        saved_key = self.api_key_service.get_saved_api_key()
+        if saved_key:
+            self.api_key_original_text = saved_key
+            self.api_key_edit.setText(saved_key)
+            self.api_key_is_obfuscated = False  # Start unobfuscated
+            # Set checkbox state
+            self.save_api_key_checkbox.setChecked(True)
+            # Immediately obfuscate saved keys (don't wait 3 seconds)
+            self._obfuscate_api_key()
+        elif not self.api_key_edit.text().strip():
+            # Only clear if no saved key and field is empty
+            self.api_key_original_text = ""
+            self.save_api_key_checkbox.setChecked(False)
         
         # Load saved parent directories and pre-populate fields
         self._load_saved_parent_directories()

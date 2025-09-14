@@ -1400,8 +1400,9 @@ class ModlistInstallCLI:
                 # Remove status indicators to get clean line
                 clean_line = line.replace('[DOWN]', '').replace('[NSFW]', '').strip()
                 
-                # Split on ' - ' to get: [Modlist Name, Game, Sizes, MachineURL]
-                parts = clean_line.split(' - ')
+                # Split from right to handle modlist names with dashes
+                # Format: "NAME - GAME - SIZES - MACHINE_URL"
+                parts = clean_line.rsplit(' - ', 3)  # Split from right, max 3 splits = 4 parts
                 if len(parts) != 4:
                     continue  # Skip malformed lines
                 

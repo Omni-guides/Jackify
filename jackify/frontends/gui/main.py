@@ -181,59 +181,76 @@ class SettingsDialog(QDialog):
             self.resource_edits = {}
             resource_row_index = 0
             for resource_row_index, (k, v) in enumerate(self.resource_settings.items(), start=1):
-                # Create resource label with optional inline checkbox for File Extractor
-                if k == "File Extractor":
-                    # Create horizontal layout for File Extractor with inline checkbox
-                    resource_row = QHBoxLayout()
-                    resource_label = QLabel(f"{k}:", parent=self)
-                    resource_row.addWidget(resource_label)
-                    resource_row.addSpacing(10)  # Add some spacing
+                try:
+                    # Create resource label with optional inline checkbox for File Extractor
+                    if k == "File Extractor":
+                        # Create horizontal layout for File Extractor with inline checkbox
+                        resource_row = QHBoxLayout()
+                        resource_label = QLabel(f"{k}:", parent=self)
+                        resource_row.addWidget(resource_label)
+                        resource_row.addSpacing(10)  # Add some spacing
+                        
+                        multithreading_checkbox = QCheckBox("Multithreading (Experimental)")
+                        multithreading_checkbox.setChecked(v.get('_7zzMultiThread', 'off') == 'on')
+                        multithreading_checkbox.setToolTip("Enables multithreaded file extraction using 7-Zip. May improve extraction speed on multi-core systems but could be less stable.")
+                        multithreading_checkbox.setStyleSheet("color: #fff;")
+                        resource_row.addWidget(multithreading_checkbox)
+                        resource_row.addStretch()  # Push checkbox to the left
+                        
+                        # Add the horizontal layout to the grid
+                        resource_layout.addLayout(resource_row, resource_row_index, 0)
+                    else:
+                        resource_layout.addWidget(QLabel(f"{k}:", parent=self), resource_row_index, 0, 1, 1, Qt.AlignLeft)
                     
-                    multithreading_checkbox = QCheckBox("Multithreading (Experimental)")
-                    multithreading_checkbox.setChecked(v.get('_7zzMultiThread', 'off') == 'on')
-                    multithreading_checkbox.setToolTip("Enables multithreaded file extraction using 7-Zip. May improve extraction speed on multi-core systems but could be less stable.")
-                    multithreading_checkbox.setStyleSheet("color: #fff;")
-                    resource_row.addWidget(multithreading_checkbox)
-                    resource_row.addStretch()  # Push checkbox to the left
+                    max_tasks_spin = QSpinBox()
+                    max_tasks_spin.setMinimum(1)
+                    max_tasks_spin.setMaximum(128)
+                    max_tasks_spin.setValue(v.get('MaxTasks', 16))
+                    max_tasks_spin.setToolTip("Maximum number of concurrent tasks for this resource.")
+                    max_tasks_spin.setFixedWidth(160)
+                    resource_layout.addWidget(max_tasks_spin, resource_row_index, 1)
                     
-                    # Add the horizontal layout to the grid
-                    resource_layout.addLayout(resource_row, resource_row_index, 0)
-                else:
-                    resource_layout.addWidget(QLabel(f"{k}:", parent=self), resource_row_index, 0, 1, 1, Qt.AlignLeft)
-                
-                max_tasks_spin = QSpinBox()
-                max_tasks_spin.setMinimum(1)
-                max_tasks_spin.setMaximum(128)
-                max_tasks_spin.setValue(v.get('MaxTasks', 16))
-                max_tasks_spin.setToolTip("Maximum number of concurrent tasks for this resource.")
-                max_tasks_spin.setFixedWidth(160)
-                resource_layout.addWidget(max_tasks_spin, resource_row_index, 1)
-                
-                # Store the widgets (checkbox for File Extractor, None for others)
-                if k == "File Extractor":
-                    self.resource_edits[k] = (multithreading_checkbox, max_tasks_spin)
-                else:
-                    self.resource_edits[k] = (None, max_tasks_spin)
-            # Bandwidth limiter row
-            self.app_settings_path = os.path.expanduser("~/.config/jackify/app_settings.json")
-            self.app_settings = self._load_json(self.app_settings_path)
-            self.bandwidth_spin = QSpinBox()
-            self.bandwidth_spin.setMinimum(0)
-            self.bandwidth_spin.setMaximum(1000000)
-            self.bandwidth_spin.setValue(self.app_settings.get("MaxDownloadSpeedKBps", 0))
-            self.bandwidth_spin.setSuffix(" KB/s")
-            self.bandwidth_spin.setFixedWidth(160)
-            self.bandwidth_spin.setToolTip("Set the maximum download speed for modlist downloads. 0 = unlimited.")
-            bandwidth_note = QLabel("(0 = unlimited)")
-            bandwidth_note.setStyleSheet("color: #aaa; font-size: 10pt;")
-            # Create horizontal layout for bandwidth row
-            bandwidth_row = QHBoxLayout()
-            bandwidth_row.addWidget(self.bandwidth_spin)
-            bandwidth_row.addWidget(bandwidth_note)
-            bandwidth_row.addStretch()  # Push to the left
+                    # Store the widgets (checkbox for File Extractor, None for others)
+                    if k == "File Extractor":
+                        self.resource_edits[k] = (multithreading_checkbox, max_tasks_spin)
+                    else:
+                        self.resource_edits[k] = (None, max_tasks_spin)
+                except Exception as e:
+                    print(f"[ERROR] Failed to create widgets for resource '{k}': {e}")
+                    continue
             
-            resource_layout.addWidget(QLabel("Bandwidth Limit:", parent=self), resource_row_index+1, 0, 1, 1, Qt.AlignLeft)
-            resource_layout.addLayout(bandwidth_row, resource_row_index+1, 1)
+            # If no resources exist, show helpful message
+            if not self.resource_edits:
+                info_label = QLabel("Resource Limit settings will be generated once a modlist install action is performed")
+                info_label.setStyleSheet("color: #aaa; font-style: italic; padding: 20px; font-size: 11pt;")
+                info_label.setWordWrap(True)
+                info_label.setAlignment(Qt.AlignCenter)
+                info_label.setMinimumHeight(60)  # Ensure enough height to prevent cutoff
+                resource_layout.addWidget(info_label, 1, 0, 3, 2)  # Span more rows for better space
+            
+            # Bandwidth limiter row (only show if Downloads resource exists)
+            if "Downloads" in self.resource_settings:
+                downloads_throughput = self.resource_settings["Downloads"].get("MaxThroughput", 0)
+                
+                self.bandwidth_spin = QSpinBox()
+                self.bandwidth_spin.setMinimum(0)
+                self.bandwidth_spin.setMaximum(1000000)
+                self.bandwidth_spin.setValue(downloads_throughput)
+                self.bandwidth_spin.setSuffix(" KB/s")
+                self.bandwidth_spin.setFixedWidth(160)
+                self.bandwidth_spin.setToolTip("Set the maximum download speed for modlist downloads. 0 = unlimited.")
+                bandwidth_note = QLabel("(0 = unlimited)")
+                bandwidth_note.setStyleSheet("color: #aaa; font-size: 10pt;")
+                # Create horizontal layout for bandwidth row
+                bandwidth_row = QHBoxLayout()
+                bandwidth_row.addWidget(self.bandwidth_spin)
+                bandwidth_row.addWidget(bandwidth_note)
+                bandwidth_row.addStretch()  # Push to the left
+                
+                resource_layout.addWidget(QLabel("Bandwidth Limit:", parent=self), resource_row_index+1, 0, 1, 1, Qt.AlignLeft)
+                resource_layout.addLayout(bandwidth_row, resource_row_index+1, 1)
+            else:
+                self.bandwidth_spin = None  # No bandwidth UI if Downloads resource doesn't exist
             main_layout.addWidget(resource_group)
             main_layout.addSpacing(12)
 
@@ -328,12 +345,13 @@ class SettingsDialog(QDialog):
             main_layout.addLayout(btn_layout)
 
             # Set tab order for accessibility
-            # Get the first resource's widgets
-            first_resource_key = list(self.resource_edits.keys())[0]
-            first_multithreading, first_max_tasks = self.resource_edits[first_resource_key]
-            
-            # Set tab order starting with the first max tasks spinner
-            self.setTabOrder(first_max_tasks, self.bandwidth_spin)
+            # Get the first resource's widgets if any exist
+            if self.resource_edits:
+                first_resource_key = list(self.resource_edits.keys())[0]
+                first_multithreading, first_max_tasks = self.resource_edits[first_resource_key]
+                # Set tab order starting with the first max tasks spinner
+                self.setTabOrder(first_max_tasks, self.bandwidth_spin)
+            # Continue with bandwidth spinner regardless of resources
             self.setTabOrder(self.bandwidth_spin, self.debug_checkbox)
             self.setTabOrder(self.debug_checkbox, self.api_key_edit)
             self.setTabOrder(self.api_key_edit, self.api_show_btn)
@@ -412,7 +430,7 @@ class SettingsDialog(QDialog):
             if max_tasks_spin.value() > 128:
                 self.error_label.setText(f"Invalid value for {k}: Max Tasks must be <= 128.")
                 return
-        if self.bandwidth_spin.value() > 1000000:
+        if self.bandwidth_spin and self.bandwidth_spin.value() > 1000000:
             self.error_label.setText("Bandwidth limit must be <= 1,000,000 KB/s.")
             return
         self.error_label.setText("")
@@ -428,12 +446,18 @@ class SettingsDialog(QDialog):
                     # Remove the setting if unchecked (don't add 'off')
                     resource_data.pop('_7zzMultiThread', None)
             self.resource_settings[k] = resource_data
+        
+        # Save bandwidth limit to Downloads resource MaxThroughput (only if bandwidth UI exists)
+        if self.bandwidth_spin:
+            if "Downloads" not in self.resource_settings:
+                self.resource_settings["Downloads"] = {"MaxTasks": 16}  # Provide default MaxTasks
+            self.resource_settings["Downloads"]["MaxThroughput"] = self.bandwidth_spin.value()
+        
+        # Save all resource settings (including bandwidth) in one operation
         self._save_json(self.resource_settings_path, self.resource_settings)
+        
         # Save debug mode to config
         self.config_handler.set('debug_mode', self.debug_checkbox.isChecked())
-        # Save bandwidth limit
-        self.app_settings["MaxDownloadSpeedKBps"] = self.bandwidth_spin.value()
-        self._save_json(self.app_settings_path, self.app_settings)
         # Save API key
         api_key = self.api_key_edit.text().strip()
         self.config_handler.save_api_key(api_key)
