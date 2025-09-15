@@ -815,11 +815,12 @@ class PathHandler:
                     subpath = value_part[idx:].lstrip('/')
                     correct_steam_lib = None
                     for lib in steam_libraries:
-                        if (lib / subpath.split('/')[2]).exists():
-                            correct_steam_lib = lib.parent
+                        # Check if the actual game folder exists in this library
+                        if len(subpath.split('/')) > 3 and (lib / subpath.split('/')[2] / subpath.split('/')[3]).exists():
+                            correct_steam_lib = lib
                             break
                     if not correct_steam_lib and steam_libraries:
-                        correct_steam_lib = steam_libraries[0].parent
+                        correct_steam_lib = steam_libraries[0]
                     if correct_steam_lib:
                         new_binary_path = f"{drive_prefix}/{correct_steam_lib}/{subpath}".replace('\\', '/').replace('//', '/')
                     else:

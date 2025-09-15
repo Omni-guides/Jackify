@@ -723,13 +723,17 @@ class ModlistInstallCLI:
                         if chunk == b'\n':
                             # Complete line - decode and print
                             line = buffer.decode('utf-8', errors='replace')
-                            print(line, end='')
+                            # Enhance Nexus download errors with modlist context
+                            enhanced_line = self._enhance_nexus_error(line)
+                            print(enhanced_line, end='')
                             buffer = b''
                             last_progress_time = time.time()
                         elif chunk == b'\r':
                             # Carriage return - decode and print without newline
                             line = buffer.decode('utf-8', errors='replace')
-                            print(line, end='')
+                            # Enhance Nexus download errors with modlist context
+                            enhanced_line = self._enhance_nexus_error(line)
+                            print(enhanced_line, end='')
                             sys.stdout.flush()
                             buffer = b''
                             last_progress_time = time.time()
@@ -1098,4 +1102,36 @@ class ModlistInstallCLI:
             print(f"Nexus API Key: [SET]")
         else:
             print(f"Nexus API Key: [NOT SET - WILL LIKELY FAIL]")
-        print(f"{COLOR_INFO}----------------------------------------{COLOR_RESET}") 
+        print(f"{COLOR_INFO}----------------------------------------{COLOR_RESET}")
+
+    def _enhance_nexus_error(self, line: str) -> str:
+        """
+        Enhance Nexus download error messages by adding the mod URL for easier troubleshooting.
+        """
+        import re
+        
+        # Pattern to match Nexus download errors with ModID and FileID
+        nexus_error_pattern = r"Failed to download '[^']+' from Nexus \(Game: ([^,]+), ModID: (\d+), FileID: \d+\):"
+        
+        match = re.search(nexus_error_pattern, line)
+        if match:
+            game_name = match.group(1)
+            mod_id = match.group(2)
+            
+            # Map game names to Nexus URL segments
+            game_url_map = {
+                'SkyrimSpecialEdition': 'skyrimspecialedition',
+                'Skyrim': 'skyrim', 
+                'Fallout4': 'fallout4',
+                'FalloutNewVegas': 'newvegas',
+                'Oblivion': 'oblivion',
+                'Starfield': 'starfield'
+            }
+            
+            game_url = game_url_map.get(game_name, game_name.lower())
+            mod_url = f"https://www.nexusmods.com/{game_url}/mods/{mod_id}"
+            
+            # Add URL on next line for easier debugging
+            return f"{line}\n  Nexus URL: {mod_url}"
+        
+        return line

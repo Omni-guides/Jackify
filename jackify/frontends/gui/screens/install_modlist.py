@@ -1074,7 +1074,7 @@ class InstallModlistScreen(QWidget):
                         self.save_api_key_checkbox.setChecked(False)
                         debug_print("DEBUG: Failed to save API key immediately")
                 else:
-                    self._show_api_key_feedback("⚠ Enter an API key first", is_success=False)
+                    self._show_api_key_feedback("Enter an API key first", is_success=False)
                     # Uncheck the checkbox since no key to save
                     self.save_api_key_checkbox.setChecked(False)
             else:

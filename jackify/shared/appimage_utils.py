@@ -28,15 +28,25 @@ def get_appimage_path() -> Optional[Path]:
     This uses the APPIMAGE environment variable set by the AppImage runtime.
     This is the standard, reliable method for AppImage path detection.
     
+    For security, this validates that the AppImage is actually Jackify to prevent
+    accidentally updating other AppImages when running from development environments.
+    
     Returns:
-        Optional[Path]: Path to the AppImage file if running as AppImage, None otherwise
+        Optional[Path]: Path to the AppImage file if running as Jackify AppImage, None otherwise
     """
     if not is_appimage():
         return None
     
     appimage_path = os.environ.get('APPIMAGE')
     if appimage_path and os.path.exists(appimage_path):
-        return Path(appimage_path)
+        path = Path(appimage_path)
+        
+        # Validate this is actually a Jackify AppImage to prevent updating wrong apps
+        if 'jackify' in path.name.lower():
+            return path
+        else:
+            # Running from different AppImage (e.g., development in Cursor.AppImage)
+            return None
     
     return None
 

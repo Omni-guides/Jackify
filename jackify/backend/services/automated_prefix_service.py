@@ -101,7 +101,7 @@ class AutomatedPrefixService:
                 logger.info(f" Native Steam service created shortcut successfully with AppID: {app_id}")
                 return True, app_id
             else:
-                logger.error("❌ Native Steam service failed to create shortcut")
+                logger.error("Native Steam service failed to create shortcut")
                 return False, None
                 
         except Exception as e:
@@ -471,7 +471,7 @@ exit"""
                     logger.warning(f"Error running protontricks -l on attempt {i+1}: {e}")
                     time.sleep(1)
             
-            logger.error(f"❌ Shortcut '{shortcut_name}' not found in protontricks after 30 seconds")
+            logger.error(f"Shortcut '{shortcut_name}' not found in protontricks after 30 seconds")
             return None
             
         except Exception as e:
@@ -939,7 +939,7 @@ echo Prefix creation complete.
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
                     continue
             
-            logger.info("ℹ️ No more processes to kill")
+            logger.info("No more processes to kill")
             return True
             
         except Exception as e:
@@ -1296,7 +1296,7 @@ echo Prefix creation complete.
                 
                 time.sleep(1)
             
-            logger.warning(f"❌ Timeout waiting for prefix completion after {timeout} seconds")
+            logger.warning(f"Timeout waiting for prefix completion after {timeout} seconds")
             return False
             
         except Exception as e:
@@ -1356,7 +1356,7 @@ echo Prefix creation complete.
             if killed_count > 0:
                 logger.info(f" Killed {killed_count} ModOrganizer processes")
             else:
-                logger.warning("❌ No ModOrganizer processes found to kill")
+                logger.warning("No ModOrganizer processes found to kill")
                 
             return killed_count
             
@@ -1624,11 +1624,11 @@ echo Prefix creation complete.
                     
                     return True
             
-            logger.error(f"❌ Shortcut '{shortcut_name}' not found for CompatTool setting")
+            logger.error(f"Shortcut '{shortcut_name}' not found for CompatTool setting")
             return False
             
         except Exception as e:
-            logger.error(f"❌ Error setting CompatTool on shortcut: {e}")
+            logger.error(f"Error setting CompatTool on shortcut: {e}")
             return False
     
     def _set_proton_on_shortcut(self, shortcut_name: str) -> bool:
@@ -2633,7 +2633,7 @@ echo Prefix creation complete.
                 logger.info(f" Proton prefix created at: {pfx}")
                 return True
             else:
-                logger.warning(f"⚠️ Proton prefix not found at: {pfx}")
+                logger.warning(f"Proton prefix not found at: {pfx}")
                 return False
                 
         except subprocess.TimeoutExpired:
@@ -2735,7 +2735,7 @@ echo Prefix creation complete.
                 logger.info(" Compatibility tool persists")
                 return True
             else:
-                logger.warning("⚠️ Compatibility tool not found")
+                logger.warning("Compatibility tool not found")
                 return False
                 
         except Exception as e:

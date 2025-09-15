@@ -817,7 +817,7 @@ configuration_phase() {
         display "For example, if you wanted to install a modlist to /home/user/Games/Skyrim/Modlistname, you would need to run:" "$YELLOW"
         display "flatpak override --user com.valvesoftware.Steam --filesystem=\"/home/user/Games\"" "$YELLOW"
     fi
-    echo -e "\n${YELLOW}⚠️  IMPORTANT: For best compatibility, add the following line to the Launch Options of your Wabbajack Steam entry:${RESET}"
+    echo -e "\n${YELLOW}IMPORTANT: For best compatibility, add the following line to the Launch Options of your Wabbajack Steam entry:${RESET}"
     echo -e "\n${GREEN}PROTON_USE_WINED3D=1 %command%${RESET}\n"
     echo -e "This can help resolve certain graphics issues with Wabbajack running under Proton."
     exit 0

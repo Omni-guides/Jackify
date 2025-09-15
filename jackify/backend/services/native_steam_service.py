@@ -228,14 +228,14 @@ class NativeSteamService:
             
             # Write back to file
             if self.write_shortcuts_vdf(data):
-                logger.info(f"✅ Shortcut created successfully at index {next_index}")
+                logger.info(f"Shortcut created successfully at index {next_index}")
                 return True, unsigned_app_id
             else:
-                logger.error("❌ Failed to write shortcut to VDF")
+                logger.error("Failed to write shortcut to VDF")
                 return False, None
                 
         except Exception as e:
-            logger.error(f"❌ Error creating shortcut: {e}")
+            logger.error(f"Error creating shortcut: {e}")
             return False, None
     
     def set_proton_version(self, app_id: int, proton_version: str = "proton_experimental") -> bool:
@@ -320,11 +320,11 @@ class NativeSteamService:
             with open(config_path, 'w', encoding='utf-8') as f:
                 f.write(new_config_text)
             
-            logger.info(f"✅ Successfully set Proton version '{proton_version}' for AppID {app_id} using config.vdf only (steam-conductor method)")
+            logger.info(f"Successfully set Proton version '{proton_version}' for AppID {app_id} using config.vdf only (steam-conductor method)")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error setting Proton version: {e}")
+            logger.error(f"Error setting Proton version: {e}")
             return False
     
     def create_shortcut_with_proton(self, app_name: str, exe_path: str, start_dir: str = None, 
@@ -351,7 +351,7 @@ class NativeSteamService:
             logger.error("Failed to set Proton version (shortcut still created)")
             return False, app_id  # Shortcut exists but Proton setting failed
         
-        logger.info(f"✅ Complete workflow successful: '{app_name}' with '{proton_version}'")
+        logger.info(f"Complete workflow successful: '{app_name}' with '{proton_version}'")
         return True, app_id
     
     def list_shortcuts(self) -> Dict[str, str]:
@@ -388,12 +388,12 @@ class NativeSteamService:
             
             # Write back
             if self.write_shortcuts_vdf(data):
-                logger.info(f"✅ Removed shortcut '{app_name}'")
+                logger.info(f"Removed shortcut '{app_name}'")
                 return True
             else:
-                logger.error("❌ Failed to write updated shortcuts")
+                logger.error("Failed to write updated shortcuts")
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ Error removing shortcut: {e}")
+            logger.error(f"Error removing shortcut: {e}")
             return False

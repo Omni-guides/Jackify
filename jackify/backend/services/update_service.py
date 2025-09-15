@@ -33,6 +33,7 @@ class UpdateInfo:
     download_url: str
     file_size: Optional[int] = None
     is_critical: bool = False
+    is_delta_update: bool = False
 
 
 class UpdateService:
@@ -72,24 +73,44 @@ class UpdateService:
             latest_version = release_data['tag_name'].lstrip('v')
             
             if self._is_newer_version(latest_version):
-                # Find AppImage asset
+                # Check if this version was skipped
+                if self._is_version_skipped(latest_version):
+                    logger.debug(f"Version {latest_version} was skipped by user")
+                    return None
+                
+                # Find AppImage asset (prefer delta update if available)
                 download_url = None
                 file_size = None
                 
+                # Look for delta update first (smaller download)
                 for asset in release_data.get('assets', []):
-                    if asset['name'].endswith('.AppImage'):
+                    if asset['name'].endswith('.AppImage.delta') or 'delta' in asset['name'].lower():
                         download_url = asset['browser_download_url']
                         file_size = asset['size']
+                        logger.debug(f"Found delta update: {asset['name']} ({file_size} bytes)")
                         break
                 
+                # Fallback to full AppImage if no delta available
+                if not download_url:
+                    for asset in release_data.get('assets', []):
+                        if asset['name'].endswith('.AppImage'):
+                            download_url = asset['browser_download_url']
+                            file_size = asset['size']
+                            logger.debug(f"Found full AppImage: {asset['name']} ({file_size} bytes)")
+                            break
+                
                 if download_url:
+                    # Determine if this is a delta update
+                    is_delta = '.delta' in download_url or 'delta' in download_url.lower()
+                    
                     return UpdateInfo(
                         version=latest_version,
                         tag_name=release_data['tag_name'],
                         release_date=release_data['published_at'],
                         changelog=release_data.get('body', ''),
                         download_url=download_url,
-                        file_size=file_size
+                        file_size=file_size,
+                        is_delta_update=is_delta
                     )
                 else:
                     logger.warning(f"No AppImage found in release {latest_version}")
@@ -123,6 +144,25 @@ class UpdateService:
             logger.warning(f"Could not parse version: {version}")
             return False
     
+    def _is_version_skipped(self, version: str) -> bool:
+        """
+        Check if a version was skipped by the user.
+        
+        Args:
+            version: Version to check
+            
+        Returns:
+            bool: True if version was skipped, False otherwise
+        """
+        try:
+            from ...backend.handlers.config_handler import ConfigHandler
+            config_handler = ConfigHandler()
+            skipped_versions = config_handler.get('skipped_versions', [])
+            return version in skipped_versions
+        except Exception as e:
+            logger.warning(f"Error checking skipped versions: {e}")
+            return False
+    
     def check_for_updates_async(self, callback: Callable[[Optional[UpdateInfo]], None]) -> None:
         """
         Check for updates in background thread.
@@ -152,16 +192,25 @@ class UpdateService:
             logger.debug("Not running as AppImage - updates not supported")
             return False
         
+        appimage_path = get_appimage_path()
+        if not appimage_path:
+            logger.debug("AppImage path validation failed - updates not supported")
+            return False
+        
         if not can_self_update():
             logger.debug("Cannot write to AppImage - updates not possible")
             return False
         
+        logger.debug(f"Self-updating enabled for AppImage: {appimage_path}")
         return True
     
     def download_update(self, update_info: UpdateInfo, 
                        progress_callback: Optional[Callable[[int, int], None]] = None) -> Optional[Path]:
         """
-        Download update to temporary location.
+        Download update using full AppImage replacement.
+        
+        Since we can't rely on external tools being available, we use a reliable
+        full replacement approach that works on all systems without dependencies.
         
         Args:
             update_info: Information about the update to download
@@ -171,7 +220,27 @@ class UpdateService:
             Path to downloaded file, or None if download failed
         """
         try:
-            logger.info(f"Downloading update {update_info.version} from {update_info.download_url}")
+            logger.info(f"Downloading update {update_info.version} (full replacement)")
+            return self._download_update_manual(update_info, progress_callback)
+            
+        except Exception as e:
+            logger.error(f"Failed to download update: {e}")
+            return None
+    
+    def _download_update_manual(self, update_info: UpdateInfo, 
+                               progress_callback: Optional[Callable[[int, int], None]] = None) -> Optional[Path]:
+        """
+        Fallback manual download method.
+        
+        Args:
+            update_info: Information about the update to download
+            progress_callback: Optional callback for download progress
+            
+        Returns:
+            Path to downloaded file, or None if download failed
+        """
+        try:
+            logger.info(f"Manual download of update {update_info.version} from {update_info.download_url}")
             
             response = requests.get(update_info.download_url, stream=True)
             response.raise_for_status()
@@ -179,11 +248,12 @@ class UpdateService:
             total_size = int(response.headers.get('content-length', 0))
             downloaded_size = 0
             
-            # Create temporary file
-            temp_dir = Path(tempfile.gettempdir()) / "jackify_updates"
-            temp_dir.mkdir(exist_ok=True)
+            # Create update directory in user's home directory
+            home_dir = Path.home()
+            update_dir = home_dir / "Jackify" / "updates"
+            update_dir.mkdir(parents=True, exist_ok=True)
             
-            temp_file = temp_dir / f"Jackify-{update_info.version}.AppImage"
+            temp_file = update_dir / f"Jackify-{update_info.version}.AppImage"
             
             with open(temp_file, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -197,11 +267,11 @@ class UpdateService:
             # Make executable
             temp_file.chmod(0o755)
             
-            logger.info(f"Update downloaded successfully to {temp_file}")
+            logger.info(f"Manual update downloaded successfully to {temp_file}")
             return temp_file
             
         except Exception as e:
-            logger.error(f"Failed to download update: {e}")
+            logger.error(f"Failed to download update manually: {e}")
             return None
     
     def apply_update(self, new_appimage_path: Path) -> bool:
@@ -252,10 +322,12 @@ class UpdateService:
             Path to helper script, or None if creation failed
         """
         try:
-            temp_dir = Path(tempfile.gettempdir()) / "jackify_updates"
-            temp_dir.mkdir(exist_ok=True)
+            # Create update directory in user's home directory
+            home_dir = Path.home()
+            update_dir = home_dir / "Jackify" / "updates"
+            update_dir.mkdir(parents=True, exist_ok=True)
             
-            helper_script = temp_dir / "update_helper.sh"
+            helper_script = update_dir / "update_helper.sh"
             
             script_content = f'''#!/bin/bash
 # Jackify Update Helper Script

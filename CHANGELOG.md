@@ -1,5 +1,44 @@
 # Jackify Changelog
 
+## v0.1.1 - Self-Updater Implementation
+**Release Date:** September 17, 2025
+
+### New Features
+- **Self-Updater System**: Complete automatic update mechanism for Jackify AppImages
+  - **GitHub Integration**: Automatic detection of new releases from GitHub
+  - **GUI Update Dialog**: Professional update notification with Jackify theme styling
+  - **CLI Update Command**: `--update` flag for manual update checks and installation
+  - **Startup Checks**: Automatic update detection on application launch
+  - **User Control**: Skip version, remind later, and download & install options
+
+### Technical Implementation
+- **UpdateService**: Core service handling version detection, download, and installation
+- **Full AppImage Replacement**: Reliable update mechanism using helper scripts
+- **User-Writable Directories**: All update files stored in `~/Jackify/updates/` for consistency with existing directory structure
+- **Progress Indication**: Download progress bars for both GUI and CLI
+- **Error Handling**: Graceful fallbacks and comprehensive error messages
+
+### Security Enhancements
+- **AppImage Validation**: Prevents accidental updating of other AppImages when running from development environments
+- **Path Verification**: Validates target AppImage contains "jackify" in filename before applying updates
+
+### User Experience
+- **Seamless Updates**: Users receive notifications when updates are available
+- **Professional Interface**: Update dialog matches Jackify's visual theme
+- **Flexible Options**: Users can choose when and how to update
+- **No External Dependencies**: Works on all systems including SteamOS and immutable OSes
+
+### Bug Fixes
+- **Path Regression Fix**: Resolved regression where Configure New/Existing Modlist workflows were creating malformed paths
+  - Fixed duplicate steamapps/common path generation
+  - Corrected Steam library root path detection
+  - Removed broken duplicate PathHandler causing path duplication
+- **Enhanced Download Error Messages**: Added Nexus mod URLs to failed download errors for easier troubleshooting
+  - Automatically appends direct Nexus mod page links
+  - Supports all major games (Skyrim, Fallout 4, FNV, Oblivion, Starfield)
+
+---
+
 ## v0.1.0.1 - Engine Update and Stability Improvements
 **Release Date:** September 14, 2025
 

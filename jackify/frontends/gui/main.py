@@ -18,7 +18,7 @@ if '--env-diagnostic' in sys.argv:
     import json
     from datetime import datetime
     
-    print("🔍 PyInstaller Environment Diagnostic")
+    print("PyInstaller Environment Diagnostic")
     print("=" * 50)
     
     # Check if we're in PyInstaller
@@ -65,7 +65,7 @@ if '--env-diagnostic' in sys.argv:
     env_data['engine_paths_found'] = engine_paths
     
     # Output the results
-    print("\n📊 Environment Data:")
+    print("\nEnvironment Data:")
     print(json.dumps(env_data, indent=2))
     
     # Save to file
@@ -73,9 +73,9 @@ if '--env-diagnostic' in sys.argv:
         output_file = Path.cwd() / "pyinstaller_env_capture.json"
         with open(output_file, 'w') as f:
             json.dump(env_data, f, indent=2)
-        print(f"\n💾 Data saved to: {output_file}")
+        print(f"\nData saved to: {output_file}")
     except Exception as e:
-        print(f"\n❌ Could not save data: {e}")
+        print(f"\nCould not save data: {e}")
     
     sys.exit(0)
 

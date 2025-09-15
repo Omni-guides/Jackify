@@ -761,7 +761,14 @@ class ModlistHandler:
         # Conditionally update binary and working directory paths 
         # Skip for jackify-engine workflows since paths are already correct
         if not getattr(self, 'engine_installed', False):
-            steam_libraries = [self.steam_library] if self.steam_library else None
+            # Convert steamapps/common path to library root path
+            steam_libraries = None
+            if self.steam_library:
+                # self.steam_library is steamapps/common, need to go up 2 levels to get library root
+                steam_library_root = Path(self.steam_library).parent.parent
+                steam_libraries = [steam_library_root]
+                self.logger.debug(f"Using Steam library root: {steam_library_root}")
+            
             if not self.path_handler.edit_binary_working_paths(
                 modlist_ini_path=modlist_ini_path_obj,
                 modlist_dir_path=modlist_dir_path_obj,

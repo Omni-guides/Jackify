@@ -78,8 +78,8 @@ class UpdateDialog(QDialog):
         
         # Update icon (if available)
         icon_label = QLabel()
-        icon_label.setText("🔄")  # Simple emoji for now
-        icon_label.setStyleSheet("font-size: 32px;")
+        icon_label.setText("^")  # Update arrow symbol
+        icon_label.setStyleSheet("font-size: 24px; color: #3fd0ea; font-weight: bold;")
         header_layout.addWidget(icon_label)
         
         # Update title
@@ -89,6 +89,7 @@ class UpdateDialog(QDialog):
         title_font.setPointSize(14)
         title_font.setBold(True)
         title_label.setFont(title_font)
+        title_label.setStyleSheet("color: #3fd0ea;")
         title_layout.addWidget(title_label)
         
         subtitle_label = QLabel(f"Current version: v{self.update_service.current_version}")
@@ -103,7 +104,8 @@ class UpdateDialog(QDialog):
         # File size info
         if self.update_info.file_size:
             size_mb = self.update_info.file_size / (1024 * 1024)
-            size_label = QLabel(f"Download size: {size_mb:.1f} MB")
+            update_type = "Delta update" if self.update_info.is_delta_update else "Full update"
+            size_label = QLabel(f"{update_type} - Download size: {size_mb:.1f} MB")
             size_label.setStyleSheet("color: #666; margin-bottom: 10px;")
             layout.addWidget(size_label)
         
@@ -157,29 +159,53 @@ class UpdateDialog(QDialog):
         
         button_layout.addStretch()
         
-        self.download_button = QPushButton("Download & Install Update")
+        self.download_button = QPushButton("Download && Install Update")
         self.download_button.setDefault(True)
         self.download_button.clicked.connect(self.start_download)
         button_layout.addWidget(self.download_button)
         
-        self.install_button = QPushButton("Install & Restart")
+        self.install_button = QPushButton("Install && Restart")
         self.install_button.setVisible(False)
         self.install_button.clicked.connect(self.install_update)
+        self.install_button.setStyleSheet("""
+            QPushButton {
+                background-color: #23272e;
+                color: #3fd0ea;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 4px;
+                border: 2px solid #3fd0ea;
+            }
+            QPushButton:hover {
+                background-color: #3fd0ea;
+                color: #23272e;
+            }
+            QPushButton:pressed {
+                background-color: #2bb8d6;
+                color: #23272e;
+            }
+        """)
         button_layout.addWidget(self.install_button)
         
         layout.addLayout(button_layout)
         
-        # Style the download button
+        # Style the download button to match Jackify theme (dark with blue text)
         self.download_button.setStyleSheet("""
             QPushButton {
-                background-color: #0d7377;
-                color: white;
+                background-color: #23272e;
+                color: #3fd0ea;
                 font-weight: bold;
                 padding: 8px 16px;
                 border-radius: 4px;
+                border: 2px solid #3fd0ea;
             }
             QPushButton:hover {
-                background-color: #14a085;
+                background-color: #3fd0ea;
+                color: #23272e;
+            }
+            QPushButton:pressed {
+                background-color: #2bb8d6;
+                color: #23272e;
             }
         """)
     
@@ -274,8 +300,26 @@ class UpdateDialog(QDialog):
         self.reject()
     
     def skip_version(self):
-        """Skip this version (could save preference)."""
-        # TODO: Save preference to skip this version
+        """Skip this version and save preference."""
+        try:
+            # Save the skipped version to config
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            config_handler = ConfigHandler()
+            
+            # Get current skipped versions
+            skipped_versions = config_handler.get('skipped_versions', [])
+            
+            # Add this version to skipped list
+            if self.update_info.version not in skipped_versions:
+                skipped_versions.append(self.update_info.version)
+                config_handler.set('skipped_versions', skipped_versions)
+                config_handler.save()
+                
+            logger.info(f"Skipped version {self.update_info.version}")
+            
+        except Exception as e:
+            logger.error(f"Error saving skip preference: {e}")
+        
         self.reject()
     
     def show_error(self, title: str, message: str):

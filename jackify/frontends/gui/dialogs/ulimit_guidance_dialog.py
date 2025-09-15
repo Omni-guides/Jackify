@@ -100,7 +100,7 @@ class UlimitGuidanceDialog(QDialog):
             status_text = "✓ Optimal"
             status_color = "#4caf50"  # Green
         elif self.status['can_increase']:
-            status_text = "⚠ Can Improve"
+            status_text = "Can Improve"
             status_color = "#ff9800"  # Orange
         else:
             status_text = "✗ Needs Manual Fix"
@@ -222,7 +222,7 @@ class UlimitGuidanceDialog(QDialog):
         
         # Warning
         warning_label = QLabel(
-            "⚠️ WARNING: These commands require root/sudo privileges and modify system files. "
+            "WARNING: These commands require root/sudo privileges and modify system files. "
             "Make sure you understand what each command does before running it."
         )
         warning_label.setWordWrap(True)
@@ -478,7 +478,7 @@ class UlimitGuidanceDialog(QDialog):
                     status_text = "✓ Optimal"
                     status_color = "#4caf50"  # Green
                 elif self.status['can_increase']:
-                    status_text = "⚠ Can Improve"
+                    status_text = "Can Improve"
                     status_color = "#ff9800"  # Orange
                 else:
                     status_text = "✗ Needs Manual Fix"

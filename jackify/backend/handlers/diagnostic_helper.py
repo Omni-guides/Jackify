@@ -168,7 +168,7 @@ def main():
             print(f"Error: {diagnosis['error']}")
             return
         
-        print(f"\n📊 Diagnosis Results:")
+        print(f"\nDiagnosis Results:")
         print(f"  Average CPU: {diagnosis['avg_cpu']:.1f}% (Range: {diagnosis['min_cpu']:.1f}% - {diagnosis['max_cpu']:.1f}%)")
         print(f"  Memory usage: {diagnosis['avg_memory_mb']:.1f}MB (Peak: {diagnosis['max_memory_mb']:.1f}MB)")
         print(f"  Low CPU samples: {diagnosis['low_cpu_samples']}/{diagnosis['samples']} "
