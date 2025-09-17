@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Nexus](https://www.nexusmods.com/site/mods/1427) | [Download](https://www.nexusmods.com/Core/Libs/Common/Widgets/DownloadPopUp?id=5807&game_id=2295) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](https://github.com/Omni-guides/Jackify/tree/master/Legacy) | [Ko-fi](https://ko-fi.com/omni1)
+[Wiki](https://github.com/Omni-guides/Jackify/wiki) | [Nexus](https://www.nexusmods.com/site/mods/1427) | [Download](https://www.nexusmods.com/site/mods/1427?tab=files) | [Wabbajack Discord](https://discord.gg/wabbajack) | [Jackify Issues](https://github.com/Omni-guides/Jackify/issues) | [Legacy Guides](https://github.com/Omni-guides/Jackify/tree/master/Legacy) | [Ko-fi](https://ko-fi.com/omni1)
 
 </div>
   
