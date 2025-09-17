@@ -93,7 +93,7 @@ For a complete step-by-step guide with screenshots, see the [User Guide](https:/
 
 ### Quick Start
 
-1. **Download**: Get the latest release from [NexusMods](https://www.nexusmods.com/Core/Libs/Common/Widgets/DownloadPopUp?id=5807&game_id=2295)
+1. **Download**: Get the latest release from [NexusMods](https://www.nexusmods.com/site/mods/1427?tab=files)
 2. **Extract**: Unzip the .7z archive to get `Jackify.AppImage`
 3. **Run**: `chmod +x Jackify.AppImage && ./Jackify.AppImage`
 4. **Install**: Choose "Install a Modlist", select your game and modlist, configure directories and API key
