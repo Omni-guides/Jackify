@@ -103,15 +103,33 @@ class UpdateService:
                     # Determine if this is a delta update
                     is_delta = '.delta' in download_url or 'delta' in download_url.lower()
                     
-                    return UpdateInfo(
-                        version=latest_version,
-                        tag_name=release_data['tag_name'],
-                        release_date=release_data['published_at'],
-                        changelog=release_data.get('body', ''),
-                        download_url=download_url,
-                        file_size=file_size,
-                        is_delta_update=is_delta
-                    )
+                    # Safety checks to prevent segfault
+                    try:
+                        # Sanitize string fields
+                        safe_version = str(latest_version) if latest_version else ""
+                        safe_tag = str(release_data.get('tag_name', ''))
+                        safe_date = str(release_data.get('published_at', ''))
+                        safe_changelog = str(release_data.get('body', ''))[:1000]  # Limit size
+                        safe_url = str(download_url)
+                        
+                        logger.debug(f"Creating UpdateInfo for version {safe_version}")
+                        
+                        update_info = UpdateInfo(
+                            version=safe_version,
+                            tag_name=safe_tag,
+                            release_date=safe_date,
+                            changelog=safe_changelog,
+                            download_url=safe_url,
+                            file_size=file_size,
+                            is_delta_update=is_delta
+                        )
+                        
+                        logger.debug(f"UpdateInfo created successfully")
+                        return update_info
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to create UpdateInfo: {e}")
+                        return None
                 else:
                     logger.warning(f"No AppImage found in release {latest_version}")
             
@@ -173,9 +191,14 @@ class UpdateService:
         def check_worker():
             try:
                 update_info = self.check_for_updates()
+                logger.debug(f"check_worker: Received update_info: {update_info}")
+                logger.debug(f"check_worker: About to call callback...")
                 callback(update_info)
+                logger.debug(f"check_worker: Callback completed")
             except Exception as e:
                 logger.error(f"Error in background update check: {e}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 callback(None)
         
         thread = threading.Thread(target=check_worker, daemon=True)

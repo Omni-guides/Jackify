@@ -801,27 +801,56 @@ class JackifyMainWindow(QMainWindow):
             # Continue anyway - don't block startup on detection errors
     
     def _check_for_updates_on_startup(self):
-        """Check for updates on startup in background thread"""
+        """Check for updates on startup - SIMPLE VERSION"""
         try:
             debug_print("Checking for updates on startup...")
             
-            def update_check_callback(update_info):
-                """Handle update check results"""
-                try:
-                    if update_info:
-                        debug_print(f"Update available: v{update_info.version}")
-                        # Show update dialog
+            # Do it synchronously and simply
+            update_info = self.update_service.check_for_updates()
+            if update_info:
+                debug_print(f"Update available: v{update_info.version}")
+                
+                # Simple QMessageBox - no complex dialogs
+                from PySide6.QtWidgets import QMessageBox
+                from PySide6.QtCore import QTimer
+                
+                def show_update_dialog():
+                    try:
+                        debug_print("Creating UpdateDialog...")
                         from jackify.frontends.gui.dialogs.update_dialog import UpdateDialog
                         dialog = UpdateDialog(update_info, self.update_service, self)
+                        debug_print("UpdateDialog created, showing...")
                         dialog.show()  # Non-blocking
-                    else:
-                        debug_print("No updates available")
-                except Exception as e:
-                    debug_print(f"Error showing update dialog: {e}")
-            
-            # Check for updates in background
-            self.update_service.check_for_updates_async(update_check_callback)
-            
+                        debug_print("UpdateDialog shown successfully")
+                    except Exception as e:
+                        debug_print(f"UpdateDialog failed: {e}, falling back to simple dialog")
+                        # Fallback to simple dialog
+                        reply = QMessageBox.question(
+                            self, 
+                            "Update Available",
+                            f"Jackify v{update_info.version} is available.\n\nDownload and install now?",
+                            QMessageBox.Yes | QMessageBox.No,
+                            QMessageBox.Yes
+                        )
+                        if reply == QMessageBox.Yes:
+                            # Simple download and replace
+                            try:
+                                new_appimage = self.update_service.download_update(update_info)
+                                if new_appimage:
+                                    if self.update_service.apply_update(new_appimage):
+                                        debug_print("Update applied successfully")
+                                    else:
+                                        QMessageBox.warning(self, "Update Failed", "Failed to apply update.")
+                                else:
+                                    QMessageBox.warning(self, "Update Failed", "Failed to download update.")
+                            except Exception as e:
+                                QMessageBox.warning(self, "Update Failed", f"Update failed: {e}")
+                
+                # Use QTimer to show dialog after GUI is fully loaded
+                QTimer.singleShot(1000, show_update_dialog)
+            else:
+                debug_print("No updates available")
+                
         except Exception as e:
             debug_print(f"Error checking for updates on startup: {e}")
             # Continue anyway - don't block startup on update check errors
