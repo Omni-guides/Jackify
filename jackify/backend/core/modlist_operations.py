@@ -104,8 +104,8 @@ class ModlistInstallCLI:
         
         if isinstance(menu_handler_or_system_info, SystemInfo):
             # GUI frontend initialization pattern
-            system_info = menu_handler_or_system_info
-            self.steamdeck = system_info.is_steamdeck
+            self.system_info = menu_handler_or_system_info
+            self.steamdeck = self.system_info.is_steamdeck
             
             # Initialize menu_handler for GUI mode
             from ..handlers.menu_handler import MenuHandler
@@ -114,6 +114,9 @@ class ModlistInstallCLI:
             # CLI frontend initialization pattern
             self.menu_handler = menu_handler_or_system_info
             self.steamdeck = steamdeck
+            # Create system_info for CLI mode
+            from ..models.configuration import SystemInfo
+            self.system_info = SystemInfo(is_steamdeck=steamdeck)
         
         self.protontricks_handler = ProtontricksHandler(steamdeck=self.steamdeck)
         self.shortcut_handler = ShortcutHandler(steamdeck=self.steamdeck)
@@ -914,6 +917,20 @@ class ModlistInstallCLI:
             
             self.logger.debug("configuration_phase: Proceeding with Steam configuration...")
             
+            # Add resolution prompting for CLI mode (before Steam operations)
+            if not is_gui_mode:
+                from jackify.backend.handlers.resolution_handler import ResolutionHandler
+                resolution_handler = ResolutionHandler()
+                
+                # Check if Steam Deck
+                is_steamdeck = self.steamdeck if hasattr(self, 'steamdeck') else False
+                
+                # Prompt for resolution in CLI mode
+                selected_resolution = resolution_handler.select_resolution(steamdeck=is_steamdeck)
+                if selected_resolution:
+                    self.context['resolution'] = selected_resolution
+                    self.logger.info(f"Resolution set to: {selected_resolution}")
+            
             # Proceed with Steam configuration
             self.logger.info(f"Starting Steam configuration for '{shortcut_name}'")
             
@@ -957,8 +974,8 @@ class ModlistInstallCLI:
                     shortcut_name, install_dir_str, mo2_exe_path, progress_callback, steamdeck=_is_steamdeck
                 )
                 
-                # Handle the result
-                if isinstance(result, tuple) and len(result) == 3:
+                # Handle the result (same logic as GUI)
+                if isinstance(result, tuple) and len(result) == 4:
                     if result[0] == "CONFLICT":
                         # Handle conflict
                         conflicts = result[1]
@@ -984,8 +1001,8 @@ class ModlistInstallCLI:
                                 result = prefix_service.continue_workflow_after_conflict_resolution(
                                     shortcut_name, install_dir_str, mo2_exe_path, app_id, progress_callback
                                 )
-                                if isinstance(result, tuple) and len(result) == 3:
-                                    success, prefix_path, app_id = result
+                                if isinstance(result, tuple) and len(result) >= 3:
+                                    success, prefix_path, app_id = result[0], result[1], result[2]
                                 else:
                                     success, prefix_path, app_id = False, None, None
                             else:
@@ -1000,10 +1017,58 @@ class ModlistInstallCLI:
                             print(f"{COLOR_ERROR}Invalid choice. Cancelling.{COLOR_RESET}")
                             return
                     else:
-                        # Normal result
+                        # Normal result with timestamp (4-tuple)
+                        success, prefix_path, app_id, last_timestamp = result
+                elif isinstance(result, tuple) and len(result) == 3:
+                    if result[0] == "CONFLICT":
+                        # Handle conflict (3-tuple format)
+                        conflicts = result[1]
+                        print(f"\n{COLOR_WARNING}Found existing Steam shortcut(s) with the same name and path:{COLOR_RESET}")
+                        
+                        for i, conflict in enumerate(conflicts, 1):
+                            print(f"  {i}. Name: {conflict['name']}")
+                            print(f"     Executable: {conflict['exe']}")
+                            print(f"     Start Directory: {conflict['startdir']}")
+                        
+                        print(f"\n{COLOR_PROMPT}Options:{COLOR_RESET}")
+                        print("  • Replace - Remove the existing shortcut and create a new one")
+                        print("  • Cancel - Keep the existing shortcut and stop the installation")
+                        print("  • Skip - Continue without creating a Steam shortcut")
+                        
+                        choice = input(f"\n{COLOR_PROMPT}Choose an option (replace/cancel/skip): {COLOR_RESET}").strip().lower()
+                        
+                        if choice == 'replace':
+                            print(f"{COLOR_INFO}Replacing existing shortcut...{COLOR_RESET}")
+                            success, app_id = prefix_service.replace_existing_shortcut(shortcut_name, mo2_exe_path, install_dir_str)
+                            if success and app_id:
+                                # Continue the workflow after replacement
+                                result = prefix_service.continue_workflow_after_conflict_resolution(
+                                    shortcut_name, install_dir_str, mo2_exe_path, app_id, progress_callback
+                                )
+                                if isinstance(result, tuple) and len(result) >= 3:
+                                    success, prefix_path, app_id = result[0], result[1], result[2]
+                                else:
+                                    success, prefix_path, app_id = False, None, None
+                            else:
+                                success, prefix_path, app_id = False, None, None
+                        elif choice == 'cancel':
+                            print(f"{COLOR_INFO}Cancelling installation.{COLOR_RESET}")
+                            return
+                        elif choice == 'skip':
+                            print(f"{COLOR_INFO}Skipping Steam shortcut creation.{COLOR_RESET}")
+                            success, prefix_path, app_id = True, None, None
+                        else:
+                            print(f"{COLOR_ERROR}Invalid choice. Cancelling.{COLOR_RESET}")
+                            return
+                    else:
+                        # Normal result (3-tuple format)
                         success, prefix_path, app_id = result
                 else:
-                    success, prefix_path, app_id = False, None, None
+                    # Result is not a tuple, check if it's just a boolean success
+                    if result is True:
+                        success, prefix_path, app_id = True, None, None
+                    else:
+                        success, prefix_path, app_id = False, None, None
                 
                 if success:
                     print(f"{COLOR_SUCCESS}Automated Steam setup completed successfully!{COLOR_RESET}")
@@ -1011,128 +1076,54 @@ class ModlistInstallCLI:
                         print(f"{COLOR_INFO}Proton prefix created at: {prefix_path}{COLOR_RESET}")
                     if app_id:
                         print(f"{COLOR_INFO}Steam AppID: {app_id}{COLOR_RESET}")
-                    return
+                    # Continue to configuration phase
                 else:
-                    print(f"{COLOR_WARNING}Automated Steam setup failed. Falling back to manual setup...{COLOR_RESET}")
+                    print(f"{COLOR_ERROR}Automated Steam setup failed. Result: {result}{COLOR_RESET}")
+                    print(f"{COLOR_ERROR}Steam integration was not completed. Please check the logs for details.{COLOR_RESET}")
+                    return
             
-            # Fallback to manual shortcut creation process
-            print(f"\n{COLOR_INFO}Using manual Steam setup workflow...{COLOR_RESET}")
+            # Step 3: Use SAME backend service as GUI
+            from jackify.backend.services.modlist_service import ModlistService
+            from jackify.backend.models.modlist import ModlistContext
+            from pathlib import Path
             
-            # Use the working shortcut creation process from legacy code
-            from ..handlers.shortcut_handler import ShortcutHandler
-            shortcut_handler = ShortcutHandler(steamdeck=self.steamdeck, verbose=False)
-            
-            # Create nxmhandler.ini to suppress NXM popup
-            shortcut_handler.write_nxmhandler_ini(install_dir_str, mo2_exe_path)
-            
-            # Create shortcut with working NativeSteamService
-            from ..services.native_steam_service import NativeSteamService
-            steam_service = NativeSteamService()
-            
-            success, app_id = steam_service.create_shortcut_with_proton(
-                app_name=shortcut_name,
-                exe_path=mo2_exe_path,
-                start_dir=os.path.dirname(mo2_exe_path),
-                launch_options="%command%",
-                tags=["Jackify"],
-                proton_version="proton_experimental"
+            # Create ModlistContext with engine_installed=True (same as GUI)
+            modlist_context = ModlistContext(
+                name=shortcut_name,
+                install_dir=Path(install_dir_str),
+                download_dir=Path(install_dir_str) / "downloads",  # Standard location
+                game_type=self.context.get('detected_game', 'Unknown'),
+                nexus_api_key='',  # Not needed for configuration
+                modlist_value=self.context.get('modlist_value', ''),
+                modlist_source=self.context.get('modlist_source', 'identifier'),
+                resolution=self.context.get('resolution'),
+                mo2_exe_path=Path(mo2_exe_path),
+                skip_confirmation=True,  # Always skip confirmation in CLI
+                engine_installed=True  # Skip path manipulation for engine workflows
             )
             
-            if not success or not app_id:
-                self.logger.error("Failed to create Steam shortcut")
-                print(f"{COLOR_ERROR}Failed to create Steam shortcut. Check logs for details.{COLOR_RESET}")
-                return
+            # Add app_id to context
+            modlist_context.app_id = app_id
             
-            # Step 2: Handle Steam restart and manual steps (if not in GUI mode)
-            if not is_gui_mode:
-                print(f"\n{COLOR_INFO}Steam shortcut created successfully!{COLOR_RESET}")
-                print("Steam needs to restart to detect the new shortcut. WARNING: This will close all running Steam instances, and games.")
-                
-                restart_choice = input("\nRestart Steam automatically now? (Y/n): ").strip().lower()
-                if restart_choice == 'n':
-                    print("\nPlease restart Steam manually and complete the Proton setup steps.")
-                    print("You can configure this modlist later using 'Configure Existing Modlist'.")
-                    return
-                
-                # Restart Steam
-                print("\nRestarting Steam...")
-                if shortcut_handler.secure_steam_restart():
-                    print(f"{COLOR_INFO}Steam restarted successfully.{COLOR_RESET}")
-                    
-                    # Display manual Proton steps
-                    from ..handlers.menu_handler import ModlistMenuHandler
-                    from ..handlers.config_handler import ConfigHandler
-                    config_handler = ConfigHandler()
-                    menu_handler = ModlistMenuHandler(config_handler)
-                    menu_handler._display_manual_proton_steps(shortcut_name)
-                    
-                    retry_count = 0
-                    max_retries = 3
-                    while retry_count < max_retries:
-                        input(f"\n{COLOR_PROMPT}Once you have completed ALL the steps above, press Enter to continue...{COLOR_RESET}")
-                        print(f"\n{COLOR_INFO}Verifying manual steps...{COLOR_RESET}")
-                        new_app_id = shortcut_handler.get_appid_for_shortcut(shortcut_name, mo2_exe_path)
-                        if new_app_id and new_app_id.isdigit() and int(new_app_id) > 0:
-                            app_id = new_app_id
-                            from ..handlers.modlist_handler import ModlistHandler
-                            modlist_handler = ModlistHandler({}, steamdeck=self.steamdeck)
-                            verified, status_code = modlist_handler.verify_proton_setup(app_id)
-                            if verified:
-                                print(f"{COLOR_SUCCESS}Manual steps verification successful!{COLOR_RESET}")
-                                break
-                            else:
-                                retry_count += 1
-                                if retry_count < max_retries:
-                                    print(f"\n{COLOR_ERROR}Verification failed: {status_code}{COLOR_RESET}")
-                                    print(f"{COLOR_WARNING}Please ensure you have completed all manual steps correctly.{COLOR_RESET}")
-                                    menu_handler._display_manual_proton_steps(shortcut_name)
-                                else:
-                                    print(f"\n{COLOR_ERROR}Manual steps verification failed after {max_retries} attempts.{COLOR_RESET}")
-                                    print(f"{COLOR_WARNING}Configuration may not work properly.{COLOR_RESET}")
-                                    return
-                        else:
-                            retry_count += 1
-                            if retry_count < max_retries:
-                                print(f"\n{COLOR_ERROR}Could not find valid AppID after launch.{COLOR_RESET}")
-                                print(f"{COLOR_WARNING}Please ensure you have launched the shortcut from Steam.{COLOR_RESET}")
-                                menu_handler._display_manual_proton_steps(shortcut_name)
-                            else:
-                                print(f"\n{COLOR_ERROR}Could not find valid AppID after {max_retries} attempts.{COLOR_RESET}")
-                                print(f"{COLOR_WARNING}Configuration may not work properly.{COLOR_RESET}")
-                                return
-                else:
-                    print(f"{COLOR_ERROR}Steam restart failed. Please restart manually and configure later.{COLOR_RESET}")
-                    return
-            
-            # Step 3: Build configuration context with the AppID
-            config_context = {
-                'name': shortcut_name,
-                'appid': app_id,
-                'path': install_dir_str,
-                'mo2_exe_path': mo2_exe_path,
-                'resolution': self.context.get('resolution'),
-                'skip_confirmation': is_gui_mode,
-                'manual_steps_completed': not is_gui_mode  # True if we did manual steps above
-            }
-            
-            # Step 4: Use ModlistMenuHandler to run the complete configuration
-            from ..handlers.menu_handler import ModlistMenuHandler
-            from ..handlers.config_handler import ConfigHandler
-            
-            config_handler = ConfigHandler()
-            modlist_menu = ModlistMenuHandler(config_handler)
+            # Step 4: Configure modlist using SAME service as GUI
+            modlist_service = ModlistService(self.system_info)
             
             # Add section header for configuration phase if progress callback is available
             if 'progress_callback' in locals() and progress_callback:
                 progress_callback("")  # Blank line for spacing
-                progress_callback("=== Configuring Modlist ===")
+                progress_callback("=== Configuration Phase ===")
             
-            self.logger.info("Running post-installation configuration phase")
-            configuration_success = modlist_menu.run_modlist_configuration_phase(config_context)
+            print(f"\n{COLOR_INFO}=== Configuration Phase ==={COLOR_RESET}")
+            self.logger.info("Running post-installation configuration phase using ModlistService")
+            
+            # Configure modlist using SAME method as GUI
+            configuration_success = modlist_service.configure_modlist_post_steam(modlist_context)
             
             if configuration_success:
+                print(f"{COLOR_SUCCESS}Configuration completed successfully!{COLOR_RESET}")
                 self.logger.info("Post-installation configuration completed successfully")
             else:
+                print(f"{COLOR_WARNING}Configuration had some issues but completed.{COLOR_RESET}")
                 self.logger.warning("Post-installation configuration had issues")
         else:
             # Game not supported for automated configuration
@@ -1162,10 +1153,9 @@ class ModlistInstallCLI:
         # Section header now provided by GUI layer to avoid duplication
         
         try:
-            # Set GUI mode for backend operations
+            # CLI Install: keep original GUI mode (don't force GUI mode)
             import os
             original_gui_mode = os.environ.get('JACKIFY_GUI_MODE')
-            os.environ['JACKIFY_GUI_MODE'] = '1'
             
             try:
                 # Build context for configuration
@@ -1176,7 +1166,7 @@ class ModlistInstallCLI:
                     'modlist_value': context.get('modlist_value'),
                     'modlist_source': context.get('modlist_source'),
                     'resolution': context.get('resolution'),
-                    'skip_confirmation': True,  # GUI mode is non-interactive
+                    'skip_confirmation': True,  # CLI Install is non-interactive
                     'manual_steps_completed': False
                 }
                 

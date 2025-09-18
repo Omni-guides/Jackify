@@ -1,7 +1,7 @@
 """
 ConfigureNewModlistScreen for Jackify GUI
 """
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QTabWidget, QDialog, QListWidget, QListWidgetItem, QMessageBox, QProgressDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QTabWidget, QDialog, QListWidget, QListWidgetItem, QMessageBox, QProgressDialog, QCheckBox
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer, QProcess, QMetaObject
 from PySide6.QtGui import QPixmap, QTextCursor
 from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
@@ -106,8 +106,7 @@ class ConfigureNewModlistScreen(QWidget):
         self.protontricks_service = ProtontricksDetectionService()
 
         # Path for workflow log
-        self.modlist_log_path = os.path.expanduser('~/Jackify/logs/Configure_New_Modlist_workflow.log')
-        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
+        self.refresh_paths()
 
         # Scroll tracking for professional auto-scroll behavior
         self._user_manually_scrolled = False
@@ -211,7 +210,6 @@ class ConfigureNewModlistScreen(QWidget):
             "7680x4320"
         ])
         form_grid.addWidget(resolution_label, 2, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
-        form_grid.addWidget(self.resolution_combo, 2, 1)
         
         # Load saved resolution if available
         saved_resolution = self.resolution_service.get_saved_resolution()
@@ -236,6 +234,27 @@ class ConfigureNewModlistScreen(QWidget):
             else:
                 self.resolution_combo.setCurrentIndex(0)
         # Otherwise, default is 'Leave unchanged' (index 0)
+        
+        # Horizontal layout for resolution dropdown and auto-restart checkbox
+        resolution_and_restart_layout = QHBoxLayout()
+        resolution_and_restart_layout.setSpacing(12)
+        
+        # Resolution dropdown (made smaller)
+        self.resolution_combo.setMaximumWidth(280)  # Constrain width but keep aesthetically pleasing
+        resolution_and_restart_layout.addWidget(self.resolution_combo)
+        
+        # Add stretch to push checkbox to the right
+        resolution_and_restart_layout.addStretch()
+        
+        # Auto-accept Steam restart checkbox (right-aligned)
+        self.auto_restart_checkbox = QCheckBox("Auto-accept Steam restart")
+        self.auto_restart_checkbox.setChecked(False)  # Always default to unchecked per session
+        self.auto_restart_checkbox.setToolTip("When checked, Steam restart dialog will be automatically accepted, allowing unattended configuration")
+        resolution_and_restart_layout.addWidget(self.auto_restart_checkbox)
+        
+        # Update the form grid to use the combined layout
+        form_grid.addLayout(resolution_and_restart_layout, 2, 1)
+        
         form_section_widget = QWidget()
         form_section_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         form_section_widget.setLayout(form_grid)
@@ -338,6 +357,44 @@ class ConfigureNewModlistScreen(QWidget):
         self.start_btn.clicked.connect(self.validate_and_start_configure)
         # --- Connect steam_restart_finished signal ---
         self.steam_restart_finished.connect(self._on_steam_restart_finished)
+        
+        # Initialize empty controls list - will be populated after UI is built
+        self._actionable_controls = []
+        
+        # Now collect all actionable controls after UI is fully built
+        self._collect_actionable_controls()
+
+    def _collect_actionable_controls(self):
+        """Collect all actionable controls that should be disabled during operations (except Cancel)"""
+        self._actionable_controls = [
+            # Main action button
+            self.start_btn,
+            # Form fields
+            self.modlist_name_edit,
+            self.install_dir_edit,
+            # Resolution controls
+            self.resolution_combo,
+            # Checkboxes  
+            self.auto_restart_checkbox,
+        ]
+
+    def _disable_controls_during_operation(self):
+        """Disable all actionable controls during configure operations (except Cancel)"""
+        for control in self._actionable_controls:
+            if control:
+                control.setEnabled(False)
+
+    def _enable_controls_after_operation(self):
+        """Re-enable all actionable controls after configure operations complete"""
+        for control in self._actionable_controls:
+            if control:
+                control.setEnabled(True)
+
+    def refresh_paths(self):
+        """Refresh cached paths when config changes."""
+        from jackify.shared.paths import get_jackify_logs_dir
+        self.modlist_log_path = get_jackify_logs_dir() / 'Configure_New_Modlist_workflow.log'
+        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
 
     def resizeEvent(self, event):
         """Handle window resize to prioritize form over console"""
@@ -522,23 +579,38 @@ class ConfigureNewModlistScreen(QWidget):
         # Start time tracking
         self._workflow_start_time = time.time()
         
+        # Disable controls during configuration (after validation passes)
+        self._disable_controls_during_operation()
+        
         # Validate modlist name
         modlist_name = self.modlist_name_edit.text().strip()
         if not modlist_name:
             MessageService.warning(self, "Missing Name", "Please specify a name for your modlist", safety_level="low")
+            self._enable_controls_after_operation()
             return
         # --- Shortcut creation will be handled by automated workflow ---
         from jackify.backend.handlers.shortcut_handler import ShortcutHandler
         steamdeck = os.path.exists('/etc/os-release') and 'steamdeck' in open('/etc/os-release').read().lower()
         shortcut_handler = ShortcutHandler(steamdeck=steamdeck)  # Still needed for Steam restart
-        # --- User confirmation before restarting Steam ---
-        reply = MessageService.question(
-            self, "Ready to Configure Modlist",
-            "Would you like to restart Steam and begin post-install configuration now? Restarting Steam could close any games you have open!",
-            safety_level="medium"
-        )
-        print(f"DEBUG: Steam restart dialog returned: {reply!r}")
+        
+        # Check if auto-restart is enabled
+        auto_restart_enabled = hasattr(self, 'auto_restart_checkbox') and self.auto_restart_checkbox.isChecked()
+        
+        if auto_restart_enabled:
+            # Auto-accept Steam restart - proceed without dialog
+            self._safe_append_text("Auto-accepting Steam restart (unattended mode enabled)")
+            reply = QMessageBox.Yes  # Simulate user clicking Yes
+        else:
+            # --- User confirmation before restarting Steam ---
+            reply = MessageService.question(
+                self, "Ready to Configure Modlist",
+                "Would you like to restart Steam and begin post-install configuration now? Restarting Steam could close any games you have open!",
+                safety_level="medium"
+            )
+        
+        debug_print(f"DEBUG: Steam restart dialog returned: {reply!r}")
         if reply not in (QMessageBox.Yes, QMessageBox.Ok, QMessageBox.AcceptRole):
+            self._enable_controls_after_operation()
             if self.stacked_widget:
                 self.stacked_widget.setCurrentIndex(0)
             return
@@ -562,7 +634,6 @@ class ConfigureNewModlistScreen(QWidget):
         progress.setMinimumDuration(0)
         progress.setValue(0)
         progress.show()
-        self.setEnabled(False)
         def do_restart():
             try:
                 ok = shortcut_handler.secure_steam_restart()
@@ -579,7 +650,7 @@ class ConfigureNewModlistScreen(QWidget):
         if hasattr(self, '_steam_restart_progress'):
             self._steam_restart_progress.close()
             del self._steam_restart_progress
-        self.setEnabled(True)
+        self._enable_controls_after_operation()
         if success:
             self._safe_append_text("Steam restarted successfully.")
             
@@ -722,7 +793,7 @@ class ConfigureNewModlistScreen(QWidget):
         """Handle error from the automated prefix workflow"""
         self._safe_append_text(f"Error during automated Steam setup: {error_message}")
         self._safe_append_text("Please check the logs for details.")
-        self.start_btn.setEnabled(True)
+        self._enable_controls_after_operation()
 
     def show_shortcut_conflict_dialog(self, conflicts):
         """Show dialog to resolve shortcut name conflicts"""
@@ -1162,8 +1233,8 @@ class ConfigureNewModlistScreen(QWidget):
 
     def on_configuration_complete(self, success, message, modlist_name):
         """Handle configuration completion (same as Tuxborn)"""
-        # Always re-enable the start button when workflow completes
-        self.start_btn.setEnabled(True)
+        # Re-enable all controls when workflow completes
+        self._enable_controls_after_operation()
         
         if success:
             # Calculate time taken
@@ -1185,8 +1256,8 @@ class ConfigureNewModlistScreen(QWidget):
     
     def on_configuration_error(self, error_message):
         """Handle configuration error"""
-        # Re-enable the start button on error
-        self.start_btn.setEnabled(True)
+        # Re-enable all controls on error
+        self._enable_controls_after_operation()
         
         self._safe_append_text(f"Configuration error: {error_message}")
         MessageService.critical(self, "Configuration Error", f"Configuration failed: {error_message}", safety_level="medium")

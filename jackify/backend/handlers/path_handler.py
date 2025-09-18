@@ -251,7 +251,7 @@ class PathHandler:
             return False
     
     @staticmethod
-    def create_dxvk_conf(modlist_dir, modlist_sdcard, steam_library, basegame_sdcard, game_var_full):
+    def create_dxvk_conf(modlist_dir, modlist_sdcard, steam_library, basegame_sdcard, game_var_full, vanilla_game_dir=None):
         """
         Create dxvk.conf file in the appropriate location
         
@@ -261,6 +261,7 @@ class PathHandler:
             steam_library (str): Path to the Steam library
             basegame_sdcard (bool): Whether the base game is on an SD card
             game_var_full (str): Full name of the game (e.g., "Skyrim Special Edition")
+            vanilla_game_dir (str): Optional path to vanilla game directory for fallback
             
         Returns:
             bool: True on success, False on failure
@@ -271,16 +272,20 @@ class PathHandler:
             # Determine the location for dxvk.conf
             dxvk_conf_path = None
             
-            # Check for common stock game directories
+            # Check for common stock game directories first, then vanilla as fallback
             stock_game_paths = [
                 os.path.join(modlist_dir, "Stock Game"),
-                os.path.join(modlist_dir, "STOCK GAME"),
                 os.path.join(modlist_dir, "Game Root"),
+                os.path.join(modlist_dir, "STOCK GAME"),
+                os.path.join(modlist_dir, "Stock Game Folder"),
                 os.path.join(modlist_dir, "Stock Folder"),
                 os.path.join(modlist_dir, "Skyrim Stock"),
-                os.path.join(modlist_dir, "root", "Skyrim Special Edition"),
-                os.path.join(steam_library, game_var_full)
+                os.path.join(modlist_dir, "root", "Skyrim Special Edition")
             ]
+            
+            # Add vanilla game directory as fallback if steam_library and game_var_full are provided
+            if steam_library and game_var_full:
+                stock_game_paths.append(os.path.join(steam_library, "steamapps", "common", game_var_full))
             
             for path in stock_game_paths:
                 if os.path.exists(path):
@@ -288,8 +293,14 @@ class PathHandler:
                     break
             
             if not dxvk_conf_path:
-                logger.error("Could not determine location for dxvk.conf")
-                return False
+                # Fallback: Try vanilla game directory if provided
+                if vanilla_game_dir and os.path.exists(vanilla_game_dir):
+                    logger.info(f"Attempting fallback to vanilla game directory: {vanilla_game_dir}")
+                    dxvk_conf_path = os.path.join(vanilla_game_dir, "dxvk.conf")
+                    logger.info(f"Using vanilla game directory for dxvk.conf: {dxvk_conf_path}")
+                else:
+                    logger.error("Could not determine location for dxvk.conf")
+                    return False
             
             # The required line that Jackify needs
             required_line = "dxvk.enableGraphicsPipelineLibrary = False"
@@ -773,6 +784,21 @@ class PathHandler:
                 return False
             with open(modlist_ini_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
+            
+            # Extract existing gamePath to use as source of truth for vanilla game location
+            existing_game_path = None
+            for line in lines:
+                if re.match(r'^\s*gamepath\s*=.*@ByteArray\(([^)]+)\)', line, re.IGNORECASE):
+                    match = re.search(r'@ByteArray\(([^)]+)\)', line)
+                    if match:
+                        raw_path = match.group(1)
+                        # Convert Windows path back to Linux path
+                        if raw_path.startswith(('Z:', 'D:')):
+                            linux_path = raw_path[2:].replace('\\\\', '/').replace('\\', '/')
+                            existing_game_path = linux_path
+                            logger.debug(f"Extracted existing gamePath: {existing_game_path}")
+                            break
+            
             game_path_updated = False
             binary_paths_updated = 0
             working_dirs_updated = 0
@@ -791,9 +817,16 @@ class PathHandler:
                     backslash_style = wd_match.group(2)
                     working_dir_lines.append((i, stripped, index, backslash_style))
             binary_paths_by_index = {}
-            # Use provided steam_libraries if available, else detect
-            if steam_libraries is None or not steam_libraries:
+            # Use existing gamePath to determine correct Steam library, fallback to detection
+            if existing_game_path and '/steamapps/common/' in existing_game_path:
+                # Extract the Steam library root from the existing gamePath
+                steamapps_index = existing_game_path.find('/steamapps/common/')
+                steam_lib_root = existing_game_path[:steamapps_index]
+                steam_libraries = [Path(steam_lib_root)]
+                logger.info(f"Using Steam library from existing gamePath: {steam_lib_root}")
+            elif steam_libraries is None or not steam_libraries:
                 steam_libraries = PathHandler.get_all_steam_library_paths()
+                logger.debug(f"Fallback to detected Steam libraries: {steam_libraries}")
             for i, line, index, backslash_style in binary_lines:
                 parts = line.split('=', 1)
                 if len(parts) != 2:

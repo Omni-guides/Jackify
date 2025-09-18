@@ -32,9 +32,9 @@ class WabbajackMenuHandler:
             print_section_header("Modlist and Wabbajack Tasks")
 
             print(f"{COLOR_SELECTION}1.{COLOR_RESET} Install a Modlist (Automated)")
-            print(f"   {COLOR_ACTION}→ Uses jackify-engine for a full install flow{COLOR_RESET}")
+            print(f"   {COLOR_ACTION}→ Install a modlist in full: Select from a list or provide a .wabbajack file{COLOR_RESET}")
             print(f"{COLOR_SELECTION}2.{COLOR_RESET} Configure New Modlist (Post-Download)")
-            print(f"   {COLOR_ACTION}→ Modlist .wabbajack file downloaded? Configure it for Steam{COLOR_RESET}")
+            print(f"   {COLOR_ACTION}→ Modlist already downloaded? Configure and add to Steam{COLOR_RESET}")
             print(f"{COLOR_SELECTION}3.{COLOR_RESET} Configure Existing Modlist (In Steam)")
             print(f"   {COLOR_ACTION}→ Modlist already in Steam? Re-configure it here{COLOR_RESET}")
             # HIDDEN FOR FIRST RELEASE - UNCOMMENT WHEN READY

@@ -34,8 +34,7 @@ class ConfigureExistingModlistScreen(QWidget):
         self.stacked_widget = stacked_widget
         self.main_menu_index = main_menu_index
         self.debug = DEBUG_BORDERS
-        self.modlist_log_path = os.path.expanduser('~/Jackify/logs/Configure_Existing_Modlist_workflow.log')
-        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
+        self.refresh_paths()
         
         # --- Detect Steam Deck ---
         steamdeck = os.path.exists('/etc/os-release') and 'steamdeck' in open('/etc/os-release').read().lower()
@@ -297,6 +296,41 @@ class ConfigureExistingModlistScreen(QWidget):
         
         # Time tracking for workflow completion
         self._workflow_start_time = None
+        
+        # Initialize empty controls list - will be populated after UI is built
+        self._actionable_controls = []
+        
+        # Now collect all actionable controls after UI is fully built
+        self._collect_actionable_controls()
+
+    def _collect_actionable_controls(self):
+        """Collect all actionable controls that should be disabled during operations (except Cancel)"""
+        self._actionable_controls = [
+            # Main action button
+            self.start_btn,
+            # Form fields
+            self.shortcut_combo,
+            # Resolution controls
+            self.resolution_combo,
+        ]
+
+    def _disable_controls_during_operation(self):
+        """Disable all actionable controls during configure operations (except Cancel)"""
+        for control in self._actionable_controls:
+            if control:
+                control.setEnabled(False)
+
+    def _enable_controls_after_operation(self):
+        """Re-enable all actionable controls after configure operations complete"""
+        for control in self._actionable_controls:
+            if control:
+                control.setEnabled(True)
+
+    def refresh_paths(self):
+        """Refresh cached paths when config changes."""
+        from jackify.shared.paths import get_jackify_logs_dir
+        self.modlist_log_path = get_jackify_logs_dir() / 'Configure_Existing_Modlist_workflow.log'
+        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
 
     def resizeEvent(self, event):
         """Handle window resize to prioritize form over console"""
@@ -382,17 +416,22 @@ class ConfigureExistingModlistScreen(QWidget):
         log_handler = LoggingHandler()
         log_handler.rotate_log_file_per_run(Path(self.modlist_log_path), backup_count=5)
         
+        # Disable controls during configuration
+        self._disable_controls_during_operation()
+        
         # Get selected shortcut
         idx = self.shortcut_combo.currentIndex() - 1  # Account for 'Please Select...'
         from jackify.frontends.gui.services.message_service import MessageService
         if idx < 0 or idx >= len(self.shortcut_map):
             MessageService.critical(self, "No Shortcut Selected", "Please select a ModOrganizer.exe Steam shortcut to configure.", safety_level="medium")
+            self._enable_controls_after_operation()
             return
         shortcut = self.shortcut_map[idx]
         modlist_name = shortcut.get('AppName', '')
         install_dir = shortcut.get('StartDir', '')
         if not modlist_name or not install_dir:
             MessageService.critical(self, "Invalid Shortcut", "The selected shortcut is missing required information.", safety_level="medium")
+            self._enable_controls_after_operation()
             return
         resolution = self.resolution_combo.currentText()
         # Handle resolution saving
@@ -505,6 +544,9 @@ class ConfigureExistingModlistScreen(QWidget):
     
     def on_configuration_complete(self, success, message, modlist_name):
         """Handle configuration completion"""
+        # Re-enable all controls when workflow completes
+        self._enable_controls_after_operation()
+        
         if success:
             # Calculate time taken
             time_taken = self._calculate_time_taken()
@@ -525,6 +567,9 @@ class ConfigureExistingModlistScreen(QWidget):
     
     def on_configuration_error(self, error_message):
         """Handle configuration error"""
+        # Re-enable all controls on error
+        self._enable_controls_after_operation()
+        
         self._safe_append_text(f"Configuration error: {error_message}")
         MessageService.critical(self, "Configuration Error", f"Configuration failed: {error_message}", safety_level="medium")
 
@@ -559,8 +604,8 @@ class ConfigureExistingModlistScreen(QWidget):
             if self.config_process and self.config_process.state() == QProcess.Running:
                 self.config_process.terminate()
                 self.config_process.waitForFinished(2000)
-            # Reset button states
-            self.start_btn.setEnabled(True)
+            # Re-enable all controls
+            self._enable_controls_after_operation()
             self.cancel_btn.setVisible(True)
 
     def show_next_steps_dialog(self, message):

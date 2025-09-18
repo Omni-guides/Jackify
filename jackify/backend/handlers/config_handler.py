@@ -37,7 +37,8 @@ class ConfigHandler:
             "default_install_parent_dir": None,  # Parent directory for modlist installations
             "default_download_parent_dir": None,  # Parent directory for downloads
             "modlist_install_base_dir": os.path.expanduser("~/Games"),  # Configurable base directory for modlist installations
-            "modlist_downloads_base_dir": os.path.expanduser("~/Games/Modlist_Downloads")  # Configurable base directory for downloads
+            "modlist_downloads_base_dir": os.path.expanduser("~/Games/Modlist_Downloads"),  # Configurable base directory for downloads
+            "jackify_data_dir": None  # Configurable Jackify data directory (default: ~/Jackify)
         }
         
         # Load configuration if exists
@@ -46,6 +47,12 @@ class ConfigHandler:
         # If steam_path is not set, detect it
         if not self.settings["steam_path"]:
             self.settings["steam_path"] = self._detect_steam_path()
+            # Save the updated settings
+            self.save_config()
+        
+        # If jackify_data_dir is not set, initialize it to default
+        if not self.settings.get("jackify_data_dir"):
+            self.settings["jackify_data_dir"] = os.path.expanduser("~/Jackify")
             # Save the updated settings
             self.save_config()
     

@@ -14,15 +14,21 @@ import shutil
 class LoggingHandler:
     """
     Central logging handler for Jackify.
-    - Uses ~/Jackify/logs/ as the log directory.
+    - Uses configurable Jackify data directory for logs (default: ~/Jackify/logs/).
     - Supports per-function log files (e.g., jackify-install-wabbajack.log).
     - Handles log rotation and log directory creation.
     Usage:
         logger = LoggingHandler().setup_logger('install_wabbajack', 'jackify-install-wabbajack.log')
     """
     def __init__(self):
-        self.log_dir = Path.home() / "Jackify" / "logs"
+        # Don't cache log_dir - use property to get fresh path each time
         self.ensure_log_directory()
+    
+    @property
+    def log_dir(self):
+        """Get the current log directory (may change if config updated)."""
+        from jackify.shared.paths import get_jackify_logs_dir
+        return get_jackify_logs_dir()
         
     def ensure_log_directory(self) -> None:
         """Ensure the log directory exists."""

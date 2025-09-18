@@ -616,7 +616,8 @@ class ModlistInstallCLI:
             if machineid:
                 # Convert machineid to filename (e.g., "Tuxborn/Tuxborn" -> "Tuxborn.wabbajack")
                 modlist_name = machineid.split('/')[-1] if '/' in machineid else machineid
-                cached_wabbajack_path = os.path.expanduser(f"~/Jackify/downloaded_mod_lists/{modlist_name}.wabbajack")
+                from jackify.shared.paths import get_jackify_downloads_dir
+                cached_wabbajack_path = get_jackify_downloads_dir() / f"{modlist_name}.wabbajack"
                 self.logger.debug(f"Checking for cached .wabbajack file: {cached_wabbajack_path}")
             
             if modlist_value and modlist_value.endswith('.wabbajack') and os.path.isfile(modlist_value):

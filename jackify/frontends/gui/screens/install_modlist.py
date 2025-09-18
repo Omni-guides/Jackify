@@ -355,9 +355,8 @@ class InstallModlistScreen(QWidget):
         self.online_modlists = {}  # {game_type: [modlist_dict, ...]}
         self.modlist_details = {}  # {modlist_name: modlist_dict}
 
-        # Path for workflow log
-        self.modlist_log_path = os.path.expanduser('~/Jackify/logs/Modlist_Install_workflow.log')
-        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
+        # Initialize log path (can be refreshed via refresh_paths method)
+        self.refresh_paths()
 
         # Initialize services early
         from jackify.backend.services.api_key_service import APIKeyService
@@ -459,11 +458,11 @@ class InstallModlistScreen(QWidget):
         file_layout.setContentsMargins(0, 0, 0, 0)
         self.file_edit = QLineEdit()
         self.file_edit.setMinimumWidth(400)
-        file_btn = QPushButton("Browse")
-        file_btn.clicked.connect(self.browse_wabbajack_file)
+        self.file_btn = QPushButton("Browse")
+        self.file_btn.clicked.connect(self.browse_wabbajack_file)
         file_layout.addWidget(QLabel(".wabbajack File:"))
         file_layout.addWidget(self.file_edit)
-        file_layout.addWidget(file_btn)
+        file_layout.addWidget(self.file_btn)
         self.file_group.setLayout(file_layout)
         file_tab_vbox.addWidget(self.file_group)
         file_tab.setLayout(file_tab_vbox)
@@ -484,22 +483,22 @@ class InstallModlistScreen(QWidget):
         install_dir_label = QLabel("Install Directory:")
         self.install_dir_edit = QLineEdit(self.config_handler.get_modlist_install_base_dir())
         self.install_dir_edit.setMaximumHeight(25)  # Force compact height
-        browse_install_btn = QPushButton("Browse")
-        browse_install_btn.clicked.connect(self.browse_install_dir)
+        self.browse_install_btn = QPushButton("Browse")
+        self.browse_install_btn.clicked.connect(self.browse_install_dir)
         install_dir_hbox = QHBoxLayout()
         install_dir_hbox.addWidget(self.install_dir_edit)
-        install_dir_hbox.addWidget(browse_install_btn)
+        install_dir_hbox.addWidget(self.browse_install_btn)
         form_grid.addWidget(install_dir_label, 1, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
         form_grid.addLayout(install_dir_hbox, 1, 1)
         # Downloads Dir
         downloads_dir_label = QLabel("Downloads Directory:")
         self.downloads_dir_edit = QLineEdit(self.config_handler.get_modlist_downloads_base_dir())
         self.downloads_dir_edit.setMaximumHeight(25)  # Force compact height
-        browse_downloads_btn = QPushButton("Browse")
-        browse_downloads_btn.clicked.connect(self.browse_downloads_dir)
+        self.browse_downloads_btn = QPushButton("Browse")
+        self.browse_downloads_btn.clicked.connect(self.browse_downloads_dir)
         downloads_dir_hbox = QHBoxLayout()
         downloads_dir_hbox.addWidget(self.downloads_dir_edit)
-        downloads_dir_hbox.addWidget(browse_downloads_btn)
+        downloads_dir_hbox.addWidget(self.browse_downloads_btn)
         form_grid.addWidget(downloads_dir_label, 2, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
         form_grid.addLayout(downloads_dir_hbox, 2, 1)
         # Nexus API Key
@@ -603,7 +602,25 @@ class InstallModlistScreen(QWidget):
                 self.resolution_combo.setCurrentIndex(0)
         # Otherwise, default is 'Leave unchanged' (index 0)
         form_grid.addWidget(resolution_label, 5, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
-        form_grid.addWidget(self.resolution_combo, 5, 1)
+        
+        # Horizontal layout for resolution dropdown and auto-restart checkbox
+        resolution_and_restart_layout = QHBoxLayout()
+        resolution_and_restart_layout.setSpacing(12)
+        
+        # Resolution dropdown (made smaller)
+        self.resolution_combo.setMaximumWidth(280)  # Constrain width but keep aesthetically pleasing
+        resolution_and_restart_layout.addWidget(self.resolution_combo)
+        
+        # Add stretch to push checkbox to the right
+        resolution_and_restart_layout.addStretch()
+        
+        # Auto-accept Steam restart checkbox (right-aligned)
+        self.auto_restart_checkbox = QCheckBox("Auto-accept Steam restart")
+        self.auto_restart_checkbox.setChecked(False)  # Always default to unchecked per session
+        self.auto_restart_checkbox.setToolTip("When checked, Steam restart dialog will be automatically accepted, allowing unattended installation")
+        resolution_and_restart_layout.addWidget(self.auto_restart_checkbox)
+        
+        form_grid.addLayout(resolution_and_restart_layout, 5, 1)
         form_section_widget = QWidget()
         form_section_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         form_section_widget.setLayout(form_grid)
@@ -723,6 +740,57 @@ class InstallModlistScreen(QWidget):
         
         # Initialize process tracking
         self.process = None
+        
+        # Initialize empty controls list - will be populated after UI is built
+        self._actionable_controls = []
+        
+        # Now collect all actionable controls after UI is fully built
+        self._collect_actionable_controls()
+    
+    def _collect_actionable_controls(self):
+        """Collect all actionable controls that should be disabled during operations (except Cancel)"""
+        self._actionable_controls = [
+            # Main action button
+            self.start_btn,
+            # Game/modlist selection
+            self.game_type_btn,
+            self.modlist_btn,
+            # Source tabs (entire tab widget)
+            self.source_tabs,
+            # Form fields
+            self.modlist_name_edit,
+            self.install_dir_edit,
+            self.downloads_dir_edit,
+            self.api_key_edit,
+            self.file_edit,
+            # Browse buttons
+            self.browse_install_btn,
+            self.browse_downloads_btn,
+            self.file_btn,
+            # Resolution controls
+            self.resolution_combo,
+            # Checkboxes
+            self.save_api_key_checkbox,
+            self.auto_restart_checkbox,
+        ]
+
+    def _disable_controls_during_operation(self):
+        """Disable all actionable controls during install/configure operations (except Cancel)"""
+        for control in self._actionable_controls:
+            if control:
+                control.setEnabled(False)
+
+    def _enable_controls_after_operation(self):
+        """Re-enable all actionable controls after install/configure operations complete"""
+        for control in self._actionable_controls:
+            if control:
+                control.setEnabled(True)
+
+    def refresh_paths(self):
+        """Refresh cached paths when config changes."""
+        from jackify.shared.paths import get_jackify_logs_dir
+        self.modlist_log_path = get_jackify_logs_dir() / 'Modlist_Install_workflow.log'
+        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
 
     def _open_url_safe(self, url):
         """Safely open URL using subprocess to avoid Qt library conflicts in PyInstaller"""
@@ -1121,6 +1189,9 @@ class InstallModlistScreen(QWidget):
         if not self._check_protontricks():
             return
         
+        # Disable all controls during installation (except Cancel)
+        self._disable_controls_during_operation()
+        
         try:
             tab_index = self.source_tabs.currentIndex()
             install_mode = 'online'
@@ -1128,12 +1199,14 @@ class InstallModlistScreen(QWidget):
                 modlist = self.file_edit.text().strip()
                 if not modlist or not os.path.isfile(modlist) or not modlist.endswith('.wabbajack'):
                     MessageService.warning(self, "Invalid Modlist", "Please select a valid .wabbajack file.")
+                    self._enable_controls_after_operation()
                     return
                 install_mode = 'file'
             else:
                 modlist = self.modlist_btn.text().strip()
                 if not modlist or modlist in ("Select Modlist", "Fetching modlists...", "No modlists found.", "Error fetching modlists."):
                     MessageService.warning(self, "Invalid Modlist", "Please select a valid modlist.")
+                    self._enable_controls_after_operation()
                     return
                 
                 # For online modlists, use machine_url instead of display name
@@ -1159,6 +1232,7 @@ class InstallModlistScreen(QWidget):
                 missing_fields.append("Nexus API Key")
             if missing_fields:
                 MessageService.warning(self, "Missing Required Fields", f"Please fill in all required fields before starting the install:\n- " + "\n- ".join(missing_fields))
+                self._enable_controls_after_operation()
                 return
             validation_handler = ValidationHandler()
             from pathlib import Path
@@ -1324,14 +1398,11 @@ class InstallModlistScreen(QWidget):
             debug_print(f"DEBUG: Exception in validate_and_start_install: {e}")
             import traceback
             debug_print(f"DEBUG: Traceback: {traceback.format_exc()}")
-            # Re-enable the button in case of exception
-            self.start_btn.setEnabled(True)
+            # Re-enable all controls after exception
+            self._enable_controls_after_operation()
             self.cancel_btn.setVisible(True)
             self.cancel_install_btn.setVisible(False)
-            # Also re-enable the entire widget
-            self.setEnabled(True)
-            debug_print(f"DEBUG: Widget re-enabled in exception handler, widget enabled: {self.isEnabled()}")
-            print(f"DEBUG: Widget re-enabled in exception handler, widget enabled: {self.isEnabled()}")  # Always print
+            debug_print(f"DEBUG: Controls re-enabled in exception handler")
 
     def run_modlist_installer(self, modlist, install_dir, downloads_dir, api_key, install_mode='online'):
         debug_print('DEBUG: run_modlist_installer called - USING THREADED BACKEND WRAPPER')
@@ -1501,12 +1572,21 @@ class InstallModlistScreen(QWidget):
                 self._safe_append_text(f"\nModlist installation completed successfully.")
                 self._safe_append_text(f"\nWarning: Post-install configuration skipped for unsupported game: {game_name or game_type}")
             else:
-                # Show the normal install complete dialog for supported games
-                reply = MessageService.question(
-                    self, "Modlist Install Complete!",
-                    "Modlist install complete!\n\nWould you like to add this modlist to Steam and configure it now? Steam will restart, closing any game you have open!",
-                    critical=False  # Non-critical, won't steal focus
-                )
+                # Check if auto-restart is enabled
+                auto_restart_enabled = hasattr(self, 'auto_restart_checkbox') and self.auto_restart_checkbox.isChecked()
+                
+                if auto_restart_enabled:
+                    # Auto-accept Steam restart - proceed without dialog
+                    self._safe_append_text("\nAuto-accepting Steam restart (unattended mode enabled)")
+                    reply = QMessageBox.Yes  # Simulate user clicking Yes
+                else:
+                    # Show the normal install complete dialog for supported games
+                    reply = MessageService.question(
+                        self, "Modlist Install Complete!",
+                        "Modlist install complete!\n\nWould you like to add this modlist to Steam and configure it now? Steam will restart, closing any game you have open!",
+                        critical=False  # Non-critical, won't steal focus
+                    )
+                
                 if reply == QMessageBox.Yes:
                     # --- Create Steam shortcut BEFORE restarting Steam ---
                     # Proceed directly to automated prefix creation
@@ -1522,6 +1602,8 @@ class InstallModlistScreen(QWidget):
                         "You can manually add the modlist to Steam later if desired.",
                         safety_level="medium"
                     )
+                    # Re-enable controls since operation is complete
+                    self._enable_controls_after_operation()
         else:
             # Check for user cancellation first
             last_output = self.console.toPlainText()
@@ -1611,9 +1693,6 @@ class InstallModlistScreen(QWidget):
         progress.setMinimumDuration(0)
         progress.setValue(0)
         progress.show()
-        self.setEnabled(False)
-        debug_print(f"DEBUG: Widget disabled in restart_steam_and_configure, widget enabled: {self.isEnabled()}")
-        print(f"DEBUG: Widget disabled in restart_steam_and_configure, widget enabled: {self.isEnabled()}")  # Always print
         
         def do_restart():
             debug_print("DEBUG: do_restart thread started - using direct backend service")
@@ -1651,9 +1730,7 @@ class InstallModlistScreen(QWidget):
             finally:
                 self._steam_restart_progress = None
         
-        self.setEnabled(True)
-        debug_print(f"DEBUG: Widget re-enabled in _on_steam_restart_finished, widget enabled: {self.isEnabled()}")
-        print(f"DEBUG: Widget re-enabled in _on_steam_restart_finished, widget enabled: {self.isEnabled()}")  # Always print
+        # Controls are managed by the proper control management system
         if success:
             self._safe_append_text("Steam restarted successfully.")
             
@@ -1676,6 +1753,8 @@ class InstallModlistScreen(QWidget):
     def start_automated_prefix_workflow(self):
         """Start the automated prefix creation workflow"""
         try:
+            # Disable controls during installation
+            self._disable_controls_during_operation()
             modlist_name = self.modlist_name_edit.text().strip()
             install_dir = self.install_dir_edit.text().strip()
             final_exe_path = os.path.join(install_dir, "ModOrganizer.exe")
@@ -1784,33 +1863,43 @@ class InstallModlistScreen(QWidget):
             import traceback
             debug_print(f"DEBUG: Traceback: {traceback.format_exc()}")
             self._safe_append_text(f"ERROR: Failed to start automated workflow: {e}")
+            # Re-enable controls on exception
+            self._enable_controls_after_operation()
     
     def on_automated_prefix_finished(self, success, prefix_path, new_appid_str, last_timestamp=None):
         """Handle completion of automated prefix creation"""
-        if success:
-            debug_print(f"SUCCESS: Automated prefix creation completed!")
-            debug_print(f"Prefix created at: {prefix_path}")
-            if new_appid_str and new_appid_str != "0":
-                debug_print(f"AppID: {new_appid_str}")
-            
-            # Convert string AppID back to integer for configuration
-            new_appid = int(new_appid_str) if new_appid_str and new_appid_str != "0" else None
-            
-            # Continue with configuration using the new AppID and timestamp
-            modlist_name = self.modlist_name_edit.text().strip()
-            install_dir = self.install_dir_edit.text().strip()
-            self.continue_configuration_after_automated_prefix(new_appid, modlist_name, install_dir, last_timestamp)
-        else:
-            self._safe_append_text(f"ERROR: Automated prefix creation failed")
-            self._safe_append_text("Please check the logs for details")
-            MessageService.critical(self, "Automated Setup Failed", 
-                "Automated prefix creation failed. Please check the console output for details.")
+        try:
+            if success:
+                debug_print(f"SUCCESS: Automated prefix creation completed!")
+                debug_print(f"Prefix created at: {prefix_path}")
+                if new_appid_str and new_appid_str != "0":
+                    debug_print(f"AppID: {new_appid_str}")
+                
+                # Convert string AppID back to integer for configuration
+                new_appid = int(new_appid_str) if new_appid_str and new_appid_str != "0" else None
+                
+                # Continue with configuration using the new AppID and timestamp
+                modlist_name = self.modlist_name_edit.text().strip()
+                install_dir = self.install_dir_edit.text().strip()
+                self.continue_configuration_after_automated_prefix(new_appid, modlist_name, install_dir, last_timestamp)
+            else:
+                self._safe_append_text(f"ERROR: Automated prefix creation failed")
+                self._safe_append_text("Please check the logs for details")
+                MessageService.critical(self, "Automated Setup Failed", 
+                    "Automated prefix creation failed. Please check the console output for details.")
+                # Re-enable controls on failure
+                self._enable_controls_after_operation()
+        finally:
+            # Always ensure controls are re-enabled when workflow truly completes
+            pass
     
     def on_automated_prefix_error(self, error_msg):
         """Handle error in automated prefix creation"""
         self._safe_append_text(f"ERROR: Error during automated prefix creation: {error_msg}")
         MessageService.critical(self, "Automated Setup Error", 
             f"Error during automated prefix creation: {error_msg}")
+        # Re-enable controls on error
+        self._enable_controls_after_operation()
     
     def on_automated_prefix_progress(self, progress_msg):
         """Handle progress updates from automated prefix creation"""
@@ -1831,7 +1920,6 @@ class InstallModlistScreen(QWidget):
         self.steam_restart_progress.setMinimumDuration(0)
         self.steam_restart_progress.setValue(0)
         self.steam_restart_progress.show()
-        self.setEnabled(False)
     
     def hide_steam_restart_progress(self):
         """Hide Steam restart progress dialog"""
@@ -1843,45 +1931,53 @@ class InstallModlistScreen(QWidget):
                 pass
             finally:
                 self.steam_restart_progress = None
-        self.setEnabled(True)
+        # Controls are managed by the proper control management system
 
     def on_configuration_complete(self, success, message, modlist_name):
         """Handle configuration completion on main thread"""
-        if success:
-            # Show celebration SuccessDialog after the entire workflow
-            from ..dialogs import SuccessDialog
-            import time
-            if not hasattr(self, '_install_workflow_start_time'):
-                self._install_workflow_start_time = time.time()
-            time_taken = int(time.time() - self._install_workflow_start_time)
-            mins, secs = divmod(time_taken, 60)
-            time_str = f"{mins} minutes, {secs} seconds" if mins else f"{secs} seconds"
-            display_names = {
-                'skyrim': 'Skyrim',
-                'fallout4': 'Fallout 4',
-                'falloutnv': 'Fallout New Vegas',
-                'oblivion': 'Oblivion',
-                'starfield': 'Starfield',
-                'oblivion_remastered': 'Oblivion Remastered',
-                'enderal': 'Enderal'
-            }
-            game_name = display_names.get(self._current_game_type, self._current_game_name)
-            success_dialog = SuccessDialog(
-                modlist_name=modlist_name,
-                workflow_type="install",
-                time_taken=time_str,
-                game_name=game_name,
-                parent=self
-            )
-            success_dialog.show()
-        elif hasattr(self, '_manual_steps_retry_count') and self._manual_steps_retry_count >= 3:
-            # Max retries reached - show failure message
-            MessageService.critical(self, "Manual Steps Failed", 
-                               "Manual steps validation failed after multiple attempts.")
-        else:
-            # Configuration failed for other reasons
-            MessageService.critical(self, "Configuration Failed", 
-                               "Post-install configuration failed. Please check the console output.")
+        try:
+            # Re-enable controls now that installation/configuration is complete
+            self._enable_controls_after_operation()
+            
+            if success:
+                # Show celebration SuccessDialog after the entire workflow
+                from ..dialogs import SuccessDialog
+                import time
+                if not hasattr(self, '_install_workflow_start_time'):
+                    self._install_workflow_start_time = time.time()
+                time_taken = int(time.time() - self._install_workflow_start_time)
+                mins, secs = divmod(time_taken, 60)
+                time_str = f"{mins} minutes, {secs} seconds" if mins else f"{secs} seconds"
+                display_names = {
+                    'skyrim': 'Skyrim',
+                    'fallout4': 'Fallout 4',
+                    'falloutnv': 'Fallout New Vegas',
+                    'oblivion': 'Oblivion',
+                    'starfield': 'Starfield',
+                    'oblivion_remastered': 'Oblivion Remastered',
+                    'enderal': 'Enderal'
+                }
+                game_name = display_names.get(self._current_game_type, self._current_game_name)
+                success_dialog = SuccessDialog(
+                    modlist_name=modlist_name,
+                    workflow_type="install",
+                    time_taken=time_str,
+                    game_name=game_name,
+                    parent=self
+                )
+                success_dialog.show()
+            elif hasattr(self, '_manual_steps_retry_count') and self._manual_steps_retry_count >= 3:
+                # Max retries reached - show failure message
+                MessageService.critical(self, "Manual Steps Failed", 
+                                   "Manual steps validation failed after multiple attempts.")
+            else:
+                # Configuration failed for other reasons
+                MessageService.critical(self, "Configuration Failed", 
+                                   "Post-install configuration failed. Please check the console output.")
+        except Exception as e:
+            # Ensure controls are re-enabled even on unexpected errors
+            self._enable_controls_after_operation()
+            raise
         # Clean up thread
         if hasattr(self, 'config_thread') and self.config_thread is not None:
             # Disconnect all signals to prevent "Internal C++ object already deleted" errors
@@ -1940,8 +2036,8 @@ class InstallModlistScreen(QWidget):
         else:
             # User clicked Cancel or closed the dialog - cancel the workflow
             self._safe_append_text("\n🛑 Manual steps cancelled by user. Workflow stopped.")
-            # Reset button states
-            self.start_btn.setEnabled(True)
+            # Re-enable all controls when workflow is cancelled
+            self._enable_controls_after_operation()
             self.cancel_btn.setVisible(True)
             self.cancel_install_btn.setVisible(False)
 
@@ -2513,8 +2609,8 @@ class InstallModlistScreen(QWidget):
             # Cleanup any remaining processes
             self.cleanup_processes()
             
-            # Reset button states
-            self.start_btn.setEnabled(True)
+            # Reset button states and re-enable all controls
+            self._enable_controls_after_operation()
             self.cancel_btn.setVisible(True)
             self.cancel_install_btn.setVisible(False)
             

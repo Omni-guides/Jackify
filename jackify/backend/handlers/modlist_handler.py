@@ -788,10 +788,16 @@ class ModlistHandler:
                 status_callback(f"{self._get_progress_timestamp()} Updating resolution settings")
             # Ensure resolution_handler call uses correct args if needed
             # Assuming it uses modlist_dir (str) and game_var_full (str)
+            # Construct vanilla game directory path for fallback
+            vanilla_game_dir = None
+            if self.steam_library and self.game_var_full:
+                vanilla_game_dir = str(Path(self.steam_library) / "steamapps" / "common" / self.game_var_full)
+                
             if not self.resolution_handler.update_ini_resolution(
                 modlist_dir=self.modlist_dir, 
                 game_var=self.game_var_full, 
-                set_res=self.selected_resolution
+                set_res=self.selected_resolution,
+                vanilla_game_dir=vanilla_game_dir
             ):
                 self.logger.warning("Failed to update resolution settings in some INI files.")
                 print("Warning: Failed to update resolution settings.")
@@ -818,12 +824,18 @@ class ModlistHandler:
                 status_callback(f"{self._get_progress_timestamp()} Creating dxvk.conf file")
             self.logger.info("Step 10: Creating dxvk.conf file...")
             # Assuming create_dxvk_conf still uses string paths
+            # Construct vanilla game directory path for fallback
+            vanilla_game_dir = None
+            if self.steam_library and self.game_var_full:
+                vanilla_game_dir = str(Path(self.steam_library) / "steamapps" / "common" / self.game_var_full)
+                
             if not self.path_handler.create_dxvk_conf(
                 modlist_dir=self.modlist_dir, 
                 modlist_sdcard=self.modlist_sdcard, 
                 steam_library=str(self.steam_library) if self.steam_library else None, # Pass as string or None 
                 basegame_sdcard=self.basegame_sdcard, 
-                game_var_full=self.game_var_full
+                game_var_full=self.game_var_full,
+                vanilla_game_dir=vanilla_game_dir
             ):
                 self.logger.warning("Failed to create dxvk.conf file.")
                 print("Warning: Failed to create dxvk.conf file.")

@@ -149,7 +149,7 @@ class ResolutionHandler:
             return ["1280x720", "1280x800", "1920x1080", "1920x1200", "2560x1440"]
             
     @staticmethod
-    def update_ini_resolution(modlist_dir: str, game_var: str, set_res: str) -> bool:
+    def update_ini_resolution(modlist_dir: str, game_var: str, set_res: str, vanilla_game_dir: str = None) -> bool:
         """
         Updates the resolution in relevant INI files for the specified game.
 
@@ -157,6 +157,7 @@ class ResolutionHandler:
             modlist_dir (str): Path to the modlist directory.
             game_var (str): The game identifier (e.g., "Skyrim Special Edition", "Fallout 4").
             set_res (str): The desired resolution (e.g., "1920x1080").
+            vanilla_game_dir (str): Optional path to vanilla game directory for fallback.
 
         Returns:
             bool: True if successful or not applicable, False on error.
@@ -211,22 +212,30 @@ class ResolutionHandler:
             
             logger.debug(f"Processing {prefs_filenames}...")
             prefs_files_found = []
-            # Search common locations: profiles/, stock game dirs
-            search_dirs = [modlist_path / "profiles"]
-            # Add potential stock game directories dynamically (case-insensitive) 
-            potential_stock_dirs = [d for d in modlist_path.iterdir() if d.is_dir() and 
-                                     d.name.lower() in ["stock game", "game root", "stock folder", "skyrim stock"]] # Add more if needed
-            search_dirs.extend(potential_stock_dirs)
-            
-            for search_dir in search_dirs:
-                 if search_dir.is_dir():
-                      for fname in prefs_filenames:
-                           prefs_files_found.extend(list(search_dir.rglob(fname)))
+            # Search entire modlist directory recursively for all target files
+            logger.debug(f"Searching entire modlist directory for: {prefs_filenames}")
+            for fname in prefs_filenames:
+                found_files = list(modlist_path.rglob(fname))
+                prefs_files_found.extend(found_files)
+                if found_files:
+                    logger.debug(f"Found {len(found_files)} {fname} files: {[str(f) for f in found_files]}")
             
             if not prefs_files_found:
-                logger.warning(f"No preference files ({prefs_filenames}) found in standard locations ({search_dirs}). Manual INI edit might be needed.")
-                # Consider this success as the main operation didn't fail?
-                return True 
+                logger.warning(f"No preference files ({prefs_filenames}) found in modlist directory.")
+                
+                # Fallback: Try vanilla game directory if provided
+                if vanilla_game_dir:
+                    logger.info(f"Attempting fallback to vanilla game directory: {vanilla_game_dir}")
+                    vanilla_path = Path(vanilla_game_dir)
+                    for fname in prefs_filenames:
+                        vanilla_files = list(vanilla_path.rglob(fname))
+                        prefs_files_found.extend(vanilla_files)
+                        if vanilla_files:
+                            logger.info(f"Found {len(vanilla_files)} {fname} files in vanilla game directory")
+                
+                if not prefs_files_found:
+                    logger.warning("No preference files found in modlist or vanilla game directory. Manual INI edit might be needed.")
+                    return True 
             
             for ini_file in prefs_files_found:
                 files_processed += 1
@@ -314,19 +323,23 @@ class ResolutionHandler:
 
             new_lines = []
             modified = False
-            # Prepare the replacement strings for width and height
-            # Ensure correct spacing for Oblivion vs other games
-            # Corrected f-string syntax for conditional expression
-            equals_operator = "=" if is_oblivion else " = "
-            width_replace = f"iSize W{equals_operator}{width}\n"
-            height_replace = f"iSize H{equals_operator}{height}\n"
 
             for line in lines:
                 stripped_line = line.strip()
-                if stripped_line.lower().endswith("isize w"):
+                if stripped_line.lower().startswith("isize w"):
+                    # Preserve original spacing around equals sign
+                    if " = " in stripped_line:
+                        width_replace = f"iSize W = {width}\n"
+                    else:
+                        width_replace = f"iSize W={width}\n"
                     new_lines.append(width_replace)
                     modified = True
-                elif stripped_line.lower().endswith("isize h"):
+                elif stripped_line.lower().startswith("isize h"):
+                    # Preserve original spacing around equals sign
+                    if " = " in stripped_line:
+                        height_replace = f"iSize H = {height}\n"
+                    else:
+                        height_replace = f"iSize H={height}\n"
                     new_lines.append(height_replace)
                     modified = True
                 else:

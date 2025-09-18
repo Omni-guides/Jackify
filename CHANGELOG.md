@@ -1,5 +1,30 @@
 # Jackify Changelog
 
+## v0.1.2 - About Dialog and System Information
+**Release Date:** September 16, 2025
+
+### New Features
+- **About Dialog**: System information display with OS, kernel, desktop environment, and display server detection
+- **Engine Version Detection**: Real-time jackify-engine version reporting
+- **Update Integration**: Check for Updates functionality within About dialog
+- **Support Tools**: Copy system info for troubleshooting
+- **Configurable Jackify Directory**: Users can now customize the Jackify data directory location via Settings
+
+### UX Improvements
+- **Control Management**: Form controls are now disabled during install/configure workflows to prevent user conflicts (only Cancel remains active)
+- **Auto-Accept Steam Restart**: Optional checkbox to automatically accept Steam restart dialogs for unattended workflows
+- **Layout Optimization**: Resolution dropdown and Steam restart option share the same line for better space utilization
+
+### Bug Fixes
+- **Resolution Handler**: Fixed regression in resolution setting for Fallout 4 and other games when modlists use vanilla game directories instead of traditional "Stock Game" folders
+- **DXVK Configuration**: Fixed dxvk.conf creation failure when modlists point directly to vanilla game installations
+- **CLI Resolution Setting**: Fixed missing resolution prompting in CLI Install workflow
+
+### Engine Updates
+- **jackify-engine v0.3.14**: Updated to support configurable Jackify data directory, improved Nexus API error handling with better 404/403 responses, and enhanced error logging for troubleshooting
+
+---
+
 ## v0.1.1 - Self-Updater Implementation
 **Release Date:** September 17, 2025
 

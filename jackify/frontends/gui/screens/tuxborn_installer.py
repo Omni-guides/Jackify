@@ -106,8 +106,7 @@ class TuxbornInstallerScreen(QWidget):
         self.modlist_details = {}  # {modlist_name: modlist_dict}
 
         # Path for workflow log
-        self.modlist_log_path = os.path.expanduser('~/Jackify/logs/Tuxborn_Installer_workflow.log')
-        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
+        self.refresh_paths()
 
         # Initialize services early
         from jackify.backend.services.api_key_service import APIKeyService
@@ -439,6 +438,12 @@ class TuxbornInstallerScreen(QWidget):
         # --- Start Installation button ---
         self.start_btn.clicked.connect(self.validate_and_start_install)
         self.steam_restart_finished.connect(self._on_steam_restart_finished)
+
+    def refresh_paths(self):
+        """Refresh cached paths when config changes."""
+        from jackify.shared.paths import get_jackify_logs_dir
+        self.modlist_log_path = get_jackify_logs_dir() / 'Tuxborn_Installer_workflow.log'
+        os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
 
     def _open_url_safe(self, url):
         """Safely open URL using subprocess to avoid Qt library conflicts in PyInstaller"""

@@ -325,6 +325,29 @@ class SettingsDialog(QDialog):
             download_dir_row.addWidget(self.download_dir_edit)
             download_dir_row.addWidget(self.download_dir_btn)
             dir_layout.addRow(QLabel("Downloads Base Dir:"), download_dir_row)
+            
+            # Jackify Data Directory
+            from jackify.shared.paths import get_jackify_data_dir
+            current_jackify_dir = str(get_jackify_data_dir())
+            self.jackify_data_dir_edit = QLineEdit(current_jackify_dir)
+            self.jackify_data_dir_edit.setToolTip("Directory for Jackify data (logs, downloads, temp files). Default: ~/Jackify")
+            self.jackify_data_dir_btn = QPushButton()
+            self.jackify_data_dir_btn.setIcon(QIcon.fromTheme("folder-open"))
+            self.jackify_data_dir_btn.setToolTip("Browse for directory")
+            self.jackify_data_dir_btn.setFixedWidth(32)
+            self.jackify_data_dir_btn.clicked.connect(lambda: self._pick_directory(self.jackify_data_dir_edit))
+            jackify_data_dir_row = QHBoxLayout()
+            jackify_data_dir_row.addWidget(self.jackify_data_dir_edit)
+            jackify_data_dir_row.addWidget(self.jackify_data_dir_btn)
+            
+            # Reset to default button
+            reset_jackify_dir_btn = QPushButton("Reset")
+            reset_jackify_dir_btn.setToolTip("Reset to default (~/ Jackify)")
+            reset_jackify_dir_btn.setFixedWidth(50)
+            reset_jackify_dir_btn.clicked.connect(lambda: self.jackify_data_dir_edit.setText(str(Path.home() / "Jackify")))
+            jackify_data_dir_row.addWidget(reset_jackify_dir_btn)
+            
+            dir_layout.addRow(QLabel("Jackify Data Dir:"), jackify_data_dir_row)
             main_layout.addWidget(dir_group)
             main_layout.addSpacing(12)
 
@@ -464,7 +487,14 @@ class SettingsDialog(QDialog):
         # Save modlist base dirs
         self.config_handler.set("modlist_install_base_dir", self.install_dir_edit.text().strip())
         self.config_handler.set("modlist_downloads_base_dir", self.download_dir_edit.text().strip())
+        # Save jackify data directory (always store actual path, never None)
+        jackify_data_dir = self.jackify_data_dir_edit.text().strip()
+        self.config_handler.set("jackify_data_dir", jackify_data_dir)
         self.config_handler.save_config()
+        
+        # Refresh cached paths in GUI screens if Jackify directory changed
+        self._refresh_gui_paths()
+        
         # Check if debug mode changed and prompt for restart
         new_debug_mode = self.debug_checkbox.isChecked()
         if new_debug_mode != self._original_debug_mode:
@@ -483,6 +513,29 @@ class SettingsDialog(QDialog):
                     return
         MessageService.information(self, "Settings Saved", "Settings have been saved successfully.", safety_level="low")
         self.accept()
+
+    def _refresh_gui_paths(self):
+        """Refresh cached paths in all GUI screens."""
+        try:
+            # Get the main window through parent relationship
+            main_window = self.parent()
+            if not main_window or not hasattr(main_window, 'stacked_widget'):
+                return
+            
+            # Refresh paths in all screens that have the method
+            screens_to_refresh = [
+                getattr(main_window, 'install_modlist_screen', None),
+                getattr(main_window, 'configure_new_modlist_screen', None),
+                getattr(main_window, 'configure_existing_modlist_screen', None),
+                getattr(main_window, 'tuxborn_screen', None),
+            ]
+            
+            for screen in screens_to_refresh:
+                if screen and hasattr(screen, 'refresh_paths'):
+                    screen.refresh_paths()
+                    
+        except Exception as e:
+            print(f"Warning: Could not refresh GUI paths: {e}")
 
     def _bold_label(self, text):
         label = QLabel(text)
@@ -655,13 +708,21 @@ class JackifyMainWindow(QMainWindow):
         # Spacer
         bottom_bar_layout.addStretch(1)
 
-        # Settings button (right)
+        # Settings button (right side)
         settings_btn = QLabel('<a href="#" style="color:#6cf; text-decoration:none;">Settings</a>')
         settings_btn.setStyleSheet("color: #6cf; font-size: 13px; padding-right: 8px;")
         settings_btn.setTextInteractionFlags(Qt.TextBrowserInteraction)
         settings_btn.setOpenExternalLinks(False)
         settings_btn.linkActivated.connect(self.open_settings_dialog)
         bottom_bar_layout.addWidget(settings_btn, alignment=Qt.AlignRight)
+
+        # About button (right side)
+        about_btn = QLabel('<a href="#" style="color:#6cf; text-decoration:none;">About</a>')
+        about_btn.setStyleSheet("color: #6cf; font-size: 13px; padding-right: 8px;")
+        about_btn.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        about_btn.setOpenExternalLinks(False)
+        about_btn.linkActivated.connect(self.open_about_dialog)
+        bottom_bar_layout.addWidget(about_btn, alignment=Qt.AlignRight)
 
         # --- Main Layout ---
         central_widget = QWidget()
@@ -805,6 +866,16 @@ class JackifyMainWindow(QMainWindow):
             dlg.exec()
         except Exception as e:
             print(f"[ERROR] Exception in open_settings_dialog: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def open_about_dialog(self):
+        try:
+            from jackify.frontends.gui.dialogs.about_dialog import AboutDialog
+            dlg = AboutDialog(self.system_info, self)
+            dlg.exec()
+        except Exception as e:
+            print(f"[ERROR] Exception in open_about_dialog: {e}")
             import traceback
             traceback.print_exc()
 
