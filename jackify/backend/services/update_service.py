@@ -331,42 +331,69 @@ class UpdateService:
             
             script_content = f'''#!/bin/bash
 # Jackify Update Helper Script
-# This script replaces the current AppImage with the new version
+# This script safely replaces the current AppImage with the new version
 
 CURRENT_APPIMAGE="{current_appimage}"
 NEW_APPIMAGE="{new_appimage}"
+TEMP_NAME="$CURRENT_APPIMAGE.updating"
 
 echo "Jackify Update Helper"
 echo "Waiting for Jackify to exit..."
 
-# Wait for Jackify to exit (give it a few seconds)
-sleep 3
+# Wait longer for Jackify to fully exit and unmount
+sleep 5
 
-echo "Replacing AppImage..."
+echo "Validating new AppImage..."
 
-# Backup current version (optional)
+# Validate new AppImage exists and is executable
+if [ ! -f "$NEW_APPIMAGE" ]; then
+    echo "ERROR: New AppImage not found: $NEW_APPIMAGE"
+    exit 1
+fi
+
+# Test that new AppImage can execute --version
+if ! timeout 10 "$NEW_APPIMAGE" --version >/dev/null 2>&1; then
+    echo "ERROR: New AppImage failed validation test"
+    exit 1
+fi
+
+echo "New AppImage validated successfully"
+echo "Performing safe replacement..."
+
+# Backup current version
 if [ -f "$CURRENT_APPIMAGE" ]; then
     cp "$CURRENT_APPIMAGE" "$CURRENT_APPIMAGE.backup"
 fi
 
-# Replace with new version
-if cp "$NEW_APPIMAGE" "$CURRENT_APPIMAGE"; then
-    chmod +x "$CURRENT_APPIMAGE"
-    echo "Update completed successfully!"
+# Safe replacement: copy to temp name first, then atomic move
+if cp "$NEW_APPIMAGE" "$TEMP_NAME"; then
+    chmod +x "$TEMP_NAME"
     
-    # Clean up temporary file
-    rm -f "$NEW_APPIMAGE"
-    
-    # Restart Jackify
-    echo "Restarting Jackify..."
-    exec "$CURRENT_APPIMAGE"
-else
-    echo "Update failed - could not replace AppImage"
-    # Restore backup if replacement failed
-    if [ -f "$CURRENT_APPIMAGE.backup" ]; then
-        mv "$CURRENT_APPIMAGE.backup" "$CURRENT_APPIMAGE"
-        echo "Restored original AppImage"
+    # Atomic move to replace
+    if mv "$TEMP_NAME" "$CURRENT_APPIMAGE"; then
+        echo "Update completed successfully!"
+        
+        # Clean up
+        rm -f "$NEW_APPIMAGE"
+        rm -f "$CURRENT_APPIMAGE.backup"
+        
+        # Restart Jackify
+        echo "Restarting Jackify..."
+        sleep 1
+        exec "$CURRENT_APPIMAGE"
+    else
+        echo "ERROR: Failed to move updated AppImage"
+        rm -f "$TEMP_NAME"
+        # Restore backup
+        if [ -f "$CURRENT_APPIMAGE.backup" ]; then
+            mv "$CURRENT_APPIMAGE.backup" "$CURRENT_APPIMAGE"
+            echo "Restored original AppImage"
+        fi
+        exit 1
     fi
+else
+    echo "ERROR: Failed to copy new AppImage"
+    exit 1
 fi
 
 # Clean up this script
