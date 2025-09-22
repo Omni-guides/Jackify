@@ -22,6 +22,7 @@ from jackify.backend.handlers.config_handler import ConfigHandler
 from ..dialogs import SuccessDialog
 from PySide6.QtWidgets import QApplication
 from jackify.frontends.gui.services.message_service import MessageService
+from jackify.shared.resolution_utils import get_resolution_fallback
 
 def debug_print(message):
     """Print debug message only if debug mode is enabled"""
@@ -1033,7 +1034,7 @@ class ConfigureNewModlistScreen(QWidget):
         try:
             # Get resolution from UI
             resolution = self.resolution_combo.currentText()
-            resolution_value = resolution.split()[0] if resolution != "Leave unchanged" else '2560x1600'
+            resolution_value = resolution.split()[0] if resolution != "Leave unchanged" else None
             
             # Update the context with the new AppID (same format as manual steps)
             mo2_exe_path = self.install_dir_edit.text().strip()
@@ -1082,7 +1083,7 @@ class ConfigureNewModlistScreen(QWidget):
                             nexus_api_key='',  # Not needed for configuration
                             modlist_value=self.context.get('modlist_value'),
                             modlist_source=self.context.get('modlist_source', 'identifier'),
-                            resolution=self.context.get('resolution', '2560x1600'),
+                            resolution=self.context.get('resolution') or get_resolution_fallback(None),
                             skip_confirmation=True
                         )
                         

@@ -94,6 +94,7 @@ class UnsupportedGameDialog(QDialog):
 <li><strong>Oblivion</strong></li>
 <li><strong>Starfield</strong></li>
 <li><strong>Oblivion Remastered</strong></li>
+<li><strong>Enderal</strong></li>
 </ul>
 
 <p>For unsupported games, you will need to manually configure Steam shortcuts and other post-install steps.</p>
@@ -113,6 +114,7 @@ class UnsupportedGameDialog(QDialog):
 <li><strong>Oblivion</strong></li>
 <li><strong>Starfield</strong></li>
 <li><strong>Oblivion Remastered</strong></li>
+<li><strong>Enderal</strong></li>
 </ul>
 
 <p>For unsupported games, you will need to manually configure Steam shortcuts and other post-install steps.</p>

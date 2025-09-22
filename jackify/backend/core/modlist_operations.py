@@ -23,6 +23,44 @@ from jackify.backend.handlers.config_handler import ConfigHandler
 
 # UI Colors already imported above
 
+def _get_user_proton_version():
+    """Get user's preferred Proton version from config, with fallback to auto-detection"""
+    try:
+        from jackify.backend.handlers.config_handler import ConfigHandler
+        from jackify.backend.handlers.wine_utils import WineUtils
+
+        config_handler = ConfigHandler()
+        user_proton_path = config_handler.get('proton_path', 'auto')
+
+        if user_proton_path == 'auto':
+            # Use enhanced fallback logic with GE-Proton preference
+            logging.info("User selected auto-detect, using GE-Proton → Experimental → Proton precedence")
+            return WineUtils.select_best_proton()
+        else:
+            # User has selected a specific Proton version
+            # Use the exact directory name for Steam config.vdf
+            try:
+                proton_version = os.path.basename(user_proton_path)
+                # GE-Proton uses exact directory name, Valve Proton needs lowercase conversion
+                if proton_version.startswith('GE-Proton'):
+                    # Keep GE-Proton name exactly as-is
+                    steam_proton_name = proton_version
+                else:
+                    # Convert Valve Proton names to Steam's format
+                    steam_proton_name = proton_version.lower().replace(' - ', '_').replace(' ', '_').replace('-', '_')
+                    if not steam_proton_name.startswith('proton'):
+                        steam_proton_name = f"proton_{steam_proton_name}"
+
+                logging.info(f"Using user-selected Proton: {steam_proton_name}")
+                return steam_proton_name
+            except Exception as e:
+                logging.warning(f"Invalid user Proton path '{user_proton_path}', falling back to auto: {e}")
+                return WineUtils.select_best_proton()
+
+    except Exception as e:
+        logging.error(f"Failed to get user Proton preference, using default: {e}")
+        return "proton_experimental"
+
 # Attempt to import readline for tab completion
 READLINE_AVAILABLE = False
 try:
@@ -1248,13 +1286,16 @@ class ModlistInstallCLI:
                     from jackify.backend.services.native_steam_service import NativeSteamService
                     steam_service = NativeSteamService()
                     
+                    # Get user's preferred Proton version
+                    proton_version = _get_user_proton_version()
+
                     success, app_id = steam_service.create_shortcut_with_proton(
                         app_name=config_context['name'],
                         exe_path=config_context['mo2_exe_path'],
                         start_dir=os.path.dirname(config_context['mo2_exe_path']),
                         launch_options="%command%",
                         tags=["Jackify"],
-                        proton_version="proton_experimental"
+                        proton_version=proton_version
                     )
                     
                     if not success or not app_id:

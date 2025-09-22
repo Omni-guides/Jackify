@@ -38,6 +38,44 @@ class AutomatedPrefixService:
         """Get consistent progress timestamp"""
         from jackify.shared.timing import get_timestamp
         return get_timestamp()
+
+    def _get_user_proton_version(self):
+        """Get user's preferred Proton version from config, with fallback to auto-detection"""
+        try:
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            from jackify.backend.handlers.wine_utils import WineUtils
+
+            config_handler = ConfigHandler()
+            user_proton_path = config_handler.get('proton_path', 'auto')
+
+            if user_proton_path == 'auto':
+                # Use enhanced fallback logic with GE-Proton preference
+                logger.info("User selected auto-detect, using GE-Proton → Experimental → Proton precedence")
+                return WineUtils.select_best_proton()
+            else:
+                # User has selected a specific Proton version
+                # Use the exact directory name for Steam config.vdf
+                try:
+                    proton_version = os.path.basename(user_proton_path)
+                    # GE-Proton uses exact directory name, Valve Proton needs lowercase conversion
+                    if proton_version.startswith('GE-Proton'):
+                        # Keep GE-Proton name exactly as-is
+                        steam_proton_name = proton_version
+                    else:
+                        # Convert Valve Proton names to Steam's format
+                        steam_proton_name = proton_version.lower().replace(' - ', '_').replace(' ', '_').replace('-', '_')
+                        if not steam_proton_name.startswith('proton'):
+                            steam_proton_name = f"proton_{steam_proton_name}"
+
+                    logger.info(f"Using user-selected Proton: {steam_proton_name}")
+                    return steam_proton_name
+                except Exception as e:
+                    logger.warning(f"Invalid user Proton path '{user_proton_path}', falling back to auto: {e}")
+                    return WineUtils.select_best_proton()
+
+        except Exception as e:
+            logger.error(f"Failed to get user Proton preference, using default: {e}")
+            return "proton_experimental"
     
     
     def create_shortcut_with_native_service(self, shortcut_name: str, exe_path: str, 
@@ -87,6 +125,9 @@ class AutomatedPrefixService:
                     logger.warning(f"Could not generate STEAM_COMPAT_MOUNTS, using default: {e}")
                     launch_options = "%command%"
             
+            # Get user's preferred Proton version
+            proton_version = self._get_user_proton_version()
+
             # Create shortcut with Proton using native service
             success, app_id = steam_service.create_shortcut_with_proton(
                 app_name=shortcut_name,
@@ -94,7 +135,7 @@ class AutomatedPrefixService:
                 start_dir=modlist_install_dir,
                 launch_options=launch_options,
                 tags=["Jackify"],
-                proton_version="proton_experimental"
+                proton_version=proton_version
             )
             
             if success and app_id:
@@ -292,13 +333,13 @@ class AutomatedPrefixService:
                 logger.error(f"Steam userdata directory not found: {userdata_dir}")
                 return None
             
-            # Find the first user directory (most systems have only one user)
-            user_dirs = [d for d in userdata_dir.iterdir() if d.is_dir() and d.name.isdigit()]
+            # Find user directories (excluding user 0 which is a system account)
+            user_dirs = [d for d in userdata_dir.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
             if not user_dirs:
-                logger.error("No Steam user directories found in userdata")
+                logger.error("No valid Steam user directories found in userdata (user 0 is not valid)")
                 return None
             
-            # Use the first user directory found
+            # Use the first valid user directory found
             user_dir = user_dirs[0]
             shortcuts_path = user_dir / "config" / "shortcuts.vdf"
             
@@ -2499,8 +2540,8 @@ echo Prefix creation complete.
         # Try the standard Steam userdata path
         steam_userdata_path = Path.home() / ".steam" / "steam" / "userdata"
         if steam_userdata_path.exists():
-            # Find the first user directory (usually only one on Steam Deck)
-            user_dirs = [d for d in steam_userdata_path.iterdir() if d.is_dir() and d.name.isdigit()]
+            # Find user directories (excluding user 0 which is a system account)
+            user_dirs = [d for d in steam_userdata_path.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
             if user_dirs:
                 localconfig_path = user_dirs[0] / "config" / "localconfig.vdf"
                 if localconfig_path.exists():
@@ -2601,8 +2642,11 @@ echo Prefix creation complete.
             env = os.environ.copy()
             env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = str(steam_root)
             env['STEAM_COMPAT_DATA_PATH'] = str(compatdata_dir / str(abs(appid)))
-            # Suppress GUI windows by unsetting DISPLAY
+            # Suppress GUI windows using jackify-engine's proven approach
             env['DISPLAY'] = ''
+            env['WAYLAND_DISPLAY'] = ''
+            env['WINEDEBUG'] = '-all'
+            env['WINEDLLOVERRIDES'] = 'msdia80.dll=n;conhost.exe=d;cmd.exe=d'
             
             # Create the compatdata directory
             compat_dir = compatdata_dir / str(abs(appid))
@@ -2616,7 +2660,9 @@ echo Prefix creation complete.
             cmd = [str(proton_path), 'run', 'wineboot', '-u']
             logger.info(f"Running: {' '.join(cmd)}")
             
-            result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60)
+            # Use jackify-engine's approach: UseShellExecute=false, CreateNoWindow=true equivalent
+            result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60,
+                                  shell=False, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             logger.info(f"Proton exit code: {result.returncode}")
             
             if result.stdout:
@@ -2718,26 +2764,39 @@ echo Prefix creation complete.
 
     def verify_compatibility_tool_persists(self, appid: int) -> bool:
         """
-        Verify that the compatibility tool setting persists.
-        
+        Verify that the compatibility tool setting persists with correct Proton version.
+
         Args:
             appid: The AppID to check
-            
+
         Returns:
-            True if compatibility tool is set, False otherwise
+            True if compatibility tool is correctly set, False otherwise
         """
         try:
             config_path = Path.home() / ".steam/steam/config/config.vdf"
-            with open(config_path, 'r') as f:
+            if not config_path.exists():
+                logger.warning("Steam config.vdf not found")
+                return False
+
+            with open(config_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
+            # Check if AppID exists and has a Proton version set
             if f'"{appid}"' in content:
-                logger.info(" Compatibility tool persists")
-                return True
+                # Get the expected Proton version
+                expected_proton = self._get_user_proton_version()
+
+                # Look for the Proton version in the compatibility tool mapping
+                if expected_proton in content:
+                    logger.info(f" Compatibility tool persists: {expected_proton}")
+                    return True
+                else:
+                    logger.warning(f"AppID {appid} found but Proton version '{expected_proton}' not set")
+                    return False
             else:
                 logger.warning("Compatibility tool not found")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error verifying compatibility tool: {e}")
             return False

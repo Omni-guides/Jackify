@@ -367,6 +367,10 @@ class InstallModlistScreen(QWidget):
         self.resolution_service = ResolutionService()
         self.config_handler = ConfigHandler()
         self.protontricks_service = ProtontricksDetectionService()
+        
+        # Somnium guidance tracking
+        self._show_somnium_guidance = False
+        self._somnium_install_dir = None
 
         # Scroll tracking for professional auto-scroll behavior
         self._user_manually_scrolled = False
@@ -1356,7 +1360,8 @@ class InstallModlistScreen(QWidget):
                         'oblivion': 'oblivion',
                         'starfield': 'starfield',
                         'oblivion_remastered': 'oblivion_remastered',
-                        'enderal': 'enderal'
+                        'enderal': 'enderal',
+                        'enderal special edition': 'enderal'
                     }
                     game_type = game_mapping.get(game_name.lower())
                     debug_print(f"DEBUG: Mapped game_name '{game_name}' to game_type: '{game_type}'")
@@ -1373,6 +1378,7 @@ class InstallModlistScreen(QWidget):
             
             # Check if game is supported
             debug_print(f"DEBUG: Checking if game_type '{game_type}' is supported")
+            debug_print(f"DEBUG: game_type='{game_type}', game_name='{game_name}'")
             is_supported = self.wabbajack_parser.is_supported_game(game_type) if game_type else False
             debug_print(f"DEBUG: is_supported_game('{game_type}') returned: {is_supported}")
             
@@ -1760,10 +1766,26 @@ class InstallModlistScreen(QWidget):
             final_exe_path = os.path.join(install_dir, "ModOrganizer.exe")
             
             if not os.path.exists(final_exe_path):
-                self._safe_append_text(f"ERROR: ModOrganizer.exe not found at {final_exe_path}")
-                MessageService.critical(self, "ModOrganizer.exe Not Found", 
-                    f"ModOrganizer.exe not found at:\n{final_exe_path}\n\nCannot proceed with automated setup.")
-                return
+                # Check if this is Somnium specifically (uses files/ subdirectory)
+                modlist_name_lower = modlist_name.lower()
+                if "somnium" in modlist_name_lower:
+                    somnium_exe_path = os.path.join(install_dir, "files", "ModOrganizer.exe")
+                    if os.path.exists(somnium_exe_path):
+                        final_exe_path = somnium_exe_path
+                        self._safe_append_text(f"Detected Somnium modlist - will proceed with automated setup")
+                        # Show Somnium guidance popup after automated workflow completes
+                        self._show_somnium_guidance = True
+                        self._somnium_install_dir = install_dir
+                    else:
+                        self._safe_append_text(f"ERROR: Somnium ModOrganizer.exe not found at {somnium_exe_path}")
+                        MessageService.critical(self, "Somnium ModOrganizer.exe Not Found", 
+                            f"Expected Somnium ModOrganizer.exe not found at:\n{somnium_exe_path}\n\nCannot proceed with automated setup.")
+                        return
+                else:
+                    self._safe_append_text(f"ERROR: ModOrganizer.exe not found at {final_exe_path}")
+                    MessageService.critical(self, "ModOrganizer.exe Not Found", 
+                        f"ModOrganizer.exe not found at:\n{final_exe_path}\n\nCannot proceed with automated setup.")
+                    return
             
             # Run automated prefix creation in separate thread
             from PySide6.QtCore import QThread, Signal
@@ -1940,6 +1962,10 @@ class InstallModlistScreen(QWidget):
             self._enable_controls_after_operation()
             
             if success:
+                # Check if we need to show Somnium guidance
+                if self._show_somnium_guidance:
+                    self._show_somnium_post_install_guidance()
+                
                 # Show celebration SuccessDialog after the entire workflow
                 from ..dialogs import SuccessDialog
                 import time
@@ -2041,11 +2067,20 @@ class InstallModlistScreen(QWidget):
             self.cancel_btn.setVisible(True)
             self.cancel_install_btn.setVisible(False)
 
+    def _get_mo2_path(self, install_dir, modlist_name):
+        """Get ModOrganizer.exe path, handling Somnium's non-standard structure"""
+        mo2_exe_path = os.path.join(install_dir, "ModOrganizer.exe")
+        if not os.path.exists(mo2_exe_path) and "somnium" in modlist_name.lower():
+            somnium_path = os.path.join(install_dir, "files", "ModOrganizer.exe")
+            if os.path.exists(somnium_path):
+                mo2_exe_path = somnium_path
+        return mo2_exe_path
+
     def validate_manual_steps_completion(self):
         """Validate that manual steps were actually completed and handle retry logic"""
         modlist_name = self.modlist_name_edit.text().strip()
         install_dir = self.install_dir_edit.text().strip()
-        mo2_exe_path = os.path.join(install_dir, "ModOrganizer.exe")
+        mo2_exe_path = self._get_mo2_path(install_dir, modlist_name)
         
         # Add delay to allow Steam filesystem updates to complete
         self._safe_append_text("Waiting for Steam filesystem updates to complete...")
@@ -2283,7 +2318,7 @@ class InstallModlistScreen(QWidget):
             updated_context = {
                 'name': modlist_name,
                 'path': install_dir,
-                'mo2_exe_path': os.path.join(install_dir, "ModOrganizer.exe"),
+                'mo2_exe_path': self._get_mo2_path(install_dir, modlist_name),
                 'modlist_value': None,
                 'modlist_source': None,
                 'resolution': getattr(self, '_current_resolution', '2560x1600'),
@@ -2381,7 +2416,7 @@ class InstallModlistScreen(QWidget):
             updated_context = {
                 'name': modlist_name,
                 'path': install_dir,
-                'mo2_exe_path': os.path.join(install_dir, "ModOrganizer.exe"),
+                'mo2_exe_path': self._get_mo2_path(install_dir, modlist_name),
                 'modlist_value': None,
                 'modlist_source': None,
                 'resolution': getattr(self, '_current_resolution', '2560x1600'),
@@ -2615,6 +2650,26 @@ class InstallModlistScreen(QWidget):
             self.cancel_install_btn.setVisible(False)
             
             self._safe_append_text("Installation cancelled by user.")
+
+    def _show_somnium_post_install_guidance(self):
+        """Show guidance popup for Somnium post-installation steps"""
+        from ..widgets.message_service import MessageService
+        
+        guidance_text = f"""<b>Somnium Post-Installation Required</b><br><br>
+Due to Somnium's non-standard folder structure, you need to manually update the binary paths in ModOrganizer:<br><br>
+<b>1.</b> Launch the Steam shortcut created for Somnium<br>
+<b>2.</b> In ModOrganizer, go to Settings → Executables<br>
+<b>3.</b> For each executable entry (SKSE64, etc.), update the binary path to point to:<br>
+<code>{self._somnium_install_dir}/files/root/Enderal Special Edition/skse64_loader.exe</code><br><br>
+<b>Note:</b> Full Somnium support will be added in a future Jackify update.<br><br>
+<i>You can also refer to the Somnium installation guide at:<br>
+https://wiki.scenicroute.games/Somnium/1_Installation.html</i>"""
+        
+        MessageService.information(self, "Somnium Setup Required", guidance_text)
+        
+        # Reset the guidance flag
+        self._show_somnium_guidance = False
+        self._somnium_install_dir = None
 
     def cancel_and_cleanup(self):
         """Handle Cancel button - clean up processes and go back"""

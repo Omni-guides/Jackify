@@ -1163,7 +1163,7 @@ class ModlistHandler:
         # Determine game type
         game = (game_var_full or modlist_name or "").lower().replace(" ", "")
         # Add game-specific extras
-        if "skyrim" in game or "fallout4" in game or "starfield" in game or "oblivion_remastered" in game:
+        if "skyrim" in game or "fallout4" in game or "starfield" in game or "oblivion_remastered" in game or "enderal" in game:
             extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7"]
         elif "falloutnewvegas" in game or "fnv" in game or "oblivion" in game:
             extras += ["d3dx9_43", "d3dx9"]
@@ -1238,6 +1238,12 @@ class ModlistHandler:
         # Check ModOrganizer.ini for indicators (nvse/enderal) as an early, robust signal
         try:
             mo2_ini = modlist_path / "ModOrganizer.ini"
+            # Also check Somnium's non-standard location
+            if not mo2_ini.exists():
+                somnium_mo2_ini = modlist_path / "files" / "ModOrganizer.ini"
+                if somnium_mo2_ini.exists():
+                    mo2_ini = somnium_mo2_ini
+            
             if mo2_ini.exists():
                 try:
                     content = mo2_ini.read_text(errors='ignore').lower()

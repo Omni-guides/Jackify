@@ -13,7 +13,7 @@ import shutil
 import time
 from pathlib import Path
 import glob
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 from .subprocess_utils import get_clean_subprocess_env
 
 # Initialize logger
@@ -643,7 +643,20 @@ class WineUtils:
                     wine_bin = subdir / "files/bin/wine"
                     if wine_bin.is_file():
                         return str(wine_bin)
-        # Fallback: Try 'Proton - Experimental' if present
+        # Fallback: Try user's configured Proton version
+        try:
+            from .config_handler import ConfigHandler
+            config = ConfigHandler()
+            fallback_path = config.get('proton_path', 'auto')
+            if fallback_path != 'auto':
+                fallback_wine_bin = Path(fallback_path) / "files/bin/wine"
+                if fallback_wine_bin.is_file():
+                    logger.warning(f"Requested Proton version '{proton_version}' not found. Falling back to user's configured version.")
+                    return str(fallback_wine_bin)
+        except Exception:
+            pass
+
+        # Final fallback: Try 'Proton - Experimental' if present
         for base_path in steam_common_paths:
             wine_bin = base_path / "Proton - Experimental" / "files/bin/wine"
             if wine_bin.is_file():
@@ -699,3 +712,275 @@ class WineUtils:
         logger.debug(f"Found Proton path: {proton_path}")
         
         return compatdata_path, proton_path, wine_bin 
+    
+    @staticmethod
+    def get_steam_library_paths() -> List[Path]:
+        """
+        Get all Steam library paths including standard locations.
+
+        Returns:
+            List of Path objects for Steam library directories
+        """
+        steam_paths = [
+            Path.home() / ".steam/steam/steamapps/common",
+            Path.home() / ".local/share/Steam/steamapps/common",
+            Path.home() / ".steam/root/steamapps/common"
+        ]
+
+        # Return only existing paths
+        return [path for path in steam_paths if path.exists()]
+
+    @staticmethod
+    def get_compatibility_tool_paths() -> List[Path]:
+        """
+        Get all compatibility tool paths for GE-Proton and other custom Proton versions.
+
+        Returns:
+            List of Path objects for compatibility tool directories
+        """
+        compat_paths = [
+            Path.home() / ".steam/steam/compatibilitytools.d",
+            Path.home() / ".local/share/Steam/compatibilitytools.d"
+        ]
+
+        # Return only existing paths
+        return [path for path in compat_paths if path.exists()]
+
+    @staticmethod
+    def scan_ge_proton_versions() -> List[Dict[str, any]]:
+        """
+        Scan for available GE-Proton versions in compatibilitytools.d directories.
+
+        Returns:
+            List of dicts with version info, sorted by priority (newest first)
+        """
+        logger.info("Scanning for available GE-Proton versions...")
+
+        found_versions = []
+        compat_paths = WineUtils.get_compatibility_tool_paths()
+
+        if not compat_paths:
+            logger.warning("No compatibility tool paths found")
+            return []
+
+        for compat_path in compat_paths:
+            logger.debug(f"Scanning compatibility tools: {compat_path}")
+
+            try:
+                # Look for GE-Proton directories
+                for proton_dir in compat_path.iterdir():
+                    if not proton_dir.is_dir():
+                        continue
+
+                    dir_name = proton_dir.name
+                    if not dir_name.startswith("GE-Proton"):
+                        continue
+
+                    # Check for wine binary
+                    wine_bin = proton_dir / "files" / "bin" / "wine"
+                    if not wine_bin.exists() or not wine_bin.is_file():
+                        logger.debug(f"Skipping {dir_name} - no wine binary found")
+                        continue
+
+                    # Parse version from directory name (e.g., "GE-Proton10-16")
+                    version_match = re.match(r'GE-Proton(\d+)-(\d+)', dir_name)
+                    if version_match:
+                        major_ver = int(version_match.group(1))
+                        minor_ver = int(version_match.group(2))
+
+                        # Calculate priority: GE-Proton gets highest priority
+                        # Priority format: 200 (base) + major*10 + minor (e.g., 200 + 100 + 16 = 316)
+                        priority = 200 + (major_ver * 10) + minor_ver
+
+                        found_versions.append({
+                            'name': dir_name,
+                            'path': proton_dir,
+                            'wine_bin': wine_bin,
+                            'priority': priority,
+                            'major_version': major_ver,
+                            'minor_version': minor_ver,
+                            'type': 'GE-Proton'
+                        })
+                        logger.debug(f"Found {dir_name} at {proton_dir} (priority: {priority})")
+                    else:
+                        logger.debug(f"Skipping {dir_name} - unknown GE-Proton version format")
+
+            except Exception as e:
+                logger.warning(f"Error scanning {compat_path}: {e}")
+
+        # Sort by priority (highest first, so newest GE-Proton versions come first)
+        found_versions.sort(key=lambda x: x['priority'], reverse=True)
+
+        logger.info(f"Found {len(found_versions)} GE-Proton version(s)")
+        return found_versions
+
+    @staticmethod
+    def scan_valve_proton_versions() -> List[Dict[str, any]]:
+        """
+        Scan for available Valve Proton versions with fallback priority.
+        
+        Returns:
+            List of dicts with version info, sorted by priority (best first)
+        """
+        logger.info("Scanning for available Valve Proton versions...")
+        
+        found_versions = []
+        steam_libs = WineUtils.get_steam_library_paths()
+        
+        if not steam_libs:
+            logger.warning("No Steam library paths found")
+            return []
+        
+        # Priority order for Valve Proton versions
+        # Note: GE-Proton uses 200+ range, so Valve Proton gets 100+ range
+        preferred_versions = [
+            ("Proton - Experimental", 150),  # Higher priority than regular Valve Proton
+            ("Proton 10.0", 140),
+            ("Proton 9.0", 130),
+            ("Proton 9.0 (Beta)", 125)
+        ]
+        
+        for steam_path in steam_libs:
+            logger.debug(f"Scanning Steam library: {steam_path}")
+            
+            for version_name, priority in preferred_versions:
+                proton_path = steam_path / version_name
+                wine_bin = proton_path / "files" / "bin" / "wine"
+                
+                if wine_bin.exists() and wine_bin.is_file():
+                    found_versions.append({
+                        'name': version_name,
+                        'path': proton_path,
+                        'wine_bin': wine_bin,
+                        'priority': priority,
+                        'type': 'Valve-Proton'
+                    })
+                    logger.debug(f"Found {version_name} at {proton_path}")
+        
+        # Sort by priority (highest first)
+        found_versions.sort(key=lambda x: x['priority'], reverse=True)
+        
+        # Remove duplicates while preserving order
+        unique_versions = []
+        seen_names = set()
+        for version in found_versions:
+            if version['name'] not in seen_names:
+                unique_versions.append(version)
+                seen_names.add(version['name'])
+        
+        logger.info(f"Found {len(unique_versions)} unique Valve Proton version(s)")
+        return unique_versions
+
+    @staticmethod
+    def scan_all_proton_versions() -> List[Dict[str, any]]:
+        """
+        Scan for all available Proton versions (GE-Proton + Valve Proton) with unified priority.
+
+        Priority Chain (highest to lowest):
+        1. GE-Proton10-16+ (priority 316+)
+        2. GE-Proton10-* (priority 200+)
+        3. Proton - Experimental (priority 150)
+        4. Proton 10.0 (priority 140)
+        5. Proton 9.0 (priority 130)
+        6. Proton 9.0 (Beta) (priority 125)
+
+        Returns:
+            List of dicts with version info, sorted by priority (best first)
+        """
+        logger.info("Scanning for all available Proton versions...")
+
+        all_versions = []
+
+        # Scan GE-Proton versions (highest priority)
+        ge_versions = WineUtils.scan_ge_proton_versions()
+        all_versions.extend(ge_versions)
+
+        # Scan Valve Proton versions
+        valve_versions = WineUtils.scan_valve_proton_versions()
+        all_versions.extend(valve_versions)
+
+        # Sort by priority (highest first)
+        all_versions.sort(key=lambda x: x['priority'], reverse=True)
+
+        # Remove duplicates while preserving order
+        unique_versions = []
+        seen_names = set()
+        for version in all_versions:
+            if version['name'] not in seen_names:
+                unique_versions.append(version)
+                seen_names.add(version['name'])
+
+        if unique_versions:
+            logger.info(f"Found {len(unique_versions)} total Proton version(s)")
+            logger.info(f"Best available: {unique_versions[0]['name']} ({unique_versions[0]['type']})")
+        else:
+            logger.warning("No Proton versions found")
+
+        return unique_versions
+
+    @staticmethod
+    def select_best_proton() -> Optional[Dict[str, any]]:
+        """
+        Select the best available Proton version (GE-Proton or Valve Proton) using unified precedence.
+
+        Returns:
+            Dict with version info for the best Proton, or None if none found
+        """
+        available_versions = WineUtils.scan_all_proton_versions()
+
+        if not available_versions:
+            logger.warning("No compatible Proton versions found")
+            return None
+
+        # Return the highest priority version (first in sorted list)
+        best_version = available_versions[0]
+        logger.info(f"Selected best Proton version: {best_version['name']} ({best_version['type']})")
+        return best_version
+
+    @staticmethod
+    def select_best_valve_proton() -> Optional[Dict[str, any]]:
+        """
+        Select the best available Valve Proton version using fallback precedence.
+        Note: This method is kept for backward compatibility. Consider using select_best_proton() instead.
+
+        Returns:
+            Dict with version info for the best Proton, or None if none found
+        """
+        available_versions = WineUtils.scan_valve_proton_versions()
+
+        if not available_versions:
+            logger.warning("No compatible Valve Proton versions found")
+            return None
+
+        # Return the highest priority version (first in sorted list)
+        best_version = available_versions[0]
+        logger.info(f"Selected Valve Proton version: {best_version['name']}")
+        return best_version
+    
+    @staticmethod
+    def check_proton_requirements() -> Tuple[bool, str, Optional[Dict[str, any]]]:
+        """
+        Check if compatible Proton version is available for workflows.
+
+        Returns:
+            tuple: (requirements_met, status_message, proton_info)
+            - requirements_met: True if compatible Proton found
+            - status_message: Human-readable status for display to user
+            - proton_info: Dict with Proton details if found, None otherwise
+        """
+        logger.info("Checking Proton requirements for workflow...")
+
+        # Scan for available Proton versions (includes GE-Proton + Valve Proton)
+        best_proton = WineUtils.select_best_proton()
+
+        if best_proton:
+            # Compatible Proton found
+            proton_type = best_proton.get('type', 'Unknown')
+            status_msg = f"✓ Using {best_proton['name']} ({proton_type}) for this workflow"
+            logger.info(f"Proton requirements satisfied: {best_proton['name']} ({proton_type})")
+            return True, status_msg, best_proton
+        else:
+            # No compatible Proton found
+            status_msg = "✗ No compatible Proton version found (GE-Proton 10+, Proton 9+, 10, or Experimental required)"
+            logger.warning("Proton requirements not met - no compatible version found")
+            return False, status_msg, None 

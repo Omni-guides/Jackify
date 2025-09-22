@@ -132,7 +132,8 @@ class WabbajackParser:
             'falloutnv': 'Fallout New Vegas',
             'oblivion': 'Oblivion',
             'starfield': 'Starfield',
-            'oblivion_remastered': 'Oblivion Remastered'
+            'oblivion_remastered': 'Oblivion Remastered',
+            'enderal': 'Enderal'
         }
         return [display_names.get(game, game) for game in self.supported_games]
 

@@ -988,8 +988,8 @@ class ShortcutHandler:
                     shortcuts_data = VDFHandler.load(shortcuts_vdf_path, binary=True)
                     if shortcuts_data and 'shortcuts' in shortcuts_data:
                         for idx, shortcut in shortcuts_data['shortcuts'].items():
-                            app_name = shortcut.get('AppName', '').strip()
-                            exe = shortcut.get('Exe', '').strip('"').strip()
+                            app_name = shortcut.get('AppName', shortcut.get('appname', '')).strip()
+                            exe = shortcut.get('Exe', shortcut.get('exe', '')).strip('"').strip()
                             vdf_shortcuts.append((app_name, exe, idx))
                 except Exception as e:
                     self.logger.error(f"Error parsing shortcuts.vdf for exe path matching: {e}")
@@ -1054,9 +1054,9 @@ class ShortcutHandler:
                     self.logger.warning(f"Skipping invalid shortcut entry (not a dict) at index {shortcut_id} in {shortcuts_file}")
                     continue 
                     
-                app_name = shortcut.get('AppName')
-                exe_path = shortcut.get('Exe', '').strip('"')
-                start_dir = shortcut.get('StartDir', '').strip('"')
+                app_name = shortcut.get('AppName', shortcut.get('appname'))
+                exe_path = shortcut.get('Exe', shortcut.get('exe', '')).strip('"')
+                start_dir = shortcut.get('StartDir', shortcut.get('startdir', '')).strip('"')
                 
                 # Check if the base name of the exe_path matches the target
                 if app_name and start_dir and os.path.basename(exe_path) == executable_name:

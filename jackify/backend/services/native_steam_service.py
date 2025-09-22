@@ -40,13 +40,13 @@ class NativeSteamService:
                 logger.error("Steam userdata directory not found")
                 return False
             
-            # Find the first user directory (usually there's only one)
-            user_dirs = [d for d in self.userdata_path.iterdir() if d.is_dir() and d.name.isdigit()]
+            # Find user directories (excluding user 0 which is a system account)
+            user_dirs = [d for d in self.userdata_path.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
             if not user_dirs:
-                logger.error("No Steam user directories found")
+                logger.error("No valid Steam user directories found (user 0 is not valid for shortcuts)")
                 return False
             
-            # Use the first user directory
+            # Use the first valid user directory
             user_dir = user_dirs[0]
             self.user_id = user_dir.name
             self.user_config_path = user_dir / "config"
@@ -327,17 +327,27 @@ class NativeSteamService:
             logger.error(f"Error setting Proton version: {e}")
             return False
     
-    def create_shortcut_with_proton(self, app_name: str, exe_path: str, start_dir: str = None, 
+    def create_shortcut_with_proton(self, app_name: str, exe_path: str, start_dir: str = None,
                                   launch_options: str = "%command%", tags: List[str] = None,
-                                  proton_version: str = "proton_experimental") -> Tuple[bool, Optional[int]]:
+                                  proton_version: str = None) -> Tuple[bool, Optional[int]]:
         """
         Complete workflow: Create shortcut and set Proton version.
-        
+
         This is the main method that replaces STL entirely.
-        
+
         Returns:
             (success, app_id) - Success status and the AppID
         """
+        # Auto-detect best Proton version if none provided
+        if proton_version is None:
+            try:
+                from jackify.backend.core.modlist_operations import _get_user_proton_version
+                proton_version = _get_user_proton_version()
+                logger.info(f"Auto-detected Proton version: {proton_version}")
+            except Exception as e:
+                logger.warning(f"Failed to auto-detect Proton, falling back to experimental: {e}")
+                proton_version = "proton_experimental"
+
         logger.info(f"Creating shortcut with Proton: '{app_name}' -> '{proton_version}'")
         
         # Step 1: Create the shortcut

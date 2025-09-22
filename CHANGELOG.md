@@ -1,5 +1,50 @@
 # Jackify Changelog
 
+## v0.1.4 - GE-Proton Support and Performance Optimization
+**Release Date:** September 22, 2025
+
+### New Features
+- **GE-Proton Detection**: Automatic detection and prioritization of GE-Proton versions
+- **User-selectable Proton version**: Settings dialog displays all available Proton versions with type indicators
+
+### Engine Updates
+- **jackify-engine v0.3.15**: Reads Proton configuration from config.json, adds degree symbol handling for special characters, removes Wine fallback (Proton now required)
+
+### Technical Improvements
+- **Smart Priority**: GE-Proton 10+ → Proton Experimental → Proton 10 → Proton 9
+- **Auto-Configuration**: Fresh installations automatically select optimal Proton version
+
+### Bug Fixes
+- **Steam VDF Compatibility**: Fixed case-sensitivity issues with Steam shortcuts.vdf parsing for Configure Existing Modlist workflows
+
+---
+
+## v0.1.3 - Enhanced Proton Support and System Compatibility
+**Release Date:** September 21, 2025
+
+### New Features
+- **Enhanced Proton Detection**: Automatic fallback system with priority: Experimental → Proton 10 → Proton 9
+- **Guided Proton Installation**: Professional auto-install dialog with Steam protocol integration for missing Proton versions
+- **Enderal Game Support**: Added Enderal to supported games list with special handling for Somnium modlist structure
+- **Proton Version Leniency**: Accept any Proton version 9+ instead of requiring Experimental
+
+### UX Improvements
+- **Resolution System Overhaul**: Eliminated hardcoded 2560x1600 fallbacks across all screens
+- **Steam Deck Detection**: Proper 1280x800 default resolution with 1920x1080 fallback for desktop
+- **Leave Unchanged Logic**: Fixed resolution setting to actually preserve existing user configurations
+
+### Technical Improvements
+- **Resolution Utilities**: New `shared/resolution_utils.py` with centralized resolution management
+- **Protontricks Detection**: Enhanced detection for both native and Flatpak protontricks installations
+- **Real-time Monitoring**: Progress tracking for Proton installation with directory stability detection
+
+### Bug Fixes
+- **Somnium Support**: Automatic detection of `files/ModOrganizer.exe` structure in edge-case modlists
+- **Steam Protocol Integration**: Reliable triggering of Proton installation via `steam://install/` URLs
+- **Manual Fallback**: Clear instructions and recheck functionality when auto-install fails
+
+---
+
 ## v0.1.2 - About Dialog and System Information
 **Release Date:** September 16, 2025
 

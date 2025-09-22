@@ -7,6 +7,7 @@ This replaces the legacy jackify_gui implementation with a refactored architectu
 
 import sys
 import os
+import logging
 from pathlib import Path
 
 # Suppress xkbcommon locale errors (harmless but annoying)
@@ -81,6 +82,9 @@ if '--env-diagnostic' in sys.argv:
 
 from jackify import __version__ as jackify_version
 
+# Initialize logger
+logger = logging.getLogger(__name__)
+
 if '--help' in sys.argv or '-h' in sys.argv:
     print("""Jackify - Native Linux Modlist Manager\n\nUsage:\n  jackify [--cli] [--debug] [--version] [--help]\n\nOptions:\n  --cli         Launch CLI frontend\n  --debug       Enable debug logging\n  --version     Show version and exit\n  --help, -h    Show this help message and exit\n\nIf no options are given, the GUI will launch by default.\n""")
     sys.exit(0)
@@ -98,7 +102,7 @@ sys.path.insert(0, str(src_dir))
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout, QPushButton,
-    QStackedWidget, QHBoxLayout, QDialog, QFormLayout, QLineEdit, QCheckBox, QSpinBox, QMessageBox, QGroupBox, QGridLayout, QFileDialog, QToolButton, QStyle
+    QStackedWidget, QHBoxLayout, QDialog, QFormLayout, QLineEdit, QCheckBox, QSpinBox, QMessageBox, QGroupBox, QGridLayout, QFileDialog, QToolButton, QStyle, QComboBox
 )
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QIcon
@@ -298,6 +302,33 @@ class SettingsDialog(QDialog):
             main_layout.addWidget(api_group)
             main_layout.addSpacing(12)
 
+            # --- Proton Version Section ---
+            proton_group = QGroupBox("Proton Version")
+            proton_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+            proton_layout = QHBoxLayout()
+            proton_group.setLayout(proton_layout)
+
+            self.proton_dropdown = QComboBox()
+            self.proton_dropdown.setToolTip("Select Proton version for shortcut creation and texture processing")
+            self.proton_dropdown.setMinimumWidth(200)
+
+            # Populate Proton dropdown
+            self._populate_proton_dropdown()
+
+            # Refresh button for Proton detection
+            refresh_btn = QPushButton("↻")
+            refresh_btn.setFixedSize(30, 30)
+            refresh_btn.setToolTip("Refresh Proton version list")
+            refresh_btn.clicked.connect(self._refresh_proton_dropdown)
+
+            proton_layout.addWidget(QLabel("Proton Version:"))
+            proton_layout.addWidget(self.proton_dropdown)
+            proton_layout.addWidget(refresh_btn)
+            proton_layout.addStretch()
+
+            main_layout.addWidget(proton_group)
+            main_layout.addSpacing(12)
+
             # --- Directories & Paths Section ---
             dir_group = QGroupBox("Directories & Paths")
             dir_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
@@ -447,6 +478,85 @@ class SettingsDialog(QDialog):
         api_key = text.strip()
         self.config_handler.save_api_key(api_key)
 
+    def _get_proton_10_path(self):
+        """Get Proton 10 path if available, fallback to auto"""
+        try:
+            from jackify.backend.handlers.wine_utils import WineUtils
+            available_protons = WineUtils.scan_valve_proton_versions()
+
+            # Look for Proton 10.x
+            for proton in available_protons:
+                if proton['version'].startswith('10.'):
+                    return proton['path']
+
+            # Fallback to auto if no Proton 10 found
+            return 'auto'
+        except:
+            return 'auto'
+
+    def _populate_proton_dropdown(self):
+        """Populate Proton version dropdown with detected versions (includes GE-Proton and Valve Proton)"""
+        try:
+            from jackify.backend.handlers.wine_utils import WineUtils
+
+            # Get all available Proton versions (GE-Proton + Valve Proton)
+            available_protons = WineUtils.scan_all_proton_versions()
+
+            # Add "Auto" option first
+            self.proton_dropdown.addItem("Auto", "auto")
+
+            # Add detected Proton versions with type indicators
+            for proton in available_protons:
+                proton_name = proton.get('name', 'Unknown Proton')
+                proton_type = proton.get('type', 'Unknown')
+
+                # Format display name to show type for clarity
+                if proton_type == 'GE-Proton':
+                    display_name = f"{proton_name} (GE)"
+                elif proton_type == 'Valve-Proton':
+                    display_name = f"{proton_name}"
+                else:
+                    display_name = proton_name
+
+                self.proton_dropdown.addItem(display_name, str(proton['path']))
+
+            # Load saved preference and determine UI selection
+            saved_proton = self.config_handler.get('proton_path', self._get_proton_10_path())
+
+            # Check if saved path matches any specific Proton in dropdown
+            found_match = False
+            for i in range(self.proton_dropdown.count()):
+                if self.proton_dropdown.itemData(i) == saved_proton:
+                    self.proton_dropdown.setCurrentIndex(i)
+                    found_match = True
+                    break
+
+            # If no exact match found, check if it's a resolved auto-selection
+            if not found_match and saved_proton != "auto":
+                # This means config has a resolved path from previous "Auto" selection
+                # Show "Auto" in UI since user chose auto-detection
+                for i in range(self.proton_dropdown.count()):
+                    if self.proton_dropdown.itemData(i) == "auto":
+                        self.proton_dropdown.setCurrentIndex(i)
+                        break
+
+        except Exception as e:
+            logger.error(f"Failed to populate Proton dropdown: {e}")
+            # Fallback: just show auto
+            self.proton_dropdown.addItem("Auto", "auto")
+
+    def _refresh_proton_dropdown(self):
+        """Refresh Proton dropdown with latest detected versions"""
+        current_selection = self.proton_dropdown.currentData()
+        self.proton_dropdown.clear()
+        self._populate_proton_dropdown()
+
+        # Restore selection if still available
+        for i in range(self.proton_dropdown.count()):
+            if self.proton_dropdown.itemData(i) == current_selection:
+                self.proton_dropdown.setCurrentIndex(i)
+                break
+
     def _save(self):
         # Validate values
         for k, (multithreading_checkbox, max_tasks_spin) in self.resource_edits.items():
@@ -490,6 +600,33 @@ class SettingsDialog(QDialog):
         # Save jackify data directory (always store actual path, never None)
         jackify_data_dir = self.jackify_data_dir_edit.text().strip()
         self.config_handler.set("jackify_data_dir", jackify_data_dir)
+
+        # Save Proton selection - resolve "auto" to actual path
+        selected_proton_path = self.proton_dropdown.currentData()
+        if selected_proton_path == "auto":
+            # Resolve "auto" to actual best Proton path using unified detection
+            try:
+                from jackify.backend.handlers.wine_utils import WineUtils
+                best_proton = WineUtils.select_best_proton()
+
+                if best_proton:
+                    resolved_path = str(best_proton['path'])
+                    resolved_version = best_proton['name']
+                else:
+                    resolved_path = "auto"
+                    resolved_version = "auto"
+            except:
+                resolved_path = "auto"
+                resolved_version = "auto"
+        else:
+            # User selected specific Proton version
+            resolved_path = selected_proton_path
+            # Extract version from dropdown text
+            resolved_version = self.proton_dropdown.currentText()
+
+        self.config_handler.set("proton_path", resolved_path)
+        self.config_handler.set("proton_version", resolved_version)
+
         self.config_handler.save_config()
         
         # Refresh cached paths in GUI screens if Jackify directory changed

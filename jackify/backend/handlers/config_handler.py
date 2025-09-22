@@ -47,8 +47,10 @@ class ConfigHandler:
         # If steam_path is not set, detect it
         if not self.settings["steam_path"]:
             self.settings["steam_path"] = self._detect_steam_path()
-            # Save the updated settings
-            self.save_config()
+
+        # Auto-detect and set Proton version on first run
+        if not self.settings.get("proton_path"):
+            self._auto_detect_proton()
         
         # If jackify_data_dir is not set, initialize it to default
         if not self.settings.get("jackify_data_dir"):
@@ -493,5 +495,29 @@ class ConfigHandler:
         except Exception as e:
             logger.error(f"Error saving modlist downloads base directory: {e}")
             return False
+
+    def _auto_detect_proton(self):
+        """Auto-detect and set best Proton version (includes GE-Proton and Valve Proton)"""
+        try:
+            from .wine_utils import WineUtils
+            best_proton = WineUtils.select_best_proton()
+
+            if best_proton:
+                self.settings["proton_path"] = str(best_proton['path'])
+                self.settings["proton_version"] = best_proton['name']
+                proton_type = best_proton.get('type', 'Unknown')
+                logger.info(f"Auto-detected Proton: {best_proton['name']} ({proton_type})")
+                self.save_config()
+            else:
+                # Fallback to auto-detect mode
+                self.settings["proton_path"] = "auto"
+                self.settings["proton_version"] = "auto"
+                logger.info("No compatible Proton versions found, using auto-detect mode")
+                self.save_config()
+
+        except Exception as e:
+            logger.error(f"Failed to auto-detect Proton: {e}")
+            self.settings["proton_path"] = "auto"
+            self.settings["proton_version"] = "auto"
 
  
