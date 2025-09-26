@@ -119,7 +119,7 @@ class ConfigureExistingModlistScreen(QWidget):
         self.shortcut_combo.addItem("Please Select...")
         self.shortcut_map = []
         for shortcut in self.mo2_shortcuts:
-            display = f"{shortcut.get('AppName', 'Unknown')} ({shortcut.get('StartDir', '')})"
+            display = f"{shortcut.get('AppName', shortcut.get('appname', 'Unknown'))} ({shortcut.get('StartDir', shortcut.get('startdir', ''))})"
             self.shortcut_combo.addItem(display)
             self.shortcut_map.append(shortcut)
         
@@ -427,8 +427,8 @@ class ConfigureExistingModlistScreen(QWidget):
             self._enable_controls_after_operation()
             return
         shortcut = self.shortcut_map[idx]
-        modlist_name = shortcut.get('AppName', '')
-        install_dir = shortcut.get('StartDir', '')
+        modlist_name = shortcut.get('AppName', shortcut.get('appname', ''))
+        install_dir = shortcut.get('StartDir', shortcut.get('startdir', ''))
         if not modlist_name or not install_dir:
             MessageService.critical(self, "Invalid Shortcut", "The selected shortcut is missing required information.", safety_level="medium")
             self._enable_controls_after_operation()
@@ -710,7 +710,7 @@ class ConfigureExistingModlistScreen(QWidget):
             self.shortcut_map.clear()
             
             for shortcut in self.mo2_shortcuts:
-                display = f"{shortcut.get('AppName', 'Unknown')} ({shortcut.get('StartDir', '')})"
+                display = f"{shortcut.get('AppName', shortcut.get('appname', 'Unknown'))} ({shortcut.get('StartDir', shortcut.get('startdir', ''))})"
                 self.shortcut_combo.addItem(display)
                 self.shortcut_map.append(shortcut)
             

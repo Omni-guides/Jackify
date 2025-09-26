@@ -198,15 +198,42 @@ class WineUtils:
             return False
     
     @staticmethod
+    def _get_sd_card_mounts():
+        """
+        Dynamically detect all current SD card mount points
+        Returns list of mount point paths
+        """
+        try:
+            import subprocess
+            result = subprocess.run(['df', '-h'], capture_output=True, text=True, timeout=5)
+            sd_mounts = []
+            for line in result.stdout.split('\n'):
+                # Look for common SD card mount patterns
+                if '/run/media' in line or ('/mnt' in line and 'sdcard' in line.lower()):
+                    parts = line.split()
+                    if len(parts) >= 6:  # df output has 6+ columns
+                        mount_point = parts[-1]  # Last column is mount point
+                        if mount_point.startswith(('/run/media', '/mnt')):
+                            sd_mounts.append(mount_point)
+            return sd_mounts
+        except Exception:
+            # Fallback to common patterns if df fails
+            return ['/run/media/mmcblk0p1', '/run/media/deck']
+
+    @staticmethod
     def _strip_sdcard_path(path):
         """
-        Strip /run/media/deck/UUID from SD card paths
-        Internal helper method
+        Strip any detected SD card mount prefix from paths
+        Handles both /run/media/mmcblk0p1 and /run/media/deck/UUID patterns
         """
-        if path.startswith("/run/media/deck/"):
-            parts = path.split("/", 5)
-            if len(parts) >= 6:
-                return "/" + parts[5]
+        sd_mounts = WineUtils._get_sd_card_mounts()
+
+        for mount in sd_mounts:
+            if path.startswith(mount):
+                # Strip the mount prefix and ensure proper leading slash
+                relative_path = path[len(mount):].lstrip('/')
+                return "/" + relative_path if relative_path else "/"
+
         return path
     
     @staticmethod
@@ -609,12 +636,46 @@ class WineUtils:
         """
         # Clean up the version string for directory matching
         version_patterns = [proton_version, proton_version.replace(' ', '_'), proton_version.replace(' ', '')]
-        # Standard Steam library locations
-        steam_common_paths = [
-            Path.home() / ".steam/steam/steamapps/common",
-            Path.home() / ".local/share/Steam/steamapps/common",
-            Path.home() / ".steam/root/steamapps/common"
-        ]
+
+        # Get actual Steam library paths from libraryfolders.vdf (smart detection)
+        steam_common_paths = []
+        compatibility_paths = []
+
+        try:
+            from .path_handler import PathHandler
+            # Get root Steam library paths (without /steamapps/common suffix)
+            root_steam_libs = PathHandler.get_all_steam_library_paths()
+            for lib_path in root_steam_libs:
+                lib = Path(lib_path)
+                if lib.exists():
+                    # Valve Proton: {library}/steamapps/common
+                    common_path = lib / "steamapps/common"
+                    if common_path.exists():
+                        steam_common_paths.append(common_path)
+                    # GE-Proton: same Steam installation root + compatibilitytools.d
+                    compatibility_paths.append(lib / "compatibilitytools.d")
+        except Exception as e:
+            logger.warning(f"Could not detect Steam libraries from libraryfolders.vdf: {e}")
+
+        # Fallback locations if dynamic detection fails
+        if not steam_common_paths:
+            steam_common_paths = [
+                Path.home() / ".steam/steam/steamapps/common",
+                Path.home() / ".local/share/Steam/steamapps/common",
+                Path.home() / ".steam/root/steamapps/common"
+            ]
+
+        if not compatibility_paths:
+            compatibility_paths = [
+                Path.home() / ".steam/steam/compatibilitytools.d",
+                Path.home() / ".local/share/Steam/compatibilitytools.d"
+            ]
+
+        # Add standard compatibility tool locations (covers edge cases like Flatpak)
+        compatibility_paths.extend([
+            Path.home() / ".steam/root/compatibilitytools.d",
+            Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/Steam/compatibilitytools.d"
+        ])
         # Special handling for Proton 9: try all possible directory names
         if proton_version.strip().startswith("Proton 9"):
             proton9_candidates = ["Proton 9.0", "Proton 9.0 (Beta)"]
@@ -628,8 +689,9 @@ class WineUtils:
                     wine_bin = subdir / "files/bin/wine"
                     if wine_bin.is_file():
                         return str(wine_bin)
-        # General case: try version patterns
-        for base_path in steam_common_paths:
+        # General case: try version patterns in both steamapps and compatibilitytools.d
+        all_paths = steam_common_paths + compatibility_paths
+        for base_path in all_paths:
             if not base_path.is_dir():
                 continue
             for pattern in version_patterns:
@@ -716,19 +778,32 @@ class WineUtils:
     @staticmethod
     def get_steam_library_paths() -> List[Path]:
         """
-        Get all Steam library paths including standard locations.
+        Get all Steam library paths from libraryfolders.vdf (handles Flatpak, custom locations, etc.).
 
         Returns:
             List of Path objects for Steam library directories
         """
-        steam_paths = [
-            Path.home() / ".steam/steam/steamapps/common",
-            Path.home() / ".local/share/Steam/steamapps/common",
-            Path.home() / ".steam/root/steamapps/common"
-        ]
-
-        # Return only existing paths
-        return [path for path in steam_paths if path.exists()]
+        try:
+            from .path_handler import PathHandler
+            # Use existing PathHandler that reads libraryfolders.vdf
+            library_paths = PathHandler.get_all_steam_library_paths()
+            # Convert to steamapps/common paths for Proton scanning
+            steam_common_paths = []
+            for lib_path in library_paths:
+                common_path = lib_path / "steamapps" / "common"
+                if common_path.exists():
+                    steam_common_paths.append(common_path)
+            logger.debug(f"Found Steam library paths: {steam_common_paths}")
+            return steam_common_paths
+        except Exception as e:
+            logger.warning(f"Failed to get Steam library paths from libraryfolders.vdf: {e}")
+            # Fallback to hardcoded paths if PathHandler fails
+            fallback_paths = [
+                Path.home() / ".steam/steam/steamapps/common",
+                Path.home() / ".local/share/Steam/steamapps/common",
+                Path.home() / ".steam/root/steamapps/common"
+            ]
+            return [path for path in fallback_paths if path.exists()]
 
     @staticmethod
     def get_compatibility_tool_paths() -> List[Path]:

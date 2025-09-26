@@ -448,7 +448,7 @@ exit"""
                 
                 if shortcut_name in name:
                     appid = shortcut.get('appid')
-                    exe_path = shortcut.get('Exe', '')
+                    exe_path = shortcut.get('Exe', '').strip('"')
                     
                     logger.info(f"Found shortcut: {name}")
                     logger.info(f"  AppID: {appid}")
@@ -1759,21 +1759,15 @@ echo Prefix creation complete.
             progress_callback("=== Steam Integration ===")
             progress_callback(f"{self._get_progress_timestamp()} Creating Steam shortcut with native service")
         
-        # Dual approach: Registry injection for FNV, launch options for Enderal
+        # Registry injection approach for both FNV and Enderal
         from ..handlers.modlist_handler import ModlistHandler
         modlist_handler = ModlistHandler()
         special_game_type = modlist_handler.detect_special_game_type(modlist_install_dir)
-        
-        # Generate launch options only for Enderal (FNV uses registry injection)
+
+        # No launch options needed - both FNV and Enderal use registry injection
         custom_launch_options = None
-        if special_game_type == "enderal":
-            custom_launch_options = self._generate_special_game_launch_options(special_game_type, modlist_install_dir)
-            if not custom_launch_options:
-                logger.error(f"Failed to generate launch options for Enderal modlist")
-                return False, None, None, None
-            logger.info("Using launch options approach for Enderal modlist")
-        elif special_game_type == "fnv":
-            logger.info("Using registry injection approach for FNV modlist")
+        if special_game_type in ["fnv", "enderal"]:
+            logger.info(f"Using registry injection approach for {special_game_type.upper()} modlist")
         else:
             logger.debug("Standard modlist - no special game handling needed")
         
@@ -1849,23 +1843,19 @@ echo Prefix creation complete.
             if progress_callback:
                 progress_callback(f"{self._get_progress_timestamp()} Setup verification completed")
             
-            # Step 5: Inject game registry entries for FNV modlists (Enderal uses launch options)
+            # Step 5: Inject game registry entries for FNV and Enderal modlists
             # Get prefix path (needed for logging regardless of game type)
             prefix_path = self.get_prefix_path(appid)
-            
-            if special_game_type == "fnv":
-                logger.info("Step 5: Injecting FNV game registry entries")
+
+            if special_game_type in ["fnv", "enderal"]:
+                logger.info(f"Step 5: Injecting {special_game_type.upper()} game registry entries")
                 if progress_callback:
-                    progress_callback(f"{self._get_progress_timestamp()} Injecting FNV game registry entries...")
-                
+                    progress_callback(f"{self._get_progress_timestamp()} Injecting {special_game_type.upper()} game registry entries...")
+
                 if prefix_path:
                     self._inject_game_registry_entries(str(prefix_path))
                 else:
                     logger.warning("Could not find prefix path for registry injection")
-            elif special_game_type == "enderal":
-                logger.info("Step 5: Skipping registry injection for Enderal (using launch options)")
-                if progress_callback:
-                    progress_callback(f"{self._get_progress_timestamp()} Skipping registry injection for Enderal")
             else:
                 logger.info("Step 5: Skipping registry injection for standard modlist")
                 if progress_callback:
@@ -2690,31 +2680,64 @@ echo Prefix creation complete.
             return False
     
     def _find_proton_binary(self, proton_common_dir: Path) -> Optional[Path]:
-        """Locate a Proton wrapper script to use (prefer Experimental)."""
-        candidates = []
-        preferred = [
-            "Proton - Experimental",
-            "Proton 9.0", 
-            "Proton 8.0",
-            "Proton Hotfix",
-        ]
-        
-        for name in preferred:
-            p = proton_common_dir / name / "proton"
-            if p.exists():
-                candidates.append(p)
-        
-        # As a fallback, scan all Proton* dirs
-        if not candidates and proton_common_dir.exists():
-            for p in proton_common_dir.glob("Proton*/proton"):
-                candidates.append(p)
-        
-        if not candidates:
-            logger.error("No Proton wrapper found under steamapps/common")
+        """Locate a Proton wrapper script to use, respecting user's configuration."""
+        try:
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            from jackify.backend.handlers.wine_utils import WineUtils
+
+            config = ConfigHandler()
+            user_proton_path = config.get('proton_path', 'auto')
+
+            # If user selected a specific Proton, try that first
+            if user_proton_path != 'auto':
+                # Resolve symlinks to handle ~/.steam/steam -> ~/.local/share/Steam
+                resolved_proton_path = os.path.realpath(user_proton_path)
+
+                # Check for wine binary in different Proton structures
+                valve_proton_wine = Path(resolved_proton_path) / "dist" / "bin" / "wine"
+                ge_proton_wine = Path(resolved_proton_path) / "files" / "bin" / "wine"
+
+                if valve_proton_wine.exists() or ge_proton_wine.exists():
+                    # Found user's Proton, now find the proton wrapper script
+                    proton_wrapper = Path(resolved_proton_path) / "proton"
+                    if proton_wrapper.exists():
+                        logger.info(f"Using user-selected Proton wrapper: {proton_wrapper}")
+                        return proton_wrapper
+                    else:
+                        logger.warning(f"User-selected Proton missing wrapper script: {proton_wrapper}")
+                else:
+                    logger.warning(f"User-selected Proton path invalid: {user_proton_path}")
+
+            # Fall back to auto-detection
+            logger.info("Falling back to automatic Proton detection")
+            candidates = []
+            preferred = [
+                "Proton - Experimental",
+                "Proton 9.0",
+                "Proton 8.0",
+                "Proton Hotfix",
+            ]
+
+            for name in preferred:
+                p = proton_common_dir / name / "proton"
+                if p.exists():
+                    candidates.append(p)
+
+            # As a fallback, scan all Proton* dirs
+            if not candidates and proton_common_dir.exists():
+                for p in proton_common_dir.glob("Proton*/proton"):
+                    candidates.append(p)
+
+            if not candidates:
+                logger.error("No Proton wrapper found under steamapps/common")
+                return None
+
+            logger.info(f"Using auto-detected Proton wrapper: {candidates[0]}")
+            return candidates[0]
+
+        except Exception as e:
+            logger.error(f"Error finding Proton binary: {e}")
             return None
-        
-        logger.info(f"Using Proton wrapper: {candidates[0]}")
-        return candidates[0]
     
     def replace_existing_shortcut(self, shortcut_name: str, exe_path: str, modlist_install_dir: str) -> Tuple[bool, Optional[int]]:
         """
@@ -2948,6 +2971,15 @@ echo Prefix creation complete.
                 )
                 if success:
                     logger.info(f"Updated registry entry for {config['name']}")
+
+                    # Special handling for Enderal: Create required user directory
+                    if app_id == "976620":  # Enderal Special Edition
+                        try:
+                            enderal_docs_path = os.path.join(modlist_compatdata_path, "pfx", "drive_c", "users", "steamuser", "Documents", "My Games", "Enderal Special Edition")
+                            os.makedirs(enderal_docs_path, exist_ok=True)
+                            logger.info(f"Created Enderal user directory: {enderal_docs_path}")
+                        except Exception as e:
+                            logger.warning(f"Failed to create Enderal user directory: {e}")
                 else:
                     logger.warning(f"Failed to update registry entry for {config['name']}")
             else:

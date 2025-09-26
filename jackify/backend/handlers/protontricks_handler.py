@@ -21,14 +21,19 @@ logger = logging.getLogger(__name__)
 class ProtontricksHandler:
     """
     Handles operations related to Protontricks detection and usage
+
+    This handler now supports native Steam operations as a fallback/replacement
+    for protontricks functionality.
     """
-    
+
     def __init__(self, steamdeck: bool, logger=None):
         self.logger = logger or logging.getLogger(__name__)
         self.which_protontricks = None  # 'flatpak' or 'native'
         self.protontricks_version = None
         self.protontricks_path = None
         self.steamdeck = steamdeck # Store steamdeck status
+        self._native_steam_service = None
+        self.use_native_operations = True  # Enable native Steam operations by default
     
     def _get_clean_subprocess_env(self):
         """
@@ -69,7 +74,14 @@ class ProtontricksHandler:
                 env.pop('DYLD_LIBRARY_PATH', None)
         
         return env
-    
+
+    def _get_native_steam_service(self):
+        """Get native Steam operations service instance"""
+        if self._native_steam_service is None:
+            from ..services.native_steam_operations_service import NativeSteamOperationsService
+            self._native_steam_service = NativeSteamOperationsService(steamdeck=self.steamdeck)
+        return self._native_steam_service
+
     def detect_protontricks(self):
         """
         Detect if protontricks is installed and whether it's flatpak or native.
@@ -255,9 +267,19 @@ class ProtontricksHandler:
     
     def set_protontricks_permissions(self, modlist_dir, steamdeck=False):
         """
-        Set permissions for Protontricks to access the modlist directory
+        Set permissions for Steam operations to access the modlist directory.
+
+        Uses native operations when enabled, falls back to protontricks permissions.
         Returns True on success, False on failure
         """
+        # Use native operations if enabled
+        if self.use_native_operations:
+            logger.debug("Using native Steam operations, permissions handled natively")
+            try:
+                return self._get_native_steam_service().set_steam_permissions(modlist_dir, steamdeck)
+            except Exception as e:
+                logger.warning(f"Native permissions failed, falling back to protontricks: {e}")
+
         if self.which_protontricks != 'flatpak':
             logger.debug("Using Native protontricks, skip setting permissions")
             return True
@@ -338,15 +360,22 @@ class ProtontricksHandler:
     
     # Renamed from list_non_steam_games for clarity and purpose
     def list_non_steam_shortcuts(self) -> Dict[str, str]:
-        """List ALL non-Steam shortcuts recognized by Protontricks.
+        """List ALL non-Steam shortcuts.
 
-        Runs 'protontricks -l' and parses the output for lines matching
-        "Non-Steam shortcut: [Name] ([AppID])".
+        Uses native VDF parsing when enabled, falls back to protontricks -l parsing.
 
         Returns:
             A dictionary mapping the shortcut name (AppName) to its AppID.
             Returns an empty dictionary if none are found or an error occurs.
         """
+        # Use native operations if enabled
+        if self.use_native_operations:
+            logger.info("Listing non-Steam shortcuts via native VDF parsing...")
+            try:
+                return self._get_native_steam_service().list_non_steam_shortcuts()
+            except Exception as e:
+                logger.warning(f"Native shortcut listing failed, falling back to protontricks: {e}")
+
         logger.info("Listing ALL non-Steam shortcuts via protontricks...")
         non_steam_shortcuts = {}
         # --- Ensure protontricks is detected before proceeding ---
@@ -577,12 +606,22 @@ class ProtontricksHandler:
     def get_wine_prefix_path(self, appid) -> Optional[str]:
         """Gets the WINEPREFIX path for a given AppID.
 
+        Uses native path discovery when enabled, falls back to protontricks detection.
+
         Args:
             appid (str): The Steam AppID.
 
         Returns:
             The WINEPREFIX path as a string, or None if detection fails.
         """
+        # Use native operations if enabled
+        if self.use_native_operations:
+            logger.debug(f"Getting WINEPREFIX for AppID {appid} via native path discovery")
+            try:
+                return self._get_native_steam_service().get_wine_prefix_path(appid)
+            except Exception as e:
+                logger.warning(f"Native WINEPREFIX detection failed, falling back to protontricks: {e}")
+
         logger.debug(f"Getting WINEPREFIX for AppID {appid}")
         result = self.run_protontricks("-c", "echo $WINEPREFIX", appid)
         if result and result.returncode == 0 and result.stdout.strip():

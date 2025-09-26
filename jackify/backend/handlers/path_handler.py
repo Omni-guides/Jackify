@@ -32,14 +32,21 @@ class PathHandler:
     @staticmethod
     def _strip_sdcard_path_prefix(path_obj: Path) -> str:
         """
-        Removes the '/run/media/mmcblk0p1/' prefix if present.
+        Removes any detected SD card mount prefix dynamically.
+        Handles both /run/media/mmcblk0p1 and /run/media/deck/UUID patterns.
         Returns the path as a POSIX-style string (using /).
         """
-        path_str = path_obj.as_posix() # Work with consistent forward slashes
-        if path_str.lower().startswith(SDCARD_PREFIX.lower()):
-            # Return the part *after* the prefix, ensuring no leading slash remains unless root
-            relative_part = path_str[len(SDCARD_PREFIX):]
-            return relative_part if relative_part else "." # Return '.' if it was exactly the prefix
+        from .wine_utils import WineUtils
+
+        path_str = path_obj.as_posix()  # Work with consistent forward slashes
+
+        # Use dynamic SD card detection from WineUtils
+        stripped_path = WineUtils._strip_sdcard_path(path_str)
+
+        if stripped_path != path_str:
+            # Path was stripped, remove leading slash for relative path
+            return stripped_path.lstrip('/') if stripped_path != '/' else '.'
+
         return path_str
 
     @staticmethod
@@ -737,7 +744,7 @@ class PathHandler:
         try:
             with open(modlist_ini_path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
-            drive_letter = "D:" if modlist_sdcard else "Z:"
+            drive_letter = "D:\\\\" if modlist_sdcard else "Z:\\\\"
             processed_path = self._strip_sdcard_path_prefix(new_game_path)
             windows_style = processed_path.replace('/', '\\')
             windows_style_double = windows_style.replace('\\', '\\\\')
@@ -876,9 +883,10 @@ class PathHandler:
                             rel_path = value_part[idx:].lstrip('/')
                         else:
                             rel_path = exe_name
-                    new_binary_path = f"{drive_prefix}/{modlist_dir_path}/{rel_path}".replace('\\', '/').replace('//', '/')
+                    processed_modlist_path = PathHandler._strip_sdcard_path_prefix(modlist_dir_path) if modlist_sdcard else str(modlist_dir_path)
+                    new_binary_path = f"{drive_prefix}/{processed_modlist_path}/{rel_path}".replace('\\', '/').replace('//', '/')
                 formatted_binary_path = PathHandler._format_binary_for_mo2(new_binary_path)
-                new_binary_line = f"{index}{backslash_style}binary={formatted_binary_path}"
+                new_binary_line = f"{index}{backslash_style}binary = {formatted_binary_path}"
                 logger.debug(f"Updating binary path: {line.strip()} -> {new_binary_line}")
                 lines[i] = new_binary_line + "\n"
                 binary_paths_updated += 1
@@ -893,7 +901,7 @@ class PathHandler:
                     wd_path = drive_prefix + wd_path
                     formatted_wd_path = PathHandler._format_workingdir_for_mo2(wd_path)
                     key_part = f"{index}{backslash_style}workingDirectory"
-                    new_wd_line = f"{key_part}={formatted_wd_path}"
+                    new_wd_line = f"{key_part} = {formatted_wd_path}"
                     logger.debug(f"Updating working directory: {wd_line.strip()} -> {new_wd_line}")
                     lines[j] = new_wd_line + "\n"
                     working_dirs_updated += 1

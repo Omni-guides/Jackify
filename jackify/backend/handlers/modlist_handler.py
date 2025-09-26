@@ -159,6 +159,9 @@ class ModlistHandler:
         
         # Initialize Handlers (should happen regardless of how paths were provided)
         self.protontricks_handler = ProtontricksHandler(steamdeck=self.steamdeck, logger=self.logger)
+        # Initialize winetricks handler for wine component installation
+        from .winetricks_handler import WinetricksHandler
+        self.winetricks_handler = WinetricksHandler(logger=self.logger)
         self.shortcut_handler = ShortcutHandler(steamdeck=self.steamdeck, verbose=self.verbose)
         self.filesystem_handler = filesystem_handler if filesystem_handler else FileSystemHandler()
         self.resolution_handler = ResolutionHandler()
@@ -224,44 +227,41 @@ class ModlistHandler:
         discovered_modlists_info = [] 
 
         try:
-            # 1. Get ALL non-Steam shortcuts from Protontricks
-            # Now calls the renamed method without filtering
-            protontricks_shortcuts = self.protontricks_handler.list_non_steam_shortcuts()
-            if not protontricks_shortcuts:
-                self.logger.warning("Protontricks did not list any non-Steam shortcuts.")
-                return []
-            self.logger.debug(f"Protontricks non-Steam shortcuts found: {protontricks_shortcuts}")
-
-            # 2. Get shortcuts pointing to the executable from shortcuts.vdf
+            # Get shortcuts pointing to the executable from shortcuts.vdf
             matching_vdf_shortcuts = self.shortcut_handler.find_shortcuts_by_exe(executable_name)
             if not matching_vdf_shortcuts:
                 self.logger.debug(f"No shortcuts found pointing to '{executable_name}' in shortcuts.vdf.")
                 return []
             self.logger.debug(f"Shortcuts matching executable '{executable_name}' in VDF: {matching_vdf_shortcuts}")
 
-            # 3. Correlate the two lists and extract required info
+            # Process each matching shortcut and convert signed AppID to unsigned
             for vdf_shortcut in matching_vdf_shortcuts:
                 app_name = vdf_shortcut.get('AppName')
                 start_dir = vdf_shortcut.get('StartDir')
-                
+                signed_appid = vdf_shortcut.get('appid')
+
                 if not app_name or not start_dir:
                     self.logger.warning(f"Skipping VDF shortcut due to missing AppName or StartDir: {vdf_shortcut}")
                     continue
 
-                if app_name in protontricks_shortcuts:
-                    app_id = protontricks_shortcuts[app_name]
-                    
-                    # Append dictionary with all necessary info
-                    modlist_info = {
-                        'name': app_name,
-                        'appid': app_id,
-                        'path': start_dir
-                    }
-                    discovered_modlists_info.append(modlist_info)
-                    self.logger.info(f"Validated shortcut: '{app_name}' (AppID: {app_id}, Path: {start_dir})")
+                if signed_appid is None:
+                    self.logger.warning(f"Skipping VDF shortcut due to missing appid: {vdf_shortcut}")
+                    continue
+
+                # Convert signed AppID to unsigned AppID (the format used by Steam prefixes)
+                if signed_appid < 0:
+                    unsigned_appid = signed_appid + (2**32)
                 else:
-                    # Downgraded from WARNING to INFO
-                    self.logger.info(f"Shortcut '{app_name}' found in VDF but not listed by protontricks. Skipping.")
+                    unsigned_appid = signed_appid
+
+                # Append dictionary with all necessary info using unsigned AppID
+                modlist_info = {
+                    'name': app_name,
+                    'appid': unsigned_appid,
+                    'path': start_dir
+                }
+                discovered_modlists_info.append(modlist_info)
+                self.logger.info(f"Discovered shortcut: '{app_name}' (Signed: {signed_appid} → Unsigned: {unsigned_appid}, Path: {start_dir})")
 
         except Exception as e:
             self.logger.error(f"Error discovering executable shortcuts: {e}", exc_info=True)
@@ -685,7 +685,14 @@ class ModlistHandler:
         # All modlists now use their own AppID for wine components
         target_appid = self.appid
         
-        if not self.protontricks_handler.install_wine_components(target_appid, self.game_var_full, specific_components=components):
+        # Use winetricks for wine component installation (faster than protontricks)
+        wineprefix = self.protontricks_handler.get_wine_prefix_path(target_appid)
+        if not wineprefix:
+            self.logger.error("Failed to get WINEPREFIX path for winetricks.")
+            print("Error: Could not determine wine prefix location.")
+            return False
+
+        if not self.winetricks_handler.install_wine_components(wineprefix, self.game_var_full, specific_components=components):
             self.logger.error("Failed to install Wine components. Configuration aborted.")
             print("Error: Failed to install necessary Wine components.")
             return False # Abort on failure
@@ -758,9 +765,10 @@ class ModlistHandler:
             self.logger.info("No stock game path found, skipping gamePath update - edit_binary_working_paths will handle all path updates.")
             self.logger.info("Using unified path manipulation to avoid duplicate processing.")
         
-        # Conditionally update binary and working directory paths 
+        # Conditionally update binary and working directory paths
         # Skip for jackify-engine workflows since paths are already correct
-        if not getattr(self, 'engine_installed', False):
+        # Exception: Always run for SD card installs to fix Z:/run/media/... to D:/... paths
+        if not getattr(self, 'engine_installed', False) or self.modlist_sdcard:
             # Convert steamapps/common path to library root path
             steam_libraries = None
             if self.steam_library:
@@ -863,7 +871,7 @@ class ModlistHandler:
         prefix_path_str = self.path_handler.find_compat_data(str(self.appid))
         if prefix_path_str:
             prefix_path = Path(prefix_path_str)
-            fonts_dir = prefix_path / "drive_c" / "windows" / "Fonts"
+            fonts_dir = prefix_path / "pfx" / "drive_c" / "windows" / "Fonts"
             font_url = "https://github.com/mrbvrz/segoe-ui-linux/raw/refs/heads/master/font/seguisym.ttf"
             font_dest_path = fonts_dir / "seguisym.ttf"
             

@@ -120,7 +120,7 @@ class MainMenu(QWidget):
             msg.setIcon(QMessageBox.Information)
             msg.exec()
         elif action_id == "modlist_tasks" and self.stacked_widget:
-            self.stacked_widget.setCurrentIndex(3)
+            self.stacked_widget.setCurrentIndex(2)
         elif action_id == "return_main_menu":
             # This is the main menu, so do nothing
             pass

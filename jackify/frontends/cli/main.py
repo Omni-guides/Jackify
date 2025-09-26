@@ -21,11 +21,9 @@ from jackify import __version__ as jackify_version
 # Import our command handlers
 from .commands.configure_modlist import ConfigureModlistCommand
 from .commands.install_modlist import InstallModlistCommand
-from .commands.tuxborn import TuxbornCommand
 
 # Import our menu handlers
 from .menus.main_menu import MainMenuHandler
-from .menus.tuxborn_menu import TuxbornMenuHandler
 from .menus.wabbajack_menu import WabbajackMenuHandler
 from .menus.hoolamike_menu import HoolamikeMenuHandler
 from .menus.additional_menu import AdditionalMenuHandler
@@ -280,7 +278,6 @@ class JackifyCLI:
         commands = {
             'configure_modlist': ConfigureModlistCommand(self.backend_services),
             'install_modlist': InstallModlistCommand(self.backend_services, self.system_info),
-            'tuxborn': TuxbornCommand(self.backend_services, self.system_info)
         }
         return commands
 
@@ -292,7 +289,6 @@ class JackifyCLI:
         """
         menus = {
             'main': MainMenuHandler(dev_mode=getattr(self, 'dev_mode', False)),
-            'tuxborn': TuxbornMenuHandler(),
             'wabbajack': WabbajackMenuHandler(),
             'hoolamike': HoolamikeMenuHandler(),
             'additional': AdditionalMenuHandler()
@@ -371,10 +367,6 @@ class JackifyCLI:
             self._debug_print('Entering restart_steam workflow')
             return self._handle_restart_steam()
         
-        # Handle Tuxborn auto mode
-        if getattr(self.args, 'tuxborn_auto', False):
-            self._debug_print('Entering Tuxborn workflow')
-            return self.commands['tuxborn'].execute(self.args)
         
         # Handle install-modlist top-level functionality
         if getattr(self.args, 'install_modlist', False):
@@ -404,7 +396,6 @@ class JackifyCLI:
         parser.add_argument('--update', action='store_true', help='Check for and install updates')
         
         # Add command-specific arguments
-        self.commands['tuxborn'].add_args(parser)
         self.commands['install_modlist'].add_top_level_args(parser)
         
         # Add subcommands
@@ -459,8 +450,6 @@ class JackifyCLI:
                     return 0
                 elif choice == "wabbajack":
                     self.menus['wabbajack'].show_wabbajack_tasks_menu(self)
-                elif choice == "tuxborn":
-                    self.menus['tuxborn'].show_tuxborn_installer_menu(self)
                 # HIDDEN FOR FIRST RELEASE - UNCOMMENT WHEN READY
                 # elif choice == "hoolamike":
                 #     self.menus['hoolamike'].show_hoolamike_menu(self)

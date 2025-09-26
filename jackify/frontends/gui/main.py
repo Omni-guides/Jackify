@@ -131,7 +131,6 @@ DISCLAIMER_TEXT = (
 
 MENU_ITEMS = [
     ("Modlist Tasks", "modlist_tasks"),
-    ("Tuxborn Automatic Installer", "tuxborn_installer"),
     ("Hoolamike Tasks", "hoolamike_tasks"),
     ("Additional Tasks", "additional_tasks"),
     ("Exit Jackify", "exit_jackify"),
@@ -162,6 +161,8 @@ class SettingsDialog(QDialog):
         try:
             super().__init__(parent)
             from jackify.backend.handlers.config_handler import ConfigHandler
+            import logging
+            self.logger = logging.getLogger(__name__)
             self.config_handler = ConfigHandler()
             self._original_debug_mode = self.config_handler.get('debug_mode', False)
             self.setWindowTitle("Settings")
@@ -627,7 +628,18 @@ class SettingsDialog(QDialog):
         self.config_handler.set("proton_path", resolved_path)
         self.config_handler.set("proton_version", resolved_version)
 
-        self.config_handler.save_config()
+        # Force immediate save and verify
+        save_result = self.config_handler.save_config()
+        if not save_result:
+            self.logger.error("Failed to save Proton configuration")
+        else:
+            self.logger.info(f"Saved Proton config: path={resolved_path}, version={resolved_version}")
+            # Verify the save worked by reading it back
+            saved_path = self.config_handler.get("proton_path")
+            if saved_path != resolved_path:
+                self.logger.error(f"Config save verification failed: expected {resolved_path}, got {saved_path}")
+            else:
+                self.logger.debug("Config save verified successfully")
         
         # Refresh cached paths in GUI screens if Jackify directory changed
         self._refresh_gui_paths()
@@ -664,7 +676,6 @@ class SettingsDialog(QDialog):
                 getattr(main_window, 'install_modlist_screen', None),
                 getattr(main_window, 'configure_new_modlist_screen', None),
                 getattr(main_window, 'configure_existing_modlist_screen', None),
-                getattr(main_window, 'tuxborn_screen', None),
             ]
             
             for screen in screens_to_refresh:
@@ -773,7 +784,7 @@ class JackifyMainWindow(QMainWindow):
         
         # Create screens using refactored codebase
         from jackify.frontends.gui.screens import (
-            MainMenu, TuxbornInstallerScreen, ModlistTasksScreen, 
+            MainMenu, ModlistTasksScreen,
             InstallModlistScreen, ConfigureNewModlistScreen, ConfigureExistingModlistScreen
         )
         
@@ -785,31 +796,26 @@ class JackifyMainWindow(QMainWindow):
             main_menu_index=0,
             dev_mode=dev_mode
         )
-        self.tuxborn_screen = TuxbornInstallerScreen(
-            stacked_widget=self.stacked_widget, 
+        self.install_modlist_screen = InstallModlistScreen(
+            stacked_widget=self.stacked_widget,
             main_menu_index=0
         )
-        self.install_modlist_screen = InstallModlistScreen(
-            stacked_widget=self.stacked_widget, 
-            main_menu_index=3
-        )
         self.configure_new_modlist_screen = ConfigureNewModlistScreen(
-            stacked_widget=self.stacked_widget, 
-            main_menu_index=3
+            stacked_widget=self.stacked_widget,
+            main_menu_index=0
         )
         self.configure_existing_modlist_screen = ConfigureExistingModlistScreen(
-            stacked_widget=self.stacked_widget, 
-            main_menu_index=3
+            stacked_widget=self.stacked_widget,
+            main_menu_index=0
         )
         
         # Add screens to stacked widget
         self.stacked_widget.addWidget(self.main_menu)           # Index 0: Main Menu
-        self.stacked_widget.addWidget(self.tuxborn_screen)      # Index 1: Tuxborn Installer
-        self.stacked_widget.addWidget(self.feature_placeholder) # Index 2: Placeholder
-        self.stacked_widget.addWidget(self.modlist_tasks_screen)  # Index 3: Modlist Tasks
-        self.stacked_widget.addWidget(self.install_modlist_screen)        # Index 4: Install Modlist
-        self.stacked_widget.addWidget(self.configure_new_modlist_screen)  # Index 5: Configure New
-        self.stacked_widget.addWidget(self.configure_existing_modlist_screen)  # Index 6: Configure Existing
+        self.stacked_widget.addWidget(self.feature_placeholder) # Index 1: Placeholder
+        self.stacked_widget.addWidget(self.modlist_tasks_screen)  # Index 2: Modlist Tasks
+        self.stacked_widget.addWidget(self.install_modlist_screen)        # Index 3: Install Modlist
+        self.stacked_widget.addWidget(self.configure_new_modlist_screen)  # Index 4: Configure New
+        self.stacked_widget.addWidget(self.configure_existing_modlist_screen)  # Index 5: Configure Existing
         
         # Add debug tracking for screen changes
         self.stacked_widget.currentChanged.connect(self._debug_screen_change)
@@ -887,12 +893,11 @@ class JackifyMainWindow(QMainWindow):
             
         screen_names = {
             0: "Main Menu",
-            1: "Tuxborn Installer", 
-            2: "Feature Placeholder",
-            3: "Modlist Tasks Menu",
-            4: "Install Modlist Screen",
-            5: "Configure New Modlist",
-            6: "Configure Existing Modlist"
+            1: "Feature Placeholder",
+            2: "Modlist Tasks Menu",
+            3: "Install Modlist Screen",
+            4: "Configure New Modlist",
+            5: "Configure Existing Modlist"
         }
         screen_name = screen_names.get(index, f"Unknown Screen (Index {index})")
         widget = self.stacked_widget.widget(index)
@@ -1002,7 +1007,7 @@ class JackifyMainWindow(QMainWindow):
             
             # Clean up screen processes
             screens = [
-                self.modlist_tasks_screen, self.tuxborn_screen, self.install_modlist_screen,
+                self.modlist_tasks_screen, self.install_modlist_screen,
                 self.configure_new_modlist_screen, self.configure_existing_modlist_screen
             ]
             for screen in screens:
@@ -1072,7 +1077,18 @@ def main():
     # Command-line --debug always takes precedence
     if '--debug' in sys.argv or '-d' in sys.argv:
         debug_mode = True
+        # Temporarily save CLI debug flag to config so engine can see it
+        config_handler.set('debug_mode', True)
+        print("[DEBUG] CLI --debug flag detected, saved debug_mode=True to config")
     import logging
+
+    # Initialize file logging on root logger so all modules inherit it
+    from jackify.shared.logging import LoggingHandler
+    logging_handler = LoggingHandler()
+    # Rotate log file before setting up new logger
+    logging_handler.rotate_log_for_logger('jackify_gui', 'jackify-gui.log')
+    root_logger = logging_handler.setup_logger('', 'jackify-gui.log', is_general=True)  # Empty name = root logger
+
     if debug_mode:
         logging.getLogger().setLevel(logging.DEBUG)
         print("[Jackify] Debug mode enabled (from config or CLI)")

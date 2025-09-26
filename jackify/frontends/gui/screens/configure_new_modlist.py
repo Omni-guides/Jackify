@@ -481,7 +481,7 @@ class ConfigureNewModlistScreen(QWidget):
 
     def go_back(self):
         if self.stacked_widget:
-            self.stacked_widget.setCurrentIndex(3)  # Return to Modlist Tasks menu
+            self.stacked_widget.setCurrentIndex(self.main_menu_index)
 
     def update_top_panel(self):
         try:

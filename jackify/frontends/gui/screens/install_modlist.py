@@ -1057,7 +1057,7 @@ class InstallModlistScreen(QWidget):
 
     def go_back(self):
         if self.stacked_widget:
-            self.stacked_widget.setCurrentIndex(3)  # Return to Modlist Tasks menu 
+            self.stacked_widget.setCurrentIndex(self.main_menu_index) 
 
     def update_top_panel(self):
         try:
@@ -1746,7 +1746,7 @@ class InstallModlistScreen(QWidget):
             
             # Save resolution for later use in configuration
             resolution = self.resolution_combo.currentText()
-            self._current_resolution = resolution.split()[0] if resolution != "Leave unchanged" else "2560x1600"
+            self._current_resolution = resolution.split()[0] if resolution != "Leave unchanged" else None
             
             # Use automated prefix creation instead of manual steps
             debug_print("DEBUG: Starting automated prefix creation workflow")
@@ -2321,7 +2321,7 @@ class InstallModlistScreen(QWidget):
                 'mo2_exe_path': self._get_mo2_path(install_dir, modlist_name),
                 'modlist_value': None,
                 'modlist_source': None,
-                'resolution': getattr(self, '_current_resolution', '2560x1600'),
+                'resolution': getattr(self, '_current_resolution', None),
                 'skip_confirmation': True,
                 'manual_steps_completed': True,  # Mark as completed since automated prefix is done
                 'appid': new_appid,  # Use the NEW AppID from automated prefix creation
@@ -2360,7 +2360,7 @@ class InstallModlistScreen(QWidget):
                             nexus_api_key='',  # Not needed for configuration
                             modlist_value=self.context.get('modlist_value'),
                             modlist_source=self.context.get('modlist_source', 'identifier'),
-                            resolution=self.context.get('resolution', '2560x1600'),
+                            resolution=self.context.get('resolution'),
                             skip_confirmation=True,
                             engine_installed=True  # Skip path manipulation for engine workflows
                         )
@@ -2419,7 +2419,7 @@ class InstallModlistScreen(QWidget):
                 'mo2_exe_path': self._get_mo2_path(install_dir, modlist_name),
                 'modlist_value': None,
                 'modlist_source': None,
-                'resolution': getattr(self, '_current_resolution', '2560x1600'),
+                'resolution': getattr(self, '_current_resolution', None),
                 'skip_confirmation': True,
                 'manual_steps_completed': True,  # Mark as completed
                 'appid': new_appid  # Use the NEW AppID from Steam

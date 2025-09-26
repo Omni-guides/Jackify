@@ -1,5 +1,39 @@
 # Jackify Changelog
 
+## v0.1.5 - Winetricks Integration & Enhanced Compatibility
+**Release Date:** September 26, 2025
+
+### Major Improvements
+- **Winetricks Integration**: Replaced protontricks with bundled winetricks for faster, more reliable wine component installation
+- **Enhanced SD Card Detection**: Dynamic detection of SD card mount points supports both `/run/media/mmcblk0p1` and `/run/media/deck/UUID` patterns
+- **Smart Proton Detection**: Comprehensive GE-Proton support with detection in both steamapps/common and compatibilitytools.d directories
+- **Steam Deck SD Card Support**: Fixed path handling for SD card installations on Steam Deck
+
+### User Experience
+- **No Focus Stealing**: Wine component installation runs in background without disrupting user workflow
+- **Popup Suppression**: Eliminated wine GUI popups while maintaining functionality
+- **GUI Navigation**: Fixed navigation issues after Tuxborn workflow removal
+
+### Bug Fixes
+- **CLI Configure Existing**: Fixed AppID detection with signed-to-unsigned conversion, removing protontricks dependency
+- **GE-Proton Validation**: Fixed validation to support both Valve Proton and GE-Proton directory structures
+- **Resolution Override**: Eliminated hardcoded 2560x1600 fallbacks that overrode user Steam Deck settings
+- **VDF Case-Sensitivity**: Added case-insensitive parsing for Steam shortcuts fields
+- **Cabextract Bundling**: Bundled cabextract binary to resolve winetricks dependency issues
+- **ModOrganizer.ini Path Format**: Fixed missing backslash in gamePath format for proper Windows path structure
+- **SD Card Binary Paths**: Corrected binary paths to use D: drive mapping instead of raw Linux paths for SD card installs
+- **Proton Fallback Logic**: Enhanced fallback when user-selected Proton version is missing or invalid
+- **Settings Persistence**: Improved configuration saving with verification and logging
+- **System Wine Elimination**: Comprehensive audit ensures Jackify never uses system wine installations
+- **Winetricks Reliability**: Fixed vcrun2022 installation failures and wine app crashes
+- **Enderal Registry Injection**: Switched from launch options to registry injection approach
+- **Proton Path Detection**: Uses actual Steam libraries from libraryfolders.vdf instead of hardcoded paths
+
+### Technical Improvements
+- **Self-contained Cache**: Relocated winetricks cache to jackify_data_dir for better isolation
+
+---
+
 ## v0.1.4 - GE-Proton Support and Performance Optimization
 **Release Date:** September 22, 2025
 

@@ -730,6 +730,14 @@ class ModlistInstallCLI:
                 cmd += ['-m', self.context['machineid']]
             cmd += ['-o', install_dir_str, '-d', download_dir_str]
 
+            # Add debug flag if debug mode is enabled
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            config_handler = ConfigHandler()
+            debug_mode = config_handler.get('debug_mode', False)
+            if debug_mode:
+                cmd.append('--debug')
+                self.logger.info("Adding --debug flag to jackify-engine")
+
             # Store original environment values to restore later
             original_env_values = {
                 'NEXUS_API_KEY': os.environ.get('NEXUS_API_KEY'),

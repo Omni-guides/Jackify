@@ -198,11 +198,11 @@ class ModlistTasksScreen(QWidget):
         if action_id == "return_main_menu":
             self.stacked_widget.setCurrentIndex(0)
         elif action_id == "install_modlist":
-            self.stacked_widget.setCurrentIndex(4)
+            self.stacked_widget.setCurrentIndex(3)
         elif action_id == "configure_new_modlist":
-            self.stacked_widget.setCurrentIndex(5)
+            self.stacked_widget.setCurrentIndex(4)
         elif action_id == "configure_existing_modlist":
-            self.stacked_widget.setCurrentIndex(6)
+            self.stacked_widget.setCurrentIndex(5)
     
     def go_back(self):
         """Return to main menu"""

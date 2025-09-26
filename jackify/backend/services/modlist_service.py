@@ -293,15 +293,7 @@ class ModlistService:
             elif context.get('machineid'):
                 cmd += ['-m', context['machineid']]
             cmd += ['-o', install_dir_str, '-d', download_dir_str]
-            
-            # Check for debug mode and add --debug flag
-            from ..handlers.config_handler import ConfigHandler
-            config_handler = ConfigHandler()
-            debug_mode = config_handler.get('debug_mode', False)
-            if debug_mode:
-                cmd.append('--debug')
-                logger.debug("DEBUG: Added --debug flag to jackify-engine command")
-            
+
             # NOTE: API key is passed via environment variable only, not as command line argument
             
             # Store original environment values (copied from working code)

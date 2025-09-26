@@ -1180,18 +1180,21 @@ class ShortcutHandler:
                     self.logger.warning(f"Skipping invalid shortcut entry at index {index} in {vdf_path}")
                     continue
 
-                exe_path = shortcut_details.get('Exe', '').strip('"') # Get Exe path, remove quotes
-                app_name = shortcut_details.get('AppName', 'Unknown Shortcut')
+                exe_path = shortcut_details.get('Exe', shortcut_details.get('exe', '')).strip('"') # Get Exe path, remove quotes
+                app_name = shortcut_details.get('AppName', shortcut_details.get('appname', 'Unknown Shortcut'))
 
                 # Check if the executable_name is present in the Exe path
                 if executable_name in os.path.basename(exe_path):
                     self.logger.info(f"Found matching shortcut '{app_name}' in {vdf_path}")
-                    # Extract relevant details
+                    # Extract relevant details with case-insensitive fallbacks
+                    app_id = shortcut_details.get('appid', shortcut_details.get('AppID', shortcut_details.get('appId', None)))
+                    start_dir = shortcut_details.get('StartDir', shortcut_details.get('startdir', '')).strip('"')
+
                     match = {
                         'AppName': app_name,
                         'Exe': exe_path, # Store unquoted path
-                        'StartDir': shortcut_details.get('StartDir', '').strip('"') # Unquoted
-                        # Add other useful fields if needed, e.g., 'ShortcutPath'
+                        'StartDir': start_dir,
+                        'appid': app_id  # Include the AppID for conversion to unsigned
                     }
                     matching_shortcuts.append(match)
                 else:
