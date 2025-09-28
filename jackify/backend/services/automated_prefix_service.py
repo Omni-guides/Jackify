@@ -333,15 +333,18 @@ class AutomatedPrefixService:
                 logger.error(f"Steam userdata directory not found: {userdata_dir}")
                 return None
             
-            # Find user directories (excluding user 0 which is a system account)
-            user_dirs = [d for d in userdata_dir.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
-            if not user_dirs:
-                logger.error("No valid Steam user directories found in userdata (user 0 is not valid)")
+            # Use NativeSteamService for proper user detection
+            from ..services.native_steam_service import NativeSteamService
+            steam_service = NativeSteamService()
+
+            if not steam_service.find_steam_user():
+                logger.error("Could not detect Steam user for shortcuts")
                 return None
-            
-            # Use the first valid user directory found
-            user_dir = user_dirs[0]
-            shortcuts_path = user_dir / "config" / "shortcuts.vdf"
+
+            shortcuts_path = steam_service.get_shortcuts_vdf_path()
+            if not shortcuts_path:
+                logger.error("Could not get shortcuts.vdf path from Steam service")
+                return None
             
             logger.debug(f"Looking for shortcuts.vdf at: {shortcuts_path}")
             if not shortcuts_path.exists():
@@ -2527,15 +2530,31 @@ echo Prefix creation complete.
         Returns:
             Path to localconfig.vdf or None if not found
         """
-        # Try the standard Steam userdata path
-        steam_userdata_path = Path.home() / ".steam" / "steam" / "userdata"
-        if steam_userdata_path.exists():
-            # Find user directories (excluding user 0 which is a system account)
-            user_dirs = [d for d in steam_userdata_path.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
-            if user_dirs:
-                localconfig_path = user_dirs[0] / "config" / "localconfig.vdf"
+        # Use NativeSteamService for proper user detection
+        try:
+            from ..services.native_steam_service import NativeSteamService
+            steam_service = NativeSteamService()
+
+            if steam_service.find_steam_user():
+                localconfig_path = steam_service.user_config_path / "localconfig.vdf"
                 if localconfig_path.exists():
                     return str(localconfig_path)
+        except Exception as e:
+            logger.error(f"Error using Steam service for localconfig.vdf detection: {e}")
+
+        # Fallback to manual detection
+        steam_userdata_path = Path.home() / ".steam" / "steam" / "userdata"
+        if steam_userdata_path.exists():
+            user_dirs = [d for d in steam_userdata_path.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
+            if user_dirs:
+                # Use most recently modified directory as fallback
+                try:
+                    most_recent = max(user_dirs, key=lambda d: d.stat().st_mtime)
+                    localconfig_path = most_recent / "config" / "localconfig.vdf"
+                    if localconfig_path.exists():
+                        return str(localconfig_path)
+                except Exception:
+                    pass
         
         logger.error("Could not find localconfig.vdf")
         return None

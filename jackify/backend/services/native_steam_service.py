@@ -15,6 +15,8 @@ import vdf
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any, List
 
+from ..handlers.vdf_handler import VDFHandler
+
 logger = logging.getLogger(__name__)
 
 class NativeSteamService:
@@ -39,18 +41,22 @@ class NativeSteamService:
             if not self.userdata_path.exists():
                 logger.error("Steam userdata directory not found")
                 return False
-            
+
             # Find user directories (excluding user 0 which is a system account)
             user_dirs = [d for d in self.userdata_path.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
             if not user_dirs:
                 logger.error("No valid Steam user directories found (user 0 is not valid for shortcuts)")
                 return False
-            
-            # Use the first valid user directory
-            user_dir = user_dirs[0]
+
+            # Detect the correct Steam user
+            user_dir = self._detect_active_steam_user(user_dirs)
+            if not user_dir:
+                logger.error("Could not determine active Steam user")
+                return False
+
             self.user_id = user_dir.name
             self.user_config_path = user_dir / "config"
-            
+
             logger.info(f"Found Steam user: {self.user_id}")
             logger.info(f"User config path: {self.user_config_path}")
             return True
@@ -58,7 +64,97 @@ class NativeSteamService:
         except Exception as e:
             logger.error(f"Error finding Steam user: {e}")
             return False
-    
+
+    def _detect_active_steam_user(self, user_dirs: List[Path]) -> Optional[Path]:
+        """
+        Detect the active Steam user from available user directories.
+
+        Priority:
+        1. Single non-0 user: Use automatically
+        2. Multiple users: Parse loginusers.vdf to find logged-in user
+        3. Fallback: Most recently active user directory
+
+        Args:
+            user_dirs: List of valid user directories
+
+        Returns:
+            Path to the active user directory, or None if detection fails
+        """
+        if len(user_dirs) == 1:
+            logger.info(f"Single Steam user found: {user_dirs[0].name}")
+            return user_dirs[0]
+
+        logger.info(f"Multiple Steam users found: {[d.name for d in user_dirs]}")
+
+        # Try to parse loginusers.vdf to find logged-in user
+        loginusers_path = self.steam_path / "loginusers.vdf"
+        active_user = self._parse_loginusers_vdf(loginusers_path)
+
+        if active_user:
+            # Find matching user directory
+            for user_dir in user_dirs:
+                if user_dir.name == active_user:
+                    logger.info(f"Found logged-in Steam user from loginusers.vdf: {active_user}")
+                    return user_dir
+
+            logger.warning(f"Logged-in user {active_user} from loginusers.vdf not found in user directories")
+
+        # Fallback: Use most recently modified user directory
+        try:
+            most_recent = max(user_dirs, key=lambda d: d.stat().st_mtime)
+            logger.info(f"Using most recently active Steam user directory: {most_recent.name}")
+            return most_recent
+        except Exception as e:
+            logger.error(f"Error determining most recent user directory: {e}")
+            # Final fallback: Use first user
+            logger.warning(f"Using first user directory as final fallback: {user_dirs[0].name}")
+            return user_dirs[0]
+
+    def _parse_loginusers_vdf(self, loginusers_path: Path) -> Optional[str]:
+        """
+        Parse loginusers.vdf to find the currently logged-in Steam user.
+
+        Args:
+            loginusers_path: Path to loginusers.vdf
+
+        Returns:
+            Steam user ID as string, or None if parsing fails
+        """
+        try:
+            if not loginusers_path.exists():
+                logger.debug(f"loginusers.vdf not found at {loginusers_path}")
+                return None
+
+            # Load VDF data
+            vdf_data = VDFHandler.load(str(loginusers_path), binary=False)
+            if not vdf_data:
+                logger.error("Failed to parse loginusers.vdf")
+                return None
+
+            users_section = vdf_data.get("users", {})
+            if not users_section:
+                logger.debug("No users section found in loginusers.vdf")
+                return None
+
+            # Find user marked as logged in
+            for user_id, user_data in users_section.items():
+                if isinstance(user_data, dict):
+                    # Check for indicators of logged-in status
+                    if user_data.get("MostRecent") == "1" or user_data.get("WantsOfflineMode") == "0":
+                        logger.debug(f"Found most recent/logged-in user: {user_id}")
+                        return user_id
+
+            # If no specific user found, try to get the first valid user
+            if users_section:
+                first_user = next(iter(users_section.keys()))
+                logger.debug(f"No specific logged-in user found, using first user: {first_user}")
+                return first_user
+
+        except Exception as e:
+            logger.error(f"Error parsing loginusers.vdf: {e}")
+
+        return None
+
     def get_shortcuts_vdf_path(self) -> Optional[Path]:
         """Get the path to shortcuts.vdf"""
         if not self.user_config_path:

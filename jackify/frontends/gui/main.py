@@ -884,7 +884,12 @@ class JackifyMainWindow(QMainWindow):
         self._check_protontricks_on_startup()
 
     def _debug_screen_change(self, index):
-        """Debug method to track screen changes"""
+        """Handle screen changes - debug logging and state reset"""
+        # Reset screen state when switching to workflow screens
+        widget = self.stacked_widget.widget(index)
+        if widget and hasattr(widget, 'reset_screen_to_defaults'):
+            widget.reset_screen_to_defaults()
+
         # Only show debug info if debug mode is enabled
         from jackify.backend.handlers.config_handler import ConfigHandler
         config_handler = ConfigHandler()

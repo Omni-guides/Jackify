@@ -1326,6 +1326,27 @@ class ConfigureNewModlistScreen(QWidget):
         btn_exit.clicked.connect(on_exit)
         dlg.exec()
 
+    def reset_screen_to_defaults(self):
+        """Reset the screen to default state when navigating back from main menu"""
+        # Reset form fields
+        self.install_dir_edit.setText("/path/to/Modlist/ModOrganizer.exe")
+
+        # Clear console and process monitor
+        self.console.clear()
+        self.process_monitor.clear()
+
+        # Reset resolution combo to saved config preference
+        saved_resolution = self.resolution_service.get_saved_resolution()
+        if saved_resolution:
+            combo_items = [self.resolution_combo.itemText(i) for i in range(self.resolution_combo.count())]
+            resolution_index = self.resolution_service.get_resolution_index(saved_resolution, combo_items)
+            self.resolution_combo.setCurrentIndex(resolution_index)
+        elif self.resolution_combo.count() > 0:
+            self.resolution_combo.setCurrentIndex(0)  # Fallback to "Leave unchanged"
+
+        # Re-enable controls (in case they were disabled from previous errors)
+        self._enable_controls_after_operation()
+
     def cleanup(self):
         """Clean up any running threads when the screen is closed"""
         debug_print("DEBUG: cleanup called - cleaning up threads")

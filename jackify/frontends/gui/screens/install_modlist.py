@@ -2023,7 +2023,10 @@ class InstallModlistScreen(QWidget):
         """Handle configuration error on main thread"""
         self._safe_append_text(f"Configuration failed with error: {error_message}")
         MessageService.critical(self, "Configuration Error", f"Configuration failed: {error_message}")
-        
+
+        # Re-enable all controls on error
+        self._enable_controls_after_operation()
+
         # Clean up thread
         if hasattr(self, 'config_thread') and self.config_thread is not None:
             # Disconnect all signals to prevent "Internal C++ object already deleted" errors
@@ -2676,6 +2679,36 @@ https://wiki.scenicroute.games/Somnium/1_Installation.html</i>"""
         self.cleanup_processes()
         self.go_back()
     
+    def reset_screen_to_defaults(self):
+        """Reset the screen to default state when navigating back from main menu"""
+        # Reset form fields
+        self.modlist_btn.setText("Select Modlist")
+        self.modlist_btn.setEnabled(False)
+        self.file_edit.setText("")
+        self.modlist_name_edit.setText("")
+        self.install_dir_edit.setText(self.config_handler.get_modlist_install_base_dir())
+        # Reset game type button
+        self.game_type_btn.setText("Please Select...")
+
+        # Clear console and process monitor
+        self.console.clear()
+        self.process_monitor.clear()
+
+        # Reset tabs to first tab (Online)
+        self.source_tabs.setCurrentIndex(0)
+
+        # Reset resolution combo to saved config preference
+        saved_resolution = self.resolution_service.get_saved_resolution()
+        if saved_resolution:
+            combo_items = [self.resolution_combo.itemText(i) for i in range(self.resolution_combo.count())]
+            resolution_index = self.resolution_service.get_resolution_index(saved_resolution, combo_items)
+            self.resolution_combo.setCurrentIndex(resolution_index)
+        elif self.resolution_combo.count() > 0:
+            self.resolution_combo.setCurrentIndex(0)  # Fallback to "Leave unchanged"
+
+        # Re-enable controls (in case they were disabled from previous errors)
+        self._enable_controls_after_operation()
+
     def closeEvent(self, event):
         """Handle window close event - clean up processes"""
         self.cleanup_processes()

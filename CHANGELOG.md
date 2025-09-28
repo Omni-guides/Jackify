@@ -1,5 +1,15 @@
 # Jackify Changelog
 
+## v0.1.5.1 - Bug Fixes
+**Release Date:** September 28, 2025
+
+### Bug Fixes
+- Fixed Steam user detection in multi-user environments
+- Fixed controls not re-enabling after workflow errors
+- Fixed screen state persistence between workflows
+
+---
+
 ## v0.1.5 - Winetricks Integration & Enhanced Compatibility
 **Release Date:** September 26, 2025
 

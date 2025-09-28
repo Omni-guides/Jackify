@@ -200,18 +200,26 @@ class WinetricksHandler:
         env['WINETRICKS_CACHE'] = str(jackify_cache_dir)
 
         if specific_components is not None:
-            components_to_install = specific_components
-            self.logger.info(f"Installing specific components: {components_to_install}")
+            all_components = specific_components
+            self.logger.info(f"Installing specific components: {all_components}")
         else:
-            components_to_install = ["fontsmooth=rgb", "xact", "xact_x64", "vcrun2022"]
-            self.logger.info(f"Installing default components: {components_to_install}")
+            all_components = ["fontsmooth=rgb", "xact", "xact_x64", "vcrun2022"]
+            self.logger.info(f"Installing default components: {all_components}")
 
-        if not components_to_install:
+        if not all_components:
             self.logger.info("No Wine components to install.")
             return True
 
-        self.logger.info(f"WINEPREFIX: {wineprefix}, Game: {game_var}, Components: {components_to_install}")
+        # Reorder components for proper installation sequence
+        components_to_install = self._reorder_components_for_installation(all_components)
+        self.logger.info(f"WINEPREFIX: {wineprefix}, Game: {game_var}, Ordered Components: {components_to_install}")
 
+        # Install components separately if dotnet40 is present (mimics protontricks behavior)
+        if "dotnet40" in components_to_install:
+            self.logger.info("dotnet40 detected - installing components separately like protontricks")
+            return self._install_components_separately(components_to_install, wineprefix, wine_binary, env)
+
+        # For non-dotnet40 installations, install all components together (faster)
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
             if attempt > 1:
@@ -240,6 +248,23 @@ class WinetricksHandler:
                     self.logger.info("Wine Component installation command completed successfully.")
                     return True
                 else:
+                    # Special handling for dotnet40 verification issue (mimics protontricks behavior)
+                    if "dotnet40" in components_to_install and "ngen.exe not found" in result.stderr:
+                        self.logger.warning("dotnet40 verification warning (common in Steam Proton prefixes)")
+                        self.logger.info("Checking if dotnet40 was actually installed...")
+
+                        # Check if dotnet40 appears in winetricks.log (indicates successful installation)
+                        log_path = os.path.join(wineprefix, 'winetricks.log')
+                        if os.path.exists(log_path):
+                            try:
+                                with open(log_path, 'r') as f:
+                                    log_content = f.read()
+                                if 'dotnet40' in log_content:
+                                    self.logger.info("dotnet40 found in winetricks.log - installation succeeded despite verification warning")
+                                    return True
+                            except Exception as e:
+                                self.logger.warning(f"Could not read winetricks.log: {e}")
+
                     self.logger.error(f"Winetricks command failed (Attempt {attempt}/{max_attempts}). Return Code: {result.returncode}")
                     self.logger.error(f"Stdout: {result.stdout.strip()}")
                     self.logger.error(f"Stderr: {result.stderr.strip()}")
@@ -249,6 +274,169 @@ class WinetricksHandler:
 
         self.logger.error(f"Failed to install Wine components after {max_attempts} attempts.")
         return False
+
+    def _reorder_components_for_installation(self, components: list) -> list:
+        """
+        Reorder components for proper installation sequence.
+        Critical: dotnet40 must be installed before dotnet6/dotnet7 to avoid conflicts.
+        """
+        # Simple reordering: dotnet40 first, then everything else
+        reordered = []
+
+        # Add dotnet40 first if it exists
+        if "dotnet40" in components:
+            reordered.append("dotnet40")
+
+        # Add all other components in original order
+        for component in components:
+            if component != "dotnet40":
+                reordered.append(component)
+
+        if reordered != components:
+            self.logger.info(f"Reordered for dotnet40 compatibility: {reordered}")
+
+        return reordered
+
+    def _prepare_prefix_for_dotnet(self, wineprefix: str, wine_binary: str) -> bool:
+        """
+        Prepare the Wine prefix for .NET installation by mimicking protontricks preprocessing.
+        This removes mono components and specific symlinks that interfere with .NET installation.
+        """
+        try:
+            env = os.environ.copy()
+            env['WINEDEBUG'] = '-all'
+            env['WINEPREFIX'] = wineprefix
+
+            # Step 1: Remove mono components (mimics protontricks behavior)
+            self.logger.info("Preparing prefix for .NET installation: removing mono")
+            mono_result = subprocess.run([
+                self.winetricks_path,
+                '-q',
+                'remove_mono'
+            ], env=env, capture_output=True, text=True, timeout=300)
+
+            if mono_result.returncode != 0:
+                self.logger.warning(f"Mono removal warning (non-critical): {mono_result.stderr}")
+
+            # Step 2: Set Windows version to XP (protontricks uses winxp for dotnet40)
+            self.logger.info("Setting Windows version to XP for .NET compatibility")
+            winxp_result = subprocess.run([
+                self.winetricks_path,
+                '-q',
+                'winxp'
+            ], env=env, capture_output=True, text=True, timeout=300)
+
+            if winxp_result.returncode != 0:
+                self.logger.warning(f"Windows XP setting warning: {winxp_result.stderr}")
+
+            # Step 3: Remove mscoree.dll symlinks (critical for .NET installation)
+            self.logger.info("Removing problematic mscoree.dll symlinks")
+            dosdevices_path = os.path.join(wineprefix, 'dosdevices', 'c:')
+            mscoree_paths = [
+                os.path.join(dosdevices_path, 'windows', 'syswow64', 'mscoree.dll'),
+                os.path.join(dosdevices_path, 'windows', 'system32', 'mscoree.dll')
+            ]
+
+            for dll_path in mscoree_paths:
+                if os.path.exists(dll_path) or os.path.islink(dll_path):
+                    try:
+                        os.remove(dll_path)
+                        self.logger.debug(f"Removed symlink: {dll_path}")
+                    except Exception as e:
+                        self.logger.warning(f"Could not remove {dll_path}: {e}")
+
+            self.logger.info("Prefix preparation complete for .NET installation")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error preparing prefix for .NET: {e}")
+            return False
+
+    def _install_components_separately(self, components: list, wineprefix: str, wine_binary: str, base_env: dict) -> bool:
+        """
+        Install components separately like protontricks does.
+        This is necessary when dotnet40 is present to avoid component conflicts.
+        """
+        self.logger.info(f"Installing {len(components)} components separately (protontricks style)")
+
+        for i, component in enumerate(components, 1):
+            self.logger.info(f"Installing component {i}/{len(components)}: {component}")
+
+            # Prepare environment for this component
+            env = base_env.copy()
+
+            # Special preprocessing for dotnet40 only
+            if component == "dotnet40":
+                self.logger.info("Applying dotnet40 preprocessing")
+                if not self._prepare_prefix_for_dotnet(wineprefix, wine_binary):
+                    self.logger.error("Failed to prepare prefix for dotnet40")
+                    return False
+            else:
+                # For non-dotnet40 components, ensure we're in Windows 10 mode
+                self.logger.debug(f"Installing {component} in standard mode")
+                try:
+                    subprocess.run([
+                        self.winetricks_path, '-q', 'win10'
+                    ], env=env, capture_output=True, text=True, timeout=300)
+                except Exception as e:
+                    self.logger.warning(f"Could not set win10 mode for {component}: {e}")
+
+            # Install this component
+            max_attempts = 3
+            component_success = False
+
+            for attempt in range(1, max_attempts + 1):
+                if attempt > 1:
+                    self.logger.warning(f"Retrying {component} installation (attempt {attempt}/{max_attempts})")
+                    self._cleanup_wine_processes()
+
+                try:
+                    cmd = [self.winetricks_path, '--unattended', component]
+                    env['WINEPREFIX'] = wineprefix
+                    env['WINE'] = wine_binary
+
+                    self.logger.debug(f"Running: {' '.join(cmd)}")
+
+                    result = subprocess.run(
+                        cmd,
+                        env=env,
+                        capture_output=True,
+                        text=True,
+                        timeout=600
+                    )
+
+                    if result.returncode == 0:
+                        self.logger.info(f"✓ {component} installed successfully")
+                        component_success = True
+                        break
+                    else:
+                        # Special handling for dotnet40 verification issue
+                        if component == "dotnet40" and "ngen.exe not found" in result.stderr:
+                            self.logger.warning("dotnet40 verification warning (expected in Steam Proton)")
+
+                            # Check winetricks.log for actual success
+                            log_path = os.path.join(wineprefix, 'winetricks.log')
+                            if os.path.exists(log_path):
+                                try:
+                                    with open(log_path, 'r') as f:
+                                        if 'dotnet40' in f.read():
+                                            self.logger.info("✓ dotnet40 confirmed in winetricks.log")
+                                            component_success = True
+                                            break
+                                except Exception as e:
+                                    self.logger.warning(f"Could not read winetricks.log: {e}")
+
+                        self.logger.error(f"✗ {component} failed (attempt {attempt}): {result.stderr.strip()[:200]}")
+
+                except Exception as e:
+                    self.logger.error(f"Error installing {component} (attempt {attempt}): {e}")
+
+            if not component_success:
+                self.logger.error(f"Failed to install {component} after {max_attempts} attempts")
+                return False
+
+        self.logger.info("✓ All components installed successfully using separate sessions")
+        return True
 
     def _cleanup_wine_processes(self):
         """
