@@ -1757,6 +1757,10 @@ class InstallModlistScreen(QWidget):
             MessageService.critical(self, "Steam Restart Failed", "Failed to restart Steam automatically. Please restart Steam manually, then try again.")
 
     def start_automated_prefix_workflow(self):
+        # Ensure _current_resolution is always set before starting workflow
+        if not hasattr(self, '_current_resolution') or self._current_resolution is None:
+            resolution = self.resolution_combo.currentText() if hasattr(self, 'resolution_combo') else None
+            self._current_resolution = resolution.split()[0] if resolution and resolution != "Leave unchanged" else None
         """Start the automated prefix creation workflow"""
         try:
             # Disable controls during installation
@@ -2382,7 +2386,7 @@ class InstallModlistScreen(QWidget):
                             # This shouldn't happen since automated prefix creation is complete
                             self.progress_update.emit(f"Unexpected manual steps callback for {modlist_name}")
                         
-                        # Call the service method for post-Steam configuration  
+                        # Call the service method for post-Steam configuration
                         result = modlist_service.configure_modlist_post_steam(
                             context=modlist_context,
                             progress_callback=progress_callback,

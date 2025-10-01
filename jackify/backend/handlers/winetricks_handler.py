@@ -137,7 +137,7 @@ class WinetricksHandler:
             from ..handlers.wine_utils import WineUtils
 
             config = ConfigHandler()
-            user_proton_path = config.get('proton_path', 'auto')
+            user_proton_path = config.get_proton_path()
 
             # If user selected a specific Proton, try that first
             wine_binary = None
@@ -180,6 +180,49 @@ class WinetricksHandler:
 
             env['WINE'] = str(wine_binary)
             self.logger.info(f"Using Proton wine binary for winetricks: {wine_binary}")
+
+            # CRITICAL: Set up protontricks-compatible environment
+            proton_dist_path = os.path.dirname(os.path.dirname(wine_binary))  # e.g., /path/to/proton/dist/bin/wine -> /path/to/proton/dist
+            self.logger.debug(f"Proton dist path: {proton_dist_path}")
+
+            # Set WINEDLLPATH like protontricks does
+            env['WINEDLLPATH'] = f"{proton_dist_path}/lib64/wine:{proton_dist_path}/lib/wine"
+
+            # Ensure Proton bin directory is first in PATH
+            env['PATH'] = f"{proton_dist_path}/bin:{env.get('PATH', '')}"
+
+            # Set DLL overrides exactly like protontricks
+            dll_overrides = {
+                "beclient": "b,n",
+                "beclient_x64": "b,n",
+                "dxgi": "n",
+                "d3d9": "n",
+                "d3d10core": "n",
+                "d3d11": "n",
+                "d3d12": "n",
+                "d3d12core": "n",
+                "nvapi": "n",
+                "nvapi64": "n",
+                "nvofapi64": "n",
+                "nvcuda": "b"
+            }
+
+            # Merge with existing overrides
+            existing_overrides = env.get('WINEDLLOVERRIDES', '')
+            if existing_overrides:
+                # Parse existing overrides
+                for override in existing_overrides.split(';'):
+                    if '=' in override:
+                        name, value = override.split('=', 1)
+                        dll_overrides[name] = value
+
+            env['WINEDLLOVERRIDES'] = ';'.join(f"{name}={setting}" for name, setting in dll_overrides.items())
+
+            # Set Wine defaults from protontricks
+            env['WINE_LARGE_ADDRESS_AWARE'] = '1'
+            env['DXVK_ENABLE_NVAPI'] = '1'
+
+            self.logger.debug(f"Set protontricks environment: WINEDLLPATH={env['WINEDLLPATH']}")
 
         except Exception as e:
             self.logger.error(f"Cannot run winetricks: Failed to get Proton wine binary: {e}")
@@ -426,7 +469,8 @@ class WinetricksHandler:
                                 except Exception as e:
                                     self.logger.warning(f"Could not read winetricks.log: {e}")
 
-                        self.logger.error(f"✗ {component} failed (attempt {attempt}): {result.stderr.strip()[:200]}")
+                        self.logger.error(f"✗ {component} failed (attempt {attempt}): {result.stderr.strip()}")
+                        self.logger.debug(f"Full stdout for {component}: {result.stdout.strip()}")
 
                 except Exception as e:
                     self.logger.error(f"Error installing {component} (attempt {attempt}): {e}")

@@ -692,10 +692,32 @@ class ModlistHandler:
             print("Error: Could not determine wine prefix location.")
             return False
 
-        if not self.winetricks_handler.install_wine_components(wineprefix, self.game_var_full, specific_components=components):
-            self.logger.error("Failed to install Wine components. Configuration aborted.")
-            print("Error: Failed to install necessary Wine components.")
-            return False # Abort on failure
+        # Try winetricks first (preferred method with current fix)
+        winetricks_success = False
+        try:
+            self.logger.info("Attempting Wine component installation using winetricks...")
+            winetricks_success = self.winetricks_handler.install_wine_components(wineprefix, self.game_var_full, specific_components=components)
+            if winetricks_success:
+                self.logger.info("Winetricks installation completed successfully")
+        except Exception as e:
+            self.logger.warning(f"Winetricks installation failed with exception: {e}")
+            winetricks_success = False
+
+        # Fallback to protontricks if winetricks failed
+        if not winetricks_success:
+            self.logger.warning("Winetricks failed, falling back to protontricks for Wine component installation...")
+            try:
+                protontricks_success = self.protontricks_handler.install_wine_components(target_appid, self.game_var_full, specific_components=components)
+                if protontricks_success:
+                    self.logger.info("Protontricks fallback installation completed successfully")
+                else:
+                    self.logger.error("Both winetricks and protontricks failed to install Wine components.")
+                    print("Error: Failed to install necessary Wine components using both winetricks and protontricks.")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Protontricks fallback also failed with exception: {e}")
+                print("Error: Failed to install necessary Wine components using both winetricks and protontricks.")
+                return False
         self.logger.info("Step 4: Installing Wine components... Done")
 
         # Step 5: Ensure permissions of Modlist directory

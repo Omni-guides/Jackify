@@ -709,7 +709,7 @@ class WineUtils:
         try:
             from .config_handler import ConfigHandler
             config = ConfigHandler()
-            fallback_path = config.get('proton_path', 'auto')
+            fallback_path = config.get_proton_path()
             if fallback_path != 'auto':
                 fallback_wine_bin = Path(fallback_path) / "files/bin/wine"
                 if fallback_wine_bin.is_file():

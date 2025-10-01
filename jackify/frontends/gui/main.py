@@ -102,7 +102,7 @@ sys.path.insert(0, str(src_dir))
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout, QPushButton,
-    QStackedWidget, QHBoxLayout, QDialog, QFormLayout, QLineEdit, QCheckBox, QSpinBox, QMessageBox, QGroupBox, QGridLayout, QFileDialog, QToolButton, QStyle, QComboBox
+    QStackedWidget, QHBoxLayout, QDialog, QFormLayout, QLineEdit, QCheckBox, QSpinBox, QMessageBox, QGroupBox, QGridLayout, QFileDialog, QToolButton, QStyle, QComboBox, QTabWidget
 )
 from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QIcon
@@ -167,221 +167,26 @@ class SettingsDialog(QDialog):
             self._original_debug_mode = self.config_handler.get('debug_mode', False)
             self.setWindowTitle("Settings")
             self.setModal(True)
-            self.setMinimumWidth(750)
+            self.setMinimumWidth(650)  # Reduced width for Steam Deck compatibility
+            self.setMaximumWidth(800)   # Maximum width to prevent excessive stretching
             self.setStyleSheet("QDialog { background-color: #232323; color: #eee; } QPushButton:hover { background-color: #333; }")
+
             main_layout = QVBoxLayout()
             self.setLayout(main_layout)
 
-            # --- Resource Limits Section ---
-            resource_group = QGroupBox("Resource Limits")
-            resource_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-            resource_layout = QGridLayout()
-            resource_group.setLayout(resource_layout)
-            resource_layout.setVerticalSpacing(4)
-            resource_layout.setHorizontalSpacing(8)
-            resource_layout.addWidget(self._bold_label("Resource"), 0, 0, 1, 1, Qt.AlignLeft)
-            resource_layout.addWidget(self._bold_label("Max Tasks"), 0, 1, 1, 1, Qt.AlignLeft)
-            self.resource_settings_path = os.path.expanduser("~/.config/jackify/resource_settings.json")
-            self.resource_settings = self._load_json(self.resource_settings_path)
-            self.resource_edits = {}
-            resource_row_index = 0
-            for resource_row_index, (k, v) in enumerate(self.resource_settings.items(), start=1):
-                try:
-                    # Create resource label with optional inline checkbox for File Extractor
-                    if k == "File Extractor":
-                        # Create horizontal layout for File Extractor with inline checkbox
-                        resource_row = QHBoxLayout()
-                        resource_label = QLabel(f"{k}:", parent=self)
-                        resource_row.addWidget(resource_label)
-                        resource_row.addSpacing(10)  # Add some spacing
-                        
-                        multithreading_checkbox = QCheckBox("Multithreading (Experimental)")
-                        multithreading_checkbox.setChecked(v.get('_7zzMultiThread', 'off') == 'on')
-                        multithreading_checkbox.setToolTip("Enables multithreaded file extraction using 7-Zip. May improve extraction speed on multi-core systems but could be less stable.")
-                        multithreading_checkbox.setStyleSheet("color: #fff;")
-                        resource_row.addWidget(multithreading_checkbox)
-                        resource_row.addStretch()  # Push checkbox to the left
-                        
-                        # Add the horizontal layout to the grid
-                        resource_layout.addLayout(resource_row, resource_row_index, 0)
-                    else:
-                        resource_layout.addWidget(QLabel(f"{k}:", parent=self), resource_row_index, 0, 1, 1, Qt.AlignLeft)
-                    
-                    max_tasks_spin = QSpinBox()
-                    max_tasks_spin.setMinimum(1)
-                    max_tasks_spin.setMaximum(128)
-                    max_tasks_spin.setValue(v.get('MaxTasks', 16))
-                    max_tasks_spin.setToolTip("Maximum number of concurrent tasks for this resource.")
-                    max_tasks_spin.setFixedWidth(160)
-                    resource_layout.addWidget(max_tasks_spin, resource_row_index, 1)
-                    
-                    # Store the widgets (checkbox for File Extractor, None for others)
-                    if k == "File Extractor":
-                        self.resource_edits[k] = (multithreading_checkbox, max_tasks_spin)
-                    else:
-                        self.resource_edits[k] = (None, max_tasks_spin)
-                except Exception as e:
-                    print(f"[ERROR] Failed to create widgets for resource '{k}': {e}")
-                    continue
-            
-            # If no resources exist, show helpful message
-            if not self.resource_edits:
-                info_label = QLabel("Resource Limit settings will be generated once a modlist install action is performed")
-                info_label.setStyleSheet("color: #aaa; font-style: italic; padding: 20px; font-size: 11pt;")
-                info_label.setWordWrap(True)
-                info_label.setAlignment(Qt.AlignCenter)
-                info_label.setMinimumHeight(60)  # Ensure enough height to prevent cutoff
-                resource_layout.addWidget(info_label, 1, 0, 3, 2)  # Span more rows for better space
-            
-            # Bandwidth limiter row (only show if Downloads resource exists)
-            if "Downloads" in self.resource_settings:
-                downloads_throughput = self.resource_settings["Downloads"].get("MaxThroughput", 0)
-                
-                self.bandwidth_spin = QSpinBox()
-                self.bandwidth_spin.setMinimum(0)
-                self.bandwidth_spin.setMaximum(1000000)
-                self.bandwidth_spin.setValue(downloads_throughput)
-                self.bandwidth_spin.setSuffix(" KB/s")
-                self.bandwidth_spin.setFixedWidth(160)
-                self.bandwidth_spin.setToolTip("Set the maximum download speed for modlist downloads. 0 = unlimited.")
-                bandwidth_note = QLabel("(0 = unlimited)")
-                bandwidth_note.setStyleSheet("color: #aaa; font-size: 10pt;")
-                # Create horizontal layout for bandwidth row
-                bandwidth_row = QHBoxLayout()
-                bandwidth_row.addWidget(self.bandwidth_spin)
-                bandwidth_row.addWidget(bandwidth_note)
-                bandwidth_row.addStretch()  # Push to the left
-                
-                resource_layout.addWidget(QLabel("Bandwidth Limit:", parent=self), resource_row_index+1, 0, 1, 1, Qt.AlignLeft)
-                resource_layout.addLayout(bandwidth_row, resource_row_index+1, 1)
-            else:
-                self.bandwidth_spin = None  # No bandwidth UI if Downloads resource doesn't exist
-            main_layout.addWidget(resource_group)
-            main_layout.addSpacing(12)
+            # Create tab widget
+            self.tab_widget = QTabWidget()
+            self.tab_widget.setStyleSheet("""
+                QTabWidget::pane { border: 1px solid #555; background: #232323; }
+                QTabBar::tab { background: #333; color: #eee; padding: 8px 16px; margin: 2px; }
+                QTabBar::tab:selected { background: #555; }
+                QTabBar::tab:hover { background: #444; }
+            """)
+            main_layout.addWidget(self.tab_widget)
 
-            # --- Debug & Diagnostics Section ---
-            debug_group = QGroupBox("Debug & Diagnostics")
-            debug_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-            debug_layout = QVBoxLayout()
-            debug_group.setLayout(debug_layout)
-            self.debug_checkbox = QCheckBox("Enable debug mode (requires restart)")
-            # Load debug_mode from config
-            self.debug_checkbox.setChecked(self.config_handler.get('debug_mode', False))
-            self.debug_checkbox.setToolTip("Enable verbose debug logging. Requires Jackify restart to take effect.")
-            self.debug_checkbox.setStyleSheet("color: #fff;")
-            debug_layout.addWidget(self.debug_checkbox)
-            main_layout.addWidget(debug_group)
-            main_layout.addSpacing(12)
-
-            # --- Nexus API Key Section ---
-            api_group = QGroupBox("Nexus API Key")
-            api_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-            api_layout = QHBoxLayout()
-            api_group.setLayout(api_layout)
-            self.api_key_edit = QLineEdit()
-            self.api_key_edit.setEchoMode(QLineEdit.Password)
-            api_key = self.config_handler.get_api_key()
-            if api_key:
-                self.api_key_edit.setText(api_key)
-            else:
-                self.api_key_edit.setText("")
-            self.api_key_edit.setToolTip("Your Nexus API Key (obfuscated by default, click Show to reveal)")
-            # Connect for immediate saving when text changes
-            self.api_key_edit.textChanged.connect(self._on_api_key_changed)
-            self.api_show_btn = QToolButton()
-            self.api_show_btn.setCheckable(True)
-            self.api_show_btn.setIcon(QIcon.fromTheme("view-visible"))
-            self.api_show_btn.setToolTip("Show or hide your API key")
-            self.api_show_btn.toggled.connect(self._toggle_api_key_visibility)
-            self.api_show_btn.setStyleSheet("")
-            clear_api_btn = QPushButton("Clear API Key")
-            clear_api_btn.clicked.connect(self._clear_api_key)
-            api_layout.addWidget(QLabel("Nexus API Key:"))
-            api_layout.addWidget(self.api_key_edit)
-            api_layout.addWidget(self.api_show_btn)
-            api_layout.addWidget(clear_api_btn)
-            main_layout.addWidget(api_group)
-            main_layout.addSpacing(12)
-
-            # --- Proton Version Section ---
-            proton_group = QGroupBox("Proton Version")
-            proton_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-            proton_layout = QHBoxLayout()
-            proton_group.setLayout(proton_layout)
-
-            self.proton_dropdown = QComboBox()
-            self.proton_dropdown.setToolTip("Select Proton version for shortcut creation and texture processing")
-            self.proton_dropdown.setMinimumWidth(200)
-
-            # Populate Proton dropdown
-            self._populate_proton_dropdown()
-
-            # Refresh button for Proton detection
-            refresh_btn = QPushButton("↻")
-            refresh_btn.setFixedSize(30, 30)
-            refresh_btn.setToolTip("Refresh Proton version list")
-            refresh_btn.clicked.connect(self._refresh_proton_dropdown)
-
-            proton_layout.addWidget(QLabel("Proton Version:"))
-            proton_layout.addWidget(self.proton_dropdown)
-            proton_layout.addWidget(refresh_btn)
-            proton_layout.addStretch()
-
-            main_layout.addWidget(proton_group)
-            main_layout.addSpacing(12)
-
-            # --- Directories & Paths Section ---
-            dir_group = QGroupBox("Directories & Paths")
-            dir_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-            dir_layout = QFormLayout()
-            dir_group.setLayout(dir_layout)
-            self.install_dir_edit = QLineEdit(self.config_handler.get("modlist_install_base_dir", ""))
-            self.install_dir_edit.setToolTip("Default directory for modlist installations.")
-            self.install_dir_btn = QPushButton()
-            self.install_dir_btn.setIcon(QIcon.fromTheme("folder-open"))
-            self.install_dir_btn.setToolTip("Browse for directory")
-            self.install_dir_btn.setFixedWidth(32)
-            self.install_dir_btn.clicked.connect(lambda: self._pick_directory(self.install_dir_edit))
-            install_dir_row = QHBoxLayout()
-            install_dir_row.addWidget(self.install_dir_edit)
-            install_dir_row.addWidget(self.install_dir_btn)
-            dir_layout.addRow(QLabel("Install Base Dir:"), install_dir_row)
-            self.download_dir_edit = QLineEdit(self.config_handler.get("modlist_downloads_base_dir", ""))
-            self.download_dir_edit.setToolTip("Default directory for modlist downloads.")
-            self.download_dir_btn = QPushButton()
-            self.download_dir_btn.setIcon(QIcon.fromTheme("folder-open"))
-            self.download_dir_btn.setToolTip("Browse for directory")
-            self.download_dir_btn.setFixedWidth(32)
-            self.download_dir_btn.clicked.connect(lambda: self._pick_directory(self.download_dir_edit))
-            download_dir_row = QHBoxLayout()
-            download_dir_row.addWidget(self.download_dir_edit)
-            download_dir_row.addWidget(self.download_dir_btn)
-            dir_layout.addRow(QLabel("Downloads Base Dir:"), download_dir_row)
-            
-            # Jackify Data Directory
-            from jackify.shared.paths import get_jackify_data_dir
-            current_jackify_dir = str(get_jackify_data_dir())
-            self.jackify_data_dir_edit = QLineEdit(current_jackify_dir)
-            self.jackify_data_dir_edit.setToolTip("Directory for Jackify data (logs, downloads, temp files). Default: ~/Jackify")
-            self.jackify_data_dir_btn = QPushButton()
-            self.jackify_data_dir_btn.setIcon(QIcon.fromTheme("folder-open"))
-            self.jackify_data_dir_btn.setToolTip("Browse for directory")
-            self.jackify_data_dir_btn.setFixedWidth(32)
-            self.jackify_data_dir_btn.clicked.connect(lambda: self._pick_directory(self.jackify_data_dir_edit))
-            jackify_data_dir_row = QHBoxLayout()
-            jackify_data_dir_row.addWidget(self.jackify_data_dir_edit)
-            jackify_data_dir_row.addWidget(self.jackify_data_dir_btn)
-            
-            # Reset to default button
-            reset_jackify_dir_btn = QPushButton("Reset")
-            reset_jackify_dir_btn.setToolTip("Reset to default (~/ Jackify)")
-            reset_jackify_dir_btn.setFixedWidth(50)
-            reset_jackify_dir_btn.clicked.connect(lambda: self.jackify_data_dir_edit.setText(str(Path.home() / "Jackify")))
-            jackify_data_dir_row.addWidget(reset_jackify_dir_btn)
-            
-            dir_layout.addRow(QLabel("Jackify Data Dir:"), jackify_data_dir_row)
-            main_layout.addWidget(dir_group)
-            main_layout.addSpacing(12)
+            # Create tabs
+            self._create_general_tab()
+            self._create_advanced_tab()
 
             # --- Save/Close/Help Buttons ---
             btn_layout = QHBoxLayout()
@@ -396,36 +201,224 @@ class SettingsDialog(QDialog):
             close_btn.clicked.connect(self.reject)
             btn_layout.addWidget(save_btn)
             btn_layout.addWidget(close_btn)
+
+            # Add error label for validation messages
+            self.error_label = QLabel("")
+            self.error_label.setStyleSheet("QLabel { color: #ff6b6b; }")
+            main_layout.addWidget(self.error_label)
+
             main_layout.addSpacing(10)
             main_layout.addLayout(btn_layout)
 
-            # Set tab order for accessibility
-            # Get the first resource's widgets if any exist
-            if self.resource_edits:
-                first_resource_key = list(self.resource_edits.keys())[0]
-                first_multithreading, first_max_tasks = self.resource_edits[first_resource_key]
-                # Set tab order starting with the first max tasks spinner
-                self.setTabOrder(first_max_tasks, self.bandwidth_spin)
-            # Continue with bandwidth spinner regardless of resources
-            self.setTabOrder(self.bandwidth_spin, self.debug_checkbox)
-            self.setTabOrder(self.debug_checkbox, self.api_key_edit)
-            self.setTabOrder(self.api_key_edit, self.api_show_btn)
-            self.setTabOrder(self.api_show_btn, clear_api_btn)
-            self.setTabOrder(clear_api_btn, self.install_dir_edit)
-            self.setTabOrder(self.install_dir_edit, self.install_dir_btn)
-            self.setTabOrder(self.install_dir_btn, self.download_dir_edit)
-            self.setTabOrder(self.download_dir_edit, self.download_dir_btn)
-            self.setTabOrder(self.download_dir_btn, save_btn)
-            self.setTabOrder(save_btn, close_btn)
-
-            self.error_label = QLabel("")
-            self.error_label.setStyleSheet("color: #f55; font-weight: bold;")
-            main_layout.insertWidget(0, self.error_label)
         except Exception as e:
-            print(f"[ERROR] Exception in SettingsDialog __init__: {e}")
+            print(f"[ERROR] Exception in SettingsDialog.__init__: {e}")
             import traceback
             traceback.print_exc()
-            raise
+
+    def _create_general_tab(self):
+        """Create the General settings tab"""
+        general_tab = QWidget()
+        general_layout = QVBoxLayout(general_tab)
+
+        # --- Directory Paths Section (moved to top as most essential) ---
+        dir_group = QGroupBox("Directory Paths")
+        dir_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        dir_layout = QFormLayout()
+        dir_group.setLayout(dir_layout)
+        self.install_dir_edit = QLineEdit(self.config_handler.get("modlist_install_base_dir", ""))
+        self.install_dir_edit.setToolTip("Default directory for modlist installations.")
+        self.install_dir_btn = QPushButton()
+        self.install_dir_btn.setIcon(QIcon.fromTheme("folder-open"))
+        self.install_dir_btn.setToolTip("Browse for directory")
+        self.install_dir_btn.setFixedWidth(32)
+        self.install_dir_btn.clicked.connect(lambda: self._pick_directory(self.install_dir_edit))
+        install_dir_row = QHBoxLayout()
+        install_dir_row.addWidget(self.install_dir_edit)
+        install_dir_row.addWidget(self.install_dir_btn)
+        dir_layout.addRow(QLabel("Install Base Dir:"), install_dir_row)
+        self.download_dir_edit = QLineEdit(self.config_handler.get("modlist_downloads_base_dir", ""))
+        self.download_dir_edit.setToolTip("Default directory for modlist downloads.")
+        self.download_dir_btn = QPushButton()
+        self.download_dir_btn.setIcon(QIcon.fromTheme("folder-open"))
+        self.download_dir_btn.setToolTip("Browse for directory")
+        self.download_dir_btn.setFixedWidth(32)
+        self.download_dir_btn.clicked.connect(lambda: self._pick_directory(self.download_dir_edit))
+        download_dir_row = QHBoxLayout()
+        download_dir_row.addWidget(self.download_dir_edit)
+        download_dir_row.addWidget(self.download_dir_btn)
+        dir_layout.addRow(QLabel("Downloads Base Dir:"), download_dir_row)
+
+        # Jackify Data Directory
+        from jackify.shared.paths import get_jackify_data_dir
+        current_jackify_dir = str(get_jackify_data_dir())
+        self.jackify_data_dir_edit = QLineEdit(current_jackify_dir)
+        self.jackify_data_dir_edit.setToolTip("Directory for Jackify data (logs, downloads, temp files). Default: ~/Jackify")
+        self.jackify_data_dir_btn = QPushButton()
+        self.jackify_data_dir_btn.setIcon(QIcon.fromTheme("folder-open"))
+        self.jackify_data_dir_btn.setToolTip("Browse for directory")
+        self.jackify_data_dir_btn.setFixedWidth(32)
+        self.jackify_data_dir_btn.clicked.connect(lambda: self._pick_directory(self.jackify_data_dir_edit))
+        jackify_data_dir_row = QHBoxLayout()
+        jackify_data_dir_row.addWidget(self.jackify_data_dir_edit)
+        jackify_data_dir_row.addWidget(self.jackify_data_dir_btn)
+
+        # Reset to default button
+        reset_jackify_dir_btn = QPushButton("Reset")
+        reset_jackify_dir_btn.setToolTip("Reset to default (~/ Jackify)")
+        reset_jackify_dir_btn.setFixedWidth(50)
+        reset_jackify_dir_btn.clicked.connect(lambda: self.jackify_data_dir_edit.setText(str(Path.home() / "Jackify")))
+        jackify_data_dir_row.addWidget(reset_jackify_dir_btn)
+
+        dir_layout.addRow(QLabel("Jackify Data Dir:"), jackify_data_dir_row)
+        general_layout.addWidget(dir_group)
+        general_layout.addSpacing(12)
+
+        # --- Nexus API Key Section ---
+        api_group = QGroupBox("Nexus API Key")
+        api_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        api_layout = QHBoxLayout()
+        api_group.setLayout(api_layout)
+        self.api_key_edit = QLineEdit()
+        self.api_key_edit.setEchoMode(QLineEdit.Password)
+        api_key = self.config_handler.get_api_key()
+        if api_key:
+            self.api_key_edit.setText(api_key)
+        else:
+            self.api_key_edit.setText("")
+        self.api_key_edit.setToolTip("Your Nexus API Key (obfuscated by default, click Show to reveal)")
+        # Connect for immediate saving when text changes
+        self.api_key_edit.textChanged.connect(self._on_api_key_changed)
+        self.api_show_btn = QToolButton()
+        self.api_show_btn.setCheckable(True)
+        self.api_show_btn.setIcon(QIcon.fromTheme("view-visible"))
+        self.api_show_btn.setToolTip("Show or hide your API key")
+        self.api_show_btn.toggled.connect(self._toggle_api_key_visibility)
+        self.api_show_btn.setStyleSheet("")
+        clear_api_btn = QPushButton("Clear API Key")
+        clear_api_btn.clicked.connect(self._clear_api_key)
+        api_layout.addWidget(QLabel("Nexus API Key:"))
+        api_layout.addWidget(self.api_key_edit)
+        api_layout.addWidget(self.api_show_btn)
+        api_layout.addWidget(clear_api_btn)
+        general_layout.addWidget(api_group)
+        general_layout.addSpacing(12)
+
+        # --- Default Proton Version Section ---
+        proton_group = QGroupBox("Default Proton Version")
+        proton_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        proton_layout = QHBoxLayout()
+        proton_group.setLayout(proton_layout)
+
+        self.proton_dropdown = QComboBox()
+        self.proton_dropdown.setToolTip("Select default Proton version for shortcut creation and texture processing")
+        self.proton_dropdown.setMinimumWidth(200)
+
+        # Populate Proton dropdown
+        self._populate_proton_dropdown()
+
+        # Refresh button for Proton detection
+        refresh_btn = QPushButton("↻")
+        refresh_btn.setFixedSize(30, 30)
+        refresh_btn.setToolTip("Refresh Proton version list")
+        refresh_btn.clicked.connect(self._refresh_proton_dropdown)
+
+        proton_layout.addWidget(QLabel("Proton Version:"))
+        proton_layout.addWidget(self.proton_dropdown)
+        proton_layout.addWidget(refresh_btn)
+        proton_layout.addStretch()
+
+        general_layout.addWidget(proton_group)
+        general_layout.addSpacing(12)
+
+        # --- Enable Debug Section (moved to bottom as advanced option) ---
+        debug_group = QGroupBox("Enable Debug")
+        debug_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        debug_layout = QVBoxLayout()
+        debug_group.setLayout(debug_layout)
+        self.debug_checkbox = QCheckBox("Enable debug mode (requires restart)")
+        # Load debug_mode from config
+        self.debug_checkbox.setChecked(self.config_handler.get('debug_mode', False))
+        self.debug_checkbox.setToolTip("Enable verbose debug logging. Requires Jackify restart to take effect.")
+        self.debug_checkbox.setStyleSheet("color: #fff;")
+        debug_layout.addWidget(self.debug_checkbox)
+        general_layout.addWidget(debug_group)
+        general_layout.addStretch()  # Add stretch to push content to top
+
+        self.tab_widget.addTab(general_tab, "General")
+
+    def _create_advanced_tab(self):
+        """Create the Advanced settings tab"""
+        advanced_tab = QWidget()
+        advanced_layout = QVBoxLayout(advanced_tab)
+
+        resource_group = QGroupBox("Resource Limits")
+        resource_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        resource_layout = QGridLayout()
+        resource_group.setLayout(resource_layout)
+        resource_layout.setVerticalSpacing(4)
+        resource_layout.setHorizontalSpacing(8)
+        resource_layout.addWidget(self._bold_label("Resource"), 0, 0, 1, 1, Qt.AlignLeft)
+        resource_layout.addWidget(self._bold_label("Max Tasks"), 0, 1, 1, 1, Qt.AlignLeft)
+        self.resource_settings_path = os.path.expanduser("~/.config/jackify/resource_settings.json")
+        self.resource_settings = self._load_json(self.resource_settings_path)
+        self.resource_edits = {}
+        resource_row_index = 0
+        for resource_row_index, (k, v) in enumerate(self.resource_settings.items(), start=1):
+            try:
+                # Create resource label
+                resource_layout.addWidget(QLabel(f"{k}:", parent=self), resource_row_index, 0, 1, 1, Qt.AlignLeft)
+
+                max_tasks_spin = QSpinBox()
+                max_tasks_spin.setMinimum(1)
+                max_tasks_spin.setMaximum(128)
+                max_tasks_spin.setValue(v.get('MaxTasks', 16))
+                max_tasks_spin.setToolTip("Maximum number of concurrent tasks for this resource.")
+                max_tasks_spin.setFixedWidth(160)
+                resource_layout.addWidget(max_tasks_spin, resource_row_index, 1)
+
+                # Store the widgets
+                self.resource_edits[k] = (None, max_tasks_spin)
+            except Exception as e:
+                print(f"[ERROR] Failed to create widgets for resource '{k}': {e}")
+                continue
+
+        # If no resources exist, show helpful message
+        if not self.resource_edits:
+            info_label = QLabel("Resource Limit settings will be generated once a modlist install action is performed")
+            info_label.setStyleSheet("color: #aaa; font-style: italic; padding: 20px; font-size: 11pt;")
+            info_label.setWordWrap(True)
+            info_label.setAlignment(Qt.AlignCenter)
+            info_label.setMinimumHeight(60)  # Ensure enough height to prevent cutoff
+            resource_layout.addWidget(info_label, 1, 0, 3, 2)  # Span more rows for better space
+
+        # Bandwidth limiter row (only show if Downloads resource exists)
+        if "Downloads" in self.resource_settings:
+            downloads_throughput = self.resource_settings["Downloads"].get("MaxThroughput", 0)
+
+            self.bandwidth_spin = QSpinBox()
+            self.bandwidth_spin.setMinimum(0)
+            self.bandwidth_spin.setMaximum(1000000)
+            self.bandwidth_spin.setValue(downloads_throughput)
+            self.bandwidth_spin.setSuffix(" KB/s")
+            self.bandwidth_spin.setFixedWidth(160)
+            self.bandwidth_spin.setToolTip("Set the maximum download speed for modlist downloads. 0 = unlimited.")
+            bandwidth_note = QLabel("(0 = unlimited)")
+            bandwidth_note.setStyleSheet("color: #aaa; font-size: 10pt;")
+            # Create horizontal layout for bandwidth row
+            bandwidth_row = QHBoxLayout()
+            bandwidth_row.addWidget(self.bandwidth_spin)
+            bandwidth_row.addWidget(bandwidth_note)
+            bandwidth_row.addStretch()  # Push to the left
+
+            resource_layout.addWidget(QLabel("Bandwidth Limit:", parent=self), resource_row_index+1, 0, 1, 1, Qt.AlignLeft)
+            resource_layout.addLayout(bandwidth_row, resource_row_index+1, 1)
+        else:
+            self.bandwidth_spin = None  # No bandwidth UI if Downloads resource doesn't exist
+
+        advanced_layout.addWidget(resource_group)
+        advanced_layout.addStretch()  # Add stretch to push content to top
+
+        self.tab_widget.addTab(advanced_tab, "Advanced")
 
     def _toggle_api_key_visibility(self, checked):
         # Always use the same eyeball icon, only change color when toggled
@@ -572,13 +565,6 @@ class SettingsDialog(QDialog):
         for k, (multithreading_checkbox, max_tasks_spin) in self.resource_edits.items():
             resource_data = self.resource_settings.get(k, {})
             resource_data['MaxTasks'] = max_tasks_spin.value()
-            # Only add multithreading setting for File Extractor
-            if k == "File Extractor" and multithreading_checkbox:
-                if multithreading_checkbox.isChecked():
-                    resource_data['_7zzMultiThread'] = 'on'
-                else:
-                    # Remove the setting if unchecked (don't add 'off')
-                    resource_data.pop('_7zzMultiThread', None)
             self.resource_settings[k] = resource_data
         
         # Save bandwidth limit to Downloads resource MaxThroughput (only if bandwidth UI exists)

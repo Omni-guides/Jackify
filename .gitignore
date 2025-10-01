@@ -35,7 +35,7 @@ Thumbs.db
 docs/
 testing/
 
-# PyInstaller build files (development only)
+# Build files (development only)
 *.spec
 hook-*.py
 requirements-packaging.txt

@@ -46,7 +46,7 @@ class AutomatedPrefixService:
             from jackify.backend.handlers.wine_utils import WineUtils
 
             config_handler = ConfigHandler()
-            user_proton_path = config_handler.get('proton_path', 'auto')
+            user_proton_path = config_handler.get_proton_path()
 
             if user_proton_path == 'auto':
                 # Use enhanced fallback logic with GE-Proton preference
@@ -2705,7 +2705,7 @@ echo Prefix creation complete.
             from jackify.backend.handlers.wine_utils import WineUtils
 
             config = ConfigHandler()
-            user_proton_path = config.get('proton_path', 'auto')
+            user_proton_path = config.get_proton_path()
 
             # If user selected a specific Proton, try that first
             if user_proton_path != 'auto':

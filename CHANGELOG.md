@@ -1,5 +1,26 @@
 # Jackify Changelog
 
+## v0.1.5.2 - Proton Configuration & Engine Updates
+**Release Date:** September 30, 2025
+
+### Critical Bug Fixes
+- **Fixed Proton Version Selection**: Wine component installation now properly honors user-selected Proton version from Settings dialog
+  - Previously, changing from GE-Proton to Proton Experimental in settings would still use the old version for component installation
+  - Fixed ConfigHandler to reload fresh configuration from disk instead of using stale cache
+  - Updated all Proton path retrieval across codebase to use fresh-reading methods
+
+### Engine Updates
+- **jackify-engine v0.3.16**: Updated to latest engine version with important reliability improvements
+  - **Sanity Check Fallback**: Added Proton 7z.exe fallback for case sensitivity extraction failures
+  - **Enhanced Error Messages**: Improved texconv/texdiag error messages to include original texture file names and conversion parameters
+
+### Technical Improvements
+- Enhanced configuration system reliability for multi-instance scenarios
+- Improved error diagnostics for texture processing operations
+- Fix Qt platform plugin discovery in AppImage distribution for improved compatibility
+
+---
+
 ## v0.1.5.1 - Bug Fixes
 **Release Date:** September 28, 2025
 

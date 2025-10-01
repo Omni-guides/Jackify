@@ -30,7 +30,7 @@ def _get_user_proton_version():
         from jackify.backend.handlers.wine_utils import WineUtils
 
         config_handler = ConfigHandler()
-        user_proton_path = config_handler.get('proton_path', 'auto')
+        user_proton_path = config_handler.get_proton_path()
 
         if user_proton_path == 'auto':
             # Use enhanced fallback logic with GE-Proton preference

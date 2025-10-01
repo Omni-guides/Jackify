@@ -496,6 +496,42 @@ class ConfigHandler:
             logger.error(f"Error saving modlist downloads base directory: {e}")
             return False
 
+    def get_proton_path(self):
+        """
+        Retrieve the saved Proton path from configuration
+        Always reads fresh from disk to pick up changes from Settings dialog
+
+        Returns:
+            str: Saved Proton path or 'auto' if not saved
+        """
+        try:
+            # Reload config from disk to pick up changes from Settings dialog
+            self._load_config()
+            proton_path = self.settings.get("proton_path", "auto")
+            logger.debug(f"Retrieved fresh proton_path from config: {proton_path}")
+            return proton_path
+        except Exception as e:
+            logger.error(f"Error retrieving proton_path: {e}")
+            return "auto"
+
+    def get_proton_version(self):
+        """
+        Retrieve the saved Proton version from configuration
+        Always reads fresh from disk to pick up changes from Settings dialog
+
+        Returns:
+            str: Saved Proton version or 'auto' if not saved
+        """
+        try:
+            # Reload config from disk to pick up changes from Settings dialog
+            self._load_config()
+            proton_version = self.settings.get("proton_version", "auto")
+            logger.debug(f"Retrieved fresh proton_version from config: {proton_version}")
+            return proton_version
+        except Exception as e:
+            logger.error(f"Error retrieving proton_version: {e}")
+            return "auto"
+
     def _auto_detect_proton(self):
         """Auto-detect and set best Proton version (includes GE-Proton and Valve Proton)"""
         try:

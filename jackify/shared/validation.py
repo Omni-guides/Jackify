@@ -222,15 +222,21 @@ class ValidationHandler:
     def validate_steam_shortcut(self, app_id: str) -> Tuple[bool, str]:
         """Validate a Steam shortcut."""
         try:
-            # Check if shortcuts.vdf exists
-            shortcuts_path = Path.home() / '.steam' / 'steam' / 'userdata' / '75424832' / 'config' / 'shortcuts.vdf'
+            # Use native Steam service to get proper shortcuts.vdf path with multi-user support
+            from jackify.backend.services.native_steam_service import NativeSteamService
+            steam_service = NativeSteamService()
+            shortcuts_path = steam_service.get_shortcuts_vdf_path()
+
+            if not shortcuts_path:
+                return False, "Could not determine shortcuts.vdf path (no active Steam user found)"
+
             if not shortcuts_path.exists():
                 return False, "shortcuts.vdf not found"
-                
+
             # Check if shortcuts.vdf is accessible
             if not os.access(shortcuts_path, os.R_OK | os.W_OK):
                 return False, "shortcuts.vdf is not accessible"
-                
+
             # Parse shortcuts.vdf using VDFHandler
             shortcuts_data = VDFHandler.load(str(shortcuts_path), binary=True)
                 
