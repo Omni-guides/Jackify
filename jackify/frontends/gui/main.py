@@ -636,16 +636,17 @@ class SettingsDialog(QDialog):
             reply = MessageService.question(self, "Restart Required", "Debug mode change requires a restart. Restart Jackify now?", safety_level="low")
             if reply == QMessageBox.Yes:
                 import os, sys
-                if getattr(sys, 'frozen', False):
-                    # PyInstaller bundle: safe to restart
-                    self.accept()
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
-                    return
+                # User requested restart - do it regardless of execution environment
+                self.accept()
+
+                # Check if running from AppImage
+                if os.environ.get('APPIMAGE'):
+                    # AppImage: restart the AppImage
+                    os.execv(os.environ['APPIMAGE'], [os.environ['APPIMAGE']] + sys.argv[1:])
                 else:
-                    # Dev mode: show message instead of auto-restart
-                    MessageService.information(self, "Manual Restart Required", "Please restart Jackify manually to apply debug mode changes.", safety_level="low")
-                    self.accept()
-                    return
+                    # Dev mode: restart the Python module
+                    os.execv(sys.executable, [sys.executable, '-m', 'jackify.frontends.gui'] + sys.argv[1:])
+                return
         MessageService.information(self, "Settings Saved", "Settings have been saved successfully.", safety_level="low")
         self.accept()
 

@@ -537,10 +537,7 @@ class WineUtils:
                     if "mods" in binary_path:
                         # mods path type found
                         if modlist_sdcard:
-                            path_middle = modlist_dir.split('mmcblk0p1', 1)[1] if 'mmcblk0p1' in modlist_dir else modlist_dir
-                            # Strip /run/media/deck/UUID if present
-                            if '/run/media/' in path_middle:
-                                path_middle = '/' + path_middle.split('/run/media/', 1)[1].split('/', 2)[2]
+                            path_middle = WineUtils._strip_sdcard_path(modlist_dir)
                         else:
                             path_middle = modlist_dir
                         
@@ -550,10 +547,7 @@ class WineUtils:
                     elif any(x in binary_path for x in ["Stock Game", "Game Root", "STOCK GAME", "Stock Game Folder", "Stock Folder", "Skyrim Stock", "root/Skyrim Special Edition"]):
                         # Stock/Game Root found
                         if modlist_sdcard:
-                            path_middle = modlist_dir.split('mmcblk0p1', 1)[1] if 'mmcblk0p1' in modlist_dir else modlist_dir
-                            # Strip /run/media/deck/UUID if present
-                            if '/run/media/' in path_middle:
-                                path_middle = '/' + path_middle.split('/run/media/', 1)[1].split('/', 2)[2]
+                            path_middle = WineUtils._strip_sdcard_path(modlist_dir)
                         else:
                             path_middle = modlist_dir
                         
@@ -589,7 +583,7 @@ class WineUtils:
                     elif "steamapps" in binary_path:
                         # Steamapps found
                         if basegame_sdcard:
-                            path_middle = steam_library.split('mmcblk0p1', 1)[1] if 'mmcblk0p1' in steam_library else steam_library
+                            path_middle = WineUtils._strip_sdcard_path(steam_library)
                             drive_letter = "D:"
                         else:
                             path_middle = steam_library.split('steamapps', 1)[0] if 'steamapps' in steam_library else steam_library

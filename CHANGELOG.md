@@ -1,5 +1,18 @@
 # Jackify Changelog
 
+## v0.1.5.3 - Critical Bug Fixes
+**Release Date:** October 2, 2025
+
+### Critical Bug Fixes
+- **Fixed Multi-User Steam Detection**: Properly reads loginusers.vdf and converts SteamID64 to SteamID3 for accurate user identification
+- **Fixed dotnet40 Installation Failures**: Hybrid approach uses protontricks for dotnet40 (reliable), winetricks for other components (fast)
+- **Fixed dotnet8 Installation**: Now properly handled by winetricks instead of unimplemented pass statement
+- **Fixed D: Drive Detection**: SD card detection now only applies to Steam Deck systems, not regular Linux systems
+- **Fixed SD Card Mount Patterns**: Replaced hardcoded mmcblk0p1 references with dynamic path detection
+- **Fixed Debug Restart UX**: Replaced PyInstaller detection with AppImage detection for proper restart behavior
+
+---
+
 ## v0.1.5.2 - Proton Configuration & Engine Updates
 **Release Date:** September 30, 2025
 

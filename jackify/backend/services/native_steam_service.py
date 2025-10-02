@@ -30,100 +30,83 @@ class NativeSteamService:
     """
     
     def __init__(self):
-        self.steam_path = Path.home() / ".steam" / "steam"
-        self.userdata_path = self.steam_path / "userdata"
+        self.steam_paths = [
+            Path.home() / ".steam" / "steam",
+            Path.home() / ".local" / "share" / "Steam",
+            Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam"
+        ]
+        self.steam_path = None
+        self.userdata_path = None
         self.user_id = None
         self.user_config_path = None
         
     def find_steam_user(self) -> bool:
-        """Find the active Steam user directory"""
+        """
+        Find the active Steam user directory using Steam's own configuration files.
+        No more guessing - uses loginusers.vdf to get the most recent user and converts SteamID64 to SteamID3.
+        """
         try:
-            if not self.userdata_path.exists():
-                logger.error("Steam userdata directory not found")
+            # Step 1: Find Steam installation using Steam's own file structure
+            if not self._find_steam_installation():
+                logger.error("No Steam installation found")
                 return False
 
-            # Find user directories (excluding user 0 which is a system account)
-            user_dirs = [d for d in self.userdata_path.iterdir() if d.is_dir() and d.name.isdigit() and d.name != "0"]
-            if not user_dirs:
-                logger.error("No valid Steam user directories found (user 0 is not valid for shortcuts)")
+            # Step 2: Parse loginusers.vdf to get the most recent user (SteamID64)
+            steamid64 = self._get_most_recent_user_from_loginusers()
+            if not steamid64:
+                logger.error("Could not determine most recent Steam user from loginusers.vdf")
                 return False
 
-            # Detect the correct Steam user
-            user_dir = self._detect_active_steam_user(user_dirs)
-            if not user_dir:
-                logger.error("Could not determine active Steam user")
+            # Step 3: Convert SteamID64 to SteamID3 (userdata directory format)
+            steamid3 = self._convert_steamid64_to_steamid3(steamid64)
+            logger.info(f"Most recent Steam user: SteamID64={steamid64}, SteamID3={steamid3}")
+
+            # Step 4: Verify the userdata directory exists
+            user_dir = self.userdata_path / str(steamid3)
+            if not user_dir.exists():
+                logger.error(f"Userdata directory does not exist: {user_dir}")
                 return False
 
-            self.user_id = user_dir.name
-            self.user_config_path = user_dir / "config"
+            config_dir = user_dir / "config"
+            if not config_dir.exists():
+                logger.error(f"User config directory does not exist: {config_dir}")
+                return False
 
-            logger.info(f"Found Steam user: {self.user_id}")
+            # Step 5: Set up the service state
+            self.user_id = str(steamid3)
+            self.user_config_path = config_dir
+
+            logger.info(f"VERIFIED Steam user: {self.user_id}")
             logger.info(f"User config path: {self.user_config_path}")
+            logger.info(f"Shortcuts.vdf will be at: {self.user_config_path / 'shortcuts.vdf'}")
+
             return True
-            
+
         except Exception as e:
-            logger.error(f"Error finding Steam user: {e}")
+            logger.error(f"Error finding Steam user: {e}", exc_info=True)
             return False
 
-    def _detect_active_steam_user(self, user_dirs: List[Path]) -> Optional[Path]:
+    def _find_steam_installation(self) -> bool:
+        """Find Steam installation by checking for config/loginusers.vdf"""
+        for steam_path in self.steam_paths:
+            loginusers_path = steam_path / "config" / "loginusers.vdf"
+            userdata_path = steam_path / "userdata"
+
+            if loginusers_path.exists() and userdata_path.exists():
+                self.steam_path = steam_path
+                self.userdata_path = userdata_path
+                logger.info(f"Found Steam installation at: {steam_path}")
+                return True
+
+        return False
+
+    def _get_most_recent_user_from_loginusers(self) -> Optional[str]:
         """
-        Detect the active Steam user from available user directories.
-
-        Priority:
-        1. Single non-0 user: Use automatically
-        2. Multiple users: Parse loginusers.vdf to find logged-in user
-        3. Fallback: Most recently active user directory
-
-        Args:
-            user_dirs: List of valid user directories
-
-        Returns:
-            Path to the active user directory, or None if detection fails
-        """
-        if len(user_dirs) == 1:
-            logger.info(f"Single Steam user found: {user_dirs[0].name}")
-            return user_dirs[0]
-
-        logger.info(f"Multiple Steam users found: {[d.name for d in user_dirs]}")
-
-        # Try to parse loginusers.vdf to find logged-in user
-        loginusers_path = self.steam_path / "loginusers.vdf"
-        active_user = self._parse_loginusers_vdf(loginusers_path)
-
-        if active_user:
-            # Find matching user directory
-            for user_dir in user_dirs:
-                if user_dir.name == active_user:
-                    logger.info(f"Found logged-in Steam user from loginusers.vdf: {active_user}")
-                    return user_dir
-
-            logger.warning(f"Logged-in user {active_user} from loginusers.vdf not found in user directories")
-
-        # Fallback: Use most recently modified user directory
-        try:
-            most_recent = max(user_dirs, key=lambda d: d.stat().st_mtime)
-            logger.info(f"Using most recently active Steam user directory: {most_recent.name}")
-            return most_recent
-        except Exception as e:
-            logger.error(f"Error determining most recent user directory: {e}")
-            # Final fallback: Use first user
-            logger.warning(f"Using first user directory as final fallback: {user_dirs[0].name}")
-            return user_dirs[0]
-
-    def _parse_loginusers_vdf(self, loginusers_path: Path) -> Optional[str]:
-        """
-        Parse loginusers.vdf to find the currently logged-in Steam user.
-
-        Args:
-            loginusers_path: Path to loginusers.vdf
-
-        Returns:
-            Steam user ID as string, or None if parsing fails
+        Parse loginusers.vdf to get the SteamID64 of the most recent user.
+        Uses Steam's own MostRecent flag and Timestamp.
         """
         try:
-            if not loginusers_path.exists():
-                logger.debug(f"loginusers.vdf not found at {loginusers_path}")
-                return None
+            loginusers_path = self.steam_path / "config" / "loginusers.vdf"
 
             # Load VDF data
             vdf_data = VDFHandler.load(str(loginusers_path), binary=False)
@@ -133,27 +116,52 @@ class NativeSteamService:
 
             users_section = vdf_data.get("users", {})
             if not users_section:
-                logger.debug("No users section found in loginusers.vdf")
+                logger.error("No users section found in loginusers.vdf")
                 return None
 
-            # Find user marked as logged in
-            for user_id, user_data in users_section.items():
-                if isinstance(user_data, dict):
-                    # Check for indicators of logged-in status
-                    if user_data.get("MostRecent") == "1" or user_data.get("WantsOfflineMode") == "0":
-                        logger.debug(f"Found most recent/logged-in user: {user_id}")
-                        return user_id
+            most_recent_user = None
+            most_recent_timestamp = 0
 
-            # If no specific user found, try to get the first valid user
-            if users_section:
-                first_user = next(iter(users_section.keys()))
-                logger.debug(f"No specific logged-in user found, using first user: {first_user}")
-                return first_user
+            # Find user with MostRecent=1 or highest timestamp
+            for steamid64, user_data in users_section.items():
+                if isinstance(user_data, dict):
+                    # Check for MostRecent flag first
+                    if user_data.get("MostRecent") == "1":
+                        logger.info(f"Found user marked as MostRecent: {steamid64}")
+                        return steamid64
+
+                    # Also track highest timestamp as fallback
+                    timestamp = int(user_data.get("Timestamp", "0"))
+                    if timestamp > most_recent_timestamp:
+                        most_recent_timestamp = timestamp
+                        most_recent_user = steamid64
+
+            # Return user with highest timestamp if no MostRecent flag found
+            if most_recent_user:
+                logger.info(f"Found most recent user by timestamp: {most_recent_user}")
+                return most_recent_user
+
+            logger.error("No valid users found in loginusers.vdf")
+            return None
 
         except Exception as e:
             logger.error(f"Error parsing loginusers.vdf: {e}")
+            return None
 
-        return None
+    def _convert_steamid64_to_steamid3(self, steamid64: str) -> int:
+        """
+        Convert SteamID64 to SteamID3 (used in userdata directory names).
+        Formula: SteamID3 = SteamID64 - 76561197960265728
+        """
+        try:
+            steamid64_int = int(steamid64)
+            steamid3 = steamid64_int - 76561197960265728
+            logger.debug(f"Converted SteamID64 {steamid64} to SteamID3 {steamid3}")
+            return steamid3
+        except ValueError as e:
+            logger.error(f"Invalid SteamID64 format: {steamid64}")
+            raise
+
 
     def get_shortcuts_vdf_path(self) -> Optional[Path]:
         """Get the path to shortcuts.vdf"""

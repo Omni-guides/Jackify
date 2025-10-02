@@ -315,13 +315,15 @@ class ModlistHandler:
         self.modlist_dir = Path(modlist_dir_path_str) 
         self.modlist_ini = modlist_ini_path 
         
-        # Determine if modlist is on SD card
-        # Use str() for startswith check
-        if str(self.modlist_dir).startswith("/run/media") or str(self.modlist_dir).startswith("/media"):
+        # Determine if modlist is on SD card (Steam Deck only)
+        # On non-Steam Deck systems, /media mounts should use Z: drive, not D: drive
+        if (str(self.modlist_dir).startswith("/run/media") or str(self.modlist_dir).startswith("/media")) and self.steamdeck:
              self.modlist_sdcard = True
-             self.logger.info("Modlist appears to be on an SD card.")
+             self.logger.info("Modlist appears to be on an SD card (Steam Deck).")
         else:
              self.modlist_sdcard = False
+             if (str(self.modlist_dir).startswith("/run/media") or str(self.modlist_dir).startswith("/media")) and not self.steamdeck:
+                 self.logger.info("Modlist on /media mount detected on non-Steam Deck system - using Z: drive mapping.")
 
         # Find and set compatdata path now that we have appid
         # Ensure PathHandler is available (should be initialized in __init__)

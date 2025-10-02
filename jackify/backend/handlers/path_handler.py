@@ -653,41 +653,7 @@ class PathHandler:
 
         except Exception as e:
             logger.error(f"Error using multi-user detection for shortcuts.vdf: {e}")
-
-            # Fallback to legacy behavior if multi-user detection fails
-            logger.warning("Falling back to legacy shortcuts.vdf detection (first-found user)")
-            userdata_base_paths = [
-                os.path.expanduser("~/.steam/steam/userdata"),
-                os.path.expanduser("~/.local/share/Steam/userdata"),
-                os.path.expanduser("~/.var/app/com.valvesoftware.Steam/.local/share/Steam/userdata")
-            ]
-            found_vdf_path = None
-            for base_path in userdata_base_paths:
-                if not os.path.isdir(base_path):
-                    logger.debug(f"Userdata base path not found or not a directory: {base_path}")
-                    continue
-                logger.debug(f"Searching for user IDs in: {base_path}")
-                try:
-                    for item in os.listdir(base_path):
-                        user_path = os.path.join(base_path, item)
-                        if os.path.isdir(user_path) and item.isdigit():
-                            logger.debug(f"Checking user directory: {user_path}")
-                            config_path = os.path.join(user_path, "config")
-                            shortcuts_file = os.path.join(config_path, "shortcuts.vdf")
-                            if os.path.isfile(shortcuts_file):
-                                logger.info(f"Found shortcuts.vdf at: {shortcuts_file}")
-                                found_vdf_path = shortcuts_file
-                                break # Found it for this base path
-                            else:
-                                logger.debug(f"shortcuts.vdf not found in {config_path}")
-                except OSError as e:
-                    logger.warning(f"Could not access directory {base_path}: {e}")
-                    continue # Try next base path
-                if found_vdf_path:
-                    break # Found it in this base path
-            if not found_vdf_path:
-                logger.error("Could not find any shortcuts.vdf file in common Steam locations.")
-            return found_vdf_path
+            return None
 
     @staticmethod
     def find_game_install_paths(target_appids: Dict[str, str]) -> Dict[str, Path]:
