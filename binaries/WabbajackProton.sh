@@ -4,7 +4,7 @@
 #                                                                #
 # Attempt to automate installing Wabbajack on Linux Steam/Proton #
 #                                                                #
-#                     v0.20 - Refactored                         #1
+#                     v0.21 - Enhanced Distro Support            #
 #                                                                #
 ##################################################################
 
@@ -13,13 +13,19 @@ LOGFILE="$HOME/wabbajack-via-proton-sh.log"
 echo "" > "$LOGFILE"
 
 # Script configuration
-SCRIPT_VERSION="0.20"
+SCRIPT_VERSION="0.21"
 STEAM_IS_FLATPAK=0
 VERBOSE=0
 CURRENT_TASK=""
 TOTAL_TASKS=10
 CURRENT_TASK_NUM=0
 IN_MODIFICATION_PHASE=0  # Add this flag
+IS_FEDORA_BASED=0  # Flag for Fedora-based distros
+IS_BAZZITE=0  # Flag for Bazzite (gaming-focused Fedora)
+DISTRO="unknown"
+DISTRO_VERSION=""
+DISTRO_ID_LIKE=""
+USE_STEAMDECK_MODE=0  # Allow forcing Steam Deck mode on compatible systems
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -212,6 +218,60 @@ detect_steamdeck() {
     else
         STEAMDECK=0
         log "NOT running on Steam Deck"
+    fi
+}
+
+detect_distro() {
+    # Detect the Linux distribution
+    DISTRO="unknown"
+    DISTRO_VERSION=""
+    DISTRO_ID_LIKE=""
+    
+    if [ -f "/etc/os-release" ]; then
+        # Source os-release to get distro info
+        . /etc/os-release
+        DISTRO="${ID:-unknown}"
+        DISTRO_VERSION="${VERSION_ID:-}"
+        DISTRO_ID_LIKE="${ID_LIKE:-}"
+        log "Detected distribution: $DISTRO $DISTRO_VERSION (ID_LIKE: $DISTRO_ID_LIKE)"
+    elif [ -f "/etc/fedora-release" ]; then
+        DISTRO="fedora"
+        DISTRO_VERSION=$(cat /etc/fedora-release | grep -oP '\d+' | head -1)
+        log "Detected Fedora $DISTRO_VERSION (via fedora-release)"
+    fi
+    
+    # List of known Fedora-based distributions
+    # These use dnf/rpm and share Fedora's package ecosystem
+    local fedora_distros="fedora nobara bazzite"
+    
+    # Check if distro is directly a Fedora-based distro
+    IS_FEDORA_BASED=0
+    for fd in $fedora_distros; do
+        if [[ "$DISTRO" == "$fd" ]]; then
+            IS_FEDORA_BASED=1
+            log "Running on Fedora-based system: $DISTRO $DISTRO_VERSION"
+            break
+        fi
+    done
+    
+    # Also check ID_LIKE for derivatives (e.g., Bazzite reports ID_LIKE="fedora")
+    if [[ $IS_FEDORA_BASED -eq 0 ]] && [[ -n "$DISTRO_ID_LIKE" ]]; then
+        for fd in $fedora_distros; do
+            if [[ "$DISTRO_ID_LIKE" == *"$fd"* ]]; then
+                IS_FEDORA_BASED=1
+                log "Running on Fedora-derivative system: $DISTRO $DISTRO_VERSION (based on $fd)"
+                break
+            fi
+        done
+    fi
+    
+    # Special handling for Bazzite - it's designed for gaming like Steam Deck
+    # Users may want Steam Deck-style configuration
+    if [[ "$DISTRO" == "bazzite" ]]; then
+        IS_BAZZITE=1
+        log "Bazzite detected - gaming-focused Fedora derivative"
+    else
+        IS_BAZZITE=0
     fi
 }
 
@@ -744,6 +804,104 @@ create_dotnet_cache_dir() {
     log "Directory successfully created: $cache_dir"
 }
 
+backup_registry_files() {
+    set_current_task "Backing up registry files"
+    log "Backing up existing registry files..."
+    
+    local backup_timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_dir="$COMPAT_DATA_PATH/pfx/registry_backups"
+    
+    # Create backup directory if it doesn't exist
+    mkdir -p "$backup_dir" || log "Warning: Failed to create backup directory"
+    
+    # Backup system.reg if it exists
+    if [[ -f "$COMPAT_DATA_PATH/pfx/system.reg" ]]; then
+        cp "$COMPAT_DATA_PATH/pfx/system.reg" "$backup_dir/system.reg.$backup_timestamp"
+        if [[ $? -eq 0 ]]; then
+            log "Backed up system.reg to $backup_dir/system.reg.$backup_timestamp"
+        else
+            log "Warning: Failed to backup system.reg"
+        fi
+    fi
+    
+    # Backup user.reg if it exists
+    if [[ -f "$COMPAT_DATA_PATH/pfx/user.reg" ]]; then
+        cp "$COMPAT_DATA_PATH/pfx/user.reg" "$backup_dir/user.reg.$backup_timestamp"
+        if [[ $? -eq 0 ]]; then
+            log "Backed up user.reg to $backup_dir/user.reg.$backup_timestamp"
+        else
+            log "Warning: Failed to backup user.reg"
+        fi
+    fi
+    
+    # Keep only the last 3 backups to save space
+    if [[ -d "$backup_dir" ]]; then
+        ls -t "$backup_dir"/system.reg.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+        ls -t "$backup_dir"/user.reg.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+        log "Cleaned up old backups, keeping last 3"
+    fi
+}
+
+configure_prefix_fedora() {
+    # Fedora-specific prefix configuration
+    # Uses protontricks to apply specific settings instead of replacing registry files
+    set_current_task "Configuring prefix for Fedora (safe mode)"
+    log "Using Fedora-specific configuration (preserving existing registry)..."
+    
+    # Backup existing registry files first
+    backup_registry_files
+    
+    # Use protontricks to set Windows version to Windows 10 (safer than file replacement)
+    log "Setting Windows version to Windows 10 via protontricks..."
+    if run_protontricks "$APPID" win10; then
+        log "Successfully set Windows version to Windows 10"
+    else
+        log "Warning: Failed to set Windows version via protontricks"
+    fi
+    
+    # Apply specific registry tweaks using protontricks instead of wholesale replacement
+    # These are the critical settings Wabbajack needs without replacing the entire registry
+    log "Applying Wabbajack-specific registry tweaks..."
+    
+    # Enable ShowDotFiles for Wine (needed for Linux file access)
+    run_protontricks -c 'wine reg add "HKEY_CURRENT_USER\Software\Wine" /v ShowDotFiles /t REG_SZ /d Y /f' "$APPID" 2>/dev/null || \
+        log "Warning: Failed to set ShowDotFiles"
+    
+    # Set renderer to Vulkan for better performance
+    run_protontricks -c 'wine reg add "HKEY_CURRENT_USER\Software\Wine\Direct3D" /v renderer /t REG_SZ /d vulkan /f' "$APPID" 2>/dev/null || \
+        log "Warning: Failed to set renderer"
+    
+    # Disable DXVK HUD by default (can be enabled later if needed)
+    run_protontricks -c 'wine reg add "HKEY_CURRENT_USER\Software\Wine\Direct3D" /v UseGLSL /t REG_SZ /d enabled /f' "$APPID" 2>/dev/null || \
+        log "Warning: Failed to set UseGLSL"
+    
+    log "Fedora-specific registry configuration complete"
+}
+
+configure_prefix_steamdeck() {
+    # Steam Deck specific prefix configuration
+    # Uses the original method of replacing registry files (tested and working on Steam Deck)
+    set_current_task "Configuring prefix for Steam Deck"
+    log "Using Steam Deck configuration (original method)..."
+    
+    # Backup existing registry files first (even on Steam Deck, for safety)
+    backup_registry_files
+    
+    # Apply initial system.reg for WebView installation (Win7 compatibility)
+    set_current_task "Applying initial system.reg (phase 1)"
+    download_file "https://raw.githubusercontent.com/Omni-guides/Wabbajack-Modlist-Linux/main/files/system.reg.wj.win7" "$COMPAT_DATA_PATH/pfx/system.reg" "Phase 1 system.reg"
+    
+    # Install WebView
+    webview_installer
+    
+    # Apply final registry files
+    set_current_task "Applying final system.reg and user.reg"
+    download_file "https://raw.githubusercontent.com/Omni-guides/Wabbajack-Modlist-Linux/main/files/system.reg.wj" "$COMPAT_DATA_PATH/pfx/system.reg" "Final system.reg"
+    download_file "https://raw.githubusercontent.com/Omni-guides/Wabbajack-Modlist-Linux/main/files/user.reg.wj" "$COMPAT_DATA_PATH/pfx/user.reg" "Final user.reg"
+    
+    log "Steam Deck registry configuration complete"
+}
+
 cleanup_wine_procs() {
     # Only log to file, don't display to user
     log "Cleaning up any hanging Wine processes..."
@@ -770,9 +928,20 @@ show_detection_summary() {
     echo -e "Steam Library: \e[32m$CHOSEN_LIBRARY\e[0m" | tee -a "$LOGFILE"
     echo -e "Protontricks: \e[32m$WHICH_PROTONTRICKS\e[0m" | tee -a "$LOGFILE"
     
-    # Show Steam Deck status if detected
+    # Show distro information and determine config mode
     if [[ $STEAMDECK -eq 1 ]]; then
         echo -e "Running on: \e[32mSteam Deck\e[0m" | tee -a "$LOGFILE"
+        echo -e "Config Mode: \e[32mSteam Deck (original method)\e[0m" | tee -a "$LOGFILE"
+        USE_STEAMDECK_MODE=1
+    elif [[ $IS_BAZZITE -eq 1 ]]; then
+        echo -e "Running on: \e[32m$DISTRO $DISTRO_VERSION\e[0m" | tee -a "$LOGFILE"
+        echo -e "Config Mode: \e[33mBazzite detected - choose below\e[0m" | tee -a "$LOGFILE"
+    elif [[ $IS_FEDORA_BASED -eq 1 ]]; then
+        echo -e "Running on: \e[32m$DISTRO $DISTRO_VERSION\e[0m" | tee -a "$LOGFILE"
+        echo -e "Config Mode: \e[33mFedora Safe Mode (registry preserved)\e[0m" | tee -a "$LOGFILE"
+    else
+        echo -e "Running on: \e[32m$DISTRO $DISTRO_VERSION\e[0m" | tee -a "$LOGFILE"
+        echo -e "Config Mode: \e[33mGeneric Safe Mode (registry preserved)\e[0m" | tee -a "$LOGFILE"
     fi
     
     # Show SD Card status if detected
@@ -780,6 +949,45 @@ show_detection_summary() {
         echo -e "SD Card: \e[32mDetected\e[0m" | tee -a "$LOGFILE"
     fi
     echo "───────────────────────────────────────────────────────────────────"
+    
+    # For Bazzite users, offer a choice since it's gaming-focused like Steam Deck
+    if [[ $IS_BAZZITE -eq 1 ]] && [[ $STEAMDECK -eq 0 ]]; then
+        echo ""
+        display "Bazzite is a gaming-focused Fedora derivative similar to SteamOS." "$YELLOW"
+        display "You can choose which configuration mode to use:" "$YELLOW"
+        echo ""
+        echo "  1) Safe Mode (recommended for first-time setup)"
+        echo "     - Preserves your existing registry files"
+        echo "     - Applies only essential tweaks via protontricks"
+        echo "     - Lower risk of breaking your prefix"
+        echo ""
+        echo "  2) Steam Deck Mode"
+        echo "     - Uses the same configuration as Steam Deck"
+        echo "     - Replaces registry files with tested versions"
+        echo "     - May work better if Safe Mode doesn't"
+        echo ""
+        while true; do
+            read -rp "Choose configuration mode (1 or 2): " mode_choice
+            case $mode_choice in
+                1)
+                    USE_STEAMDECK_MODE=0
+                    log "User chose Safe Mode for Bazzite"
+                    display "Using Safe Mode configuration." "$GREEN"
+                    break
+                    ;;
+                2)
+                    USE_STEAMDECK_MODE=1
+                    log "User chose Steam Deck Mode for Bazzite"
+                    display "Using Steam Deck Mode configuration." "$GREEN"
+                    break
+                    ;;
+                *)
+                    display "Please enter 1 or 2." "$YELLOW"
+                    ;;
+            esac
+        done
+        echo ""
+    fi
     
     # Show confirmation with retry loop
     while true; do
@@ -811,6 +1019,7 @@ discovery_phase() {
     IN_MODIFICATION_PHASE=0
     log_section "Environment Detection"
     detect_steamdeck
+    detect_distro
     detect_protontricks
     setup_protontricks_alias
     check_protontricks_version
@@ -828,12 +1037,31 @@ configuration_phase() {
     CURRENT_TASK_NUM=0
     log_section "Environment Configuration"
     set_protontricks_perms
-    set_current_task "Applying initial system.reg (phase 1)"
-    download_file "https://raw.githubusercontent.com/Omni-guides/Wabbajack-Modlist-Linux/main/files/system.reg.wj.win7" "$COMPAT_DATA_PATH/pfx/system.reg" "Phase 1 system.reg"
-    webview_installer
-    set_current_task "Applying final system.reg and user.reg"
-    download_file "https://raw.githubusercontent.com/Omni-guides/Wabbajack-Modlist-Linux/main/files/system.reg.wj" "$COMPAT_DATA_PATH/pfx/system.reg" "Final system.reg"
-    download_file "https://raw.githubusercontent.com/Omni-guides/Wabbajack-Modlist-Linux/main/files/user.reg.wj" "$COMPAT_DATA_PATH/pfx/user.reg" "Final user.reg"
+    
+    # Use distro-specific configuration based on detection and user choice
+    if [[ $USE_STEAMDECK_MODE -eq 1 ]]; then
+        # Steam Deck mode: Use original method (replace registry files)
+        # This applies to actual Steam Deck OR Bazzite users who chose this mode
+        if [[ $STEAMDECK -eq 1 ]]; then
+            log "Using Steam Deck configuration path"
+        else
+            log "Using Steam Deck-style configuration path (user choice)"
+        fi
+        configure_prefix_steamdeck
+    elif [[ $IS_FEDORA_BASED -eq 1 ]]; then
+        # Fedora-based: Use safe method (protontricks registry tweaks, no file replacement)
+        log "Using Fedora-based configuration path (safe mode)"
+        configure_prefix_fedora
+        # Still install WebView, but without registry file replacement
+        webview_installer
+    else
+        # Other distros: Use safe method by default with a warning
+        log "Using generic Linux configuration path (safe mode)"
+        display "Detected non-Steam Deck system ($DISTRO). Using safe configuration mode." "$YELLOW"
+        configure_prefix_fedora
+        webview_installer
+    fi
+    
     configure_steam_libraries
     create_dotnet_cache_dir
     log_section "Final Cleanup"
@@ -843,14 +1071,40 @@ configuration_phase() {
     echo "───────────────────────────────────────────────────────────────────"
     log_section "Setup Complete"
     display "✓ Installation completed successfully!" "$GREEN"
-    echo -e "\n📝 Next Steps:"
+    
+    # Show distro-specific completion message
+    if [[ $STEAMDECK -eq 1 ]]; then
+        echo -e "\nSteam Deck configuration applied (original method)"
+    elif [[ $IS_BAZZITE -eq 1 ]] && [[ $USE_STEAMDECK_MODE -eq 1 ]]; then
+        echo -e "\nBazzite configuration applied (Steam Deck mode)"
+        echo -e "   Registry backups saved to: $COMPAT_DATA_PATH/pfx/registry_backups/"
+    elif [[ $IS_BAZZITE -eq 1 ]]; then
+        echo -e "\nBazzite configuration applied (safe mode - registry preserved)"
+        echo -e "   Registry backups saved to: $COMPAT_DATA_PATH/pfx/registry_backups/"
+    elif [[ $IS_FEDORA_BASED -eq 1 ]]; then
+        echo -e "\n$DISTRO configuration applied (safe mode - registry preserved)"
+        echo -e "   Registry backups saved to: $COMPAT_DATA_PATH/pfx/registry_backups/"
+    else
+        echo -e "\nGeneric Linux configuration applied (safe mode)"
+        echo -e "   Registry backups saved to: $COMPAT_DATA_PATH/pfx/registry_backups/"
+    fi
+    
+    echo -e "\nNext Steps:"
     echo "  • Launch Wabbajack through Steam"
     echo "  • When Wabbajack opens, verify you can log in to Nexus from the Settings option"
     echo "  • Begin downloading and installing your modlist"
-    echo -e "\n💡 If you encounter any issues:"
+    echo -e "\nIf you encounter any issues:"
     echo "  • Check the log file at: $LOGFILE"
     echo "  • Join the #unofficial-linux-support channel on the Wabbajack Discord"
     echo "  • Ensure you've followed all modlist-specific requirements"
+    
+    # Show restore instructions for non-Steam Deck systems
+    if [[ $STEAMDECK -eq 0 ]]; then
+        echo -e "\nTo restore original registry files (if needed):"
+        echo "   cp $COMPAT_DATA_PATH/pfx/registry_backups/system.reg.* $COMPAT_DATA_PATH/pfx/system.reg"
+        echo "   cp $COMPAT_DATA_PATH/pfx/registry_backups/user.reg.* $COMPAT_DATA_PATH/pfx/user.reg"
+    fi
+    
     echo "───────────────────────────────────────────────────────────────────"
     echo -e "\n"
     if [[ $STEAM_IS_FLATPAK -eq 1 ]]; then
