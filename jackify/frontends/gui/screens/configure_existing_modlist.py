@@ -648,7 +648,7 @@ class ConfigureExistingModlistScreen(QWidget):
             
             class ConfigurationThread(QThread):
                 progress_update = Signal(str)
-                configuration_complete = Signal(bool, str, str)
+                configuration_complete = Signal(bool, str, str, bool)
                 error_occurred = Signal(str)
                 
                 def __init__(self, modlist_name, install_dir, resolution):
@@ -691,8 +691,8 @@ class ConfigureExistingModlistScreen(QWidget):
                         def progress_callback(message):
                             self.progress_update.emit(message)
                             
-                        def completion_callback(success, message, modlist_name):
-                            self.configuration_complete.emit(success, message, modlist_name)
+                        def completion_callback(success, message, modlist_name, enb_detected=False):
+                            self.configuration_complete.emit(success, message, modlist_name, enb_detected)
                             
                         def manual_steps_callback(modlist_name, retry_count):
                             # Existing modlists shouldn't need manual steps, but handle gracefully
