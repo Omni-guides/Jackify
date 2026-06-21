@@ -62,7 +62,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "QFrame#protontricksCard { "
             "  background: #2d2323; "
             "  border-radius: 12px; "
-            "  border: 2px solid #e74c3c; "
+            "  border: 2px solid #8b2020; "
             "}"
         )
 
@@ -74,7 +74,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "QLabel { "
             "  font-size: 36px; "
             "  font-weight: bold; "
-            "  color: #e74c3c; "
+            "  color: #f0c040; "
             "  margin-bottom: 4px; "
             "}"
         )
@@ -87,7 +87,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "QLabel { "
             "  font-size: 20px; "
             "  font-weight: 600; "
-            "  color: #e74c3c; "
+            "  color: #f0c040; "
             "  margin-bottom: 2px; "
             "}"
         )
@@ -126,7 +126,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "  text-align: center; "
             "} "
             "QProgressBar::chunk { "
-            "  background-color: #4fc3f7; "
+            "  background-color: #3fd0ea; "
             "  border-radius: 3px; "
             "}"
         )
@@ -139,7 +139,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         self.status_label.setStyleSheet(
             "QLabel { "
             "  font-size: 14px; "
-            "  color: #4fc3f7; "
+            "  color: #3fd0ea; "
             "  margin: 8px 0; "
             "}"
         )
@@ -155,7 +155,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         self.flatpak_btn.clicked.connect(self._install_flatpak)
         self.flatpak_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #4fc3f7; "
+            "  background-color: #1a5fa8; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 6px; "
@@ -164,10 +164,10 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #3498db; "
+            "  background-color: #2470b0; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #2980b9; "
+            "  background-color: #3fd0ea; "
             "} "
             "QPushButton:disabled { "
             "  background-color: #555; "
@@ -182,7 +182,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         self.native_btn.clicked.connect(self._show_native_guidance)
         self.native_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #95a5a6; "
+            "  background-color: #4a5568; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 6px; "
@@ -191,10 +191,10 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #7f8c8d; "
+            "  background-color: #5a6578; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #6c7b7d; "
+            "  background-color: #3fd0ea; "
             "}"
         )
         button_layout.addWidget(self.native_btn)
@@ -211,7 +211,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         self.redetect_btn.clicked.connect(self._redetect)
         self.redetect_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #27ae60; "
+            "  background-color: #4a5568; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 4px; "
@@ -219,10 +219,10 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #229954; "
+            "  background-color: #5a6578; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #1e8449; "
+            "  background-color: #3fd0ea; "
             "}"
         )
         bottom_layout.addWidget(self.redetect_btn)
@@ -235,7 +235,7 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         exit_btn.clicked.connect(self._exit_app)
         exit_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #e74c3c; "
+            "  background-color: #8b2020; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 4px; "
@@ -243,10 +243,10 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #c0392b; "
+            "  background-color: #a02828; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #a93226; "
+            "  background-color: #7a1a1a; "
             "}"
         )
         bottom_layout.addWidget(exit_btn)
@@ -287,12 +287,12 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         
         if success:
             self.status_label.setText("✓ Installation successful!")
-            self.status_label.setStyleSheet("QLabel { color: #27ae60; font-size: 14px; margin: 8px 0; }")
+            self.status_label.setStyleSheet("QLabel { color: #3fd0ea; font-size: 14px; margin: 8px 0; }")
             # Auto-redetect after successful installation
             self._redetect()
         else:
             self.status_label.setText(f"✗ Installation failed: {message}")
-            self.status_label.setStyleSheet("QLabel { color: #e74c3c; font-size: 14px; margin: 8px 0; }")
+            self.status_label.setStyleSheet("QLabel { color: #e05050; font-size: 14px; margin: 8px 0; }")
 
     def _show_native_guidance(self):
         """Show native installation guidance"""
@@ -307,12 +307,12 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         
         if is_installed:
             self.status_label.setText("✓ Protontricks found!")
-            self.status_label.setStyleSheet("QLabel { color: #27ae60; font-size: 14px; margin: 8px 0; }")
+            self.status_label.setStyleSheet("QLabel { color: #3fd0ea; font-size: 14px; margin: 8px 0; }")
             self.status_label.setVisible(True)
             self.accept()  # Close dialog successfully
         else:
             self.status_label.setText("✗ Protontricks still not found")
-            self.status_label.setStyleSheet("QLabel { color: #e74c3c; font-size: 14px; margin: 8px 0; }")
+            self.status_label.setStyleSheet("QLabel { color: #e05050; font-size: 14px; margin: 8px 0; }")
             self.status_label.setVisible(True)
 
     def _exit_app(self):

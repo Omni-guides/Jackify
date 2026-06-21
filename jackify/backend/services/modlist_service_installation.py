@@ -300,13 +300,21 @@ class ModlistServiceInstallationMixin:
                         output_callback("  - If problems persist, uninstall and reinstall Skyrim, then launch once to trigger the AE download.")
                         output_callback("  - Note: Skyrim AE via Steam Family Sharing does not transfer DLC content.")
                     if _ck_missing and output_callback:
+                        _gt = context.get('game_type') or ''
+                        if 'fallout4' in _gt.lower():
+                            _ck_name = "Fallout 4 Creation Kit"
+                            _ck_search = "Fallout 4: Creation Kit"
+                        else:
+                            _ck_name = "Skyrim Special Edition Creation Kit"
+                            _ck_search = "Skyrim Special Edition: Creation Kit"
                         output_callback("")
                         output_callback("[WARN] Creation Kit Files Missing")
-                        output_callback("  This modlist requires the Skyrim Special Edition Creation Kit.")
-                        output_callback("  - In Steam, search for 'Skyrim Special Edition: Creation Kit' and install it.")
+                        output_callback(f"  This modlist requires the {_ck_name}.")
+                        output_callback(f"  - In Steam, search for '{_ck_search}' and install it.")
                         output_callback("  - Right-click it in Steam > Properties > Compatibility and set a Proton version.")
                         output_callback("  - Click Play to launch the Creation Kit.")
-                        output_callback("  - When asked whether to unzip Scripts.zip, select NO.")
+                        if 'fallout4' not in _gt.lower():
+                            output_callback("  - When asked whether to unzip Scripts.zip, select NO.")
                         output_callback("  - Once the Creation Kit opens successfully, close it.")
                         output_callback("  - Re-run the modlist install in Jackify.")
                     return False

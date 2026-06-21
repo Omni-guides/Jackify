@@ -158,9 +158,8 @@ class ModlistService(ModlistServiceInstallationMixin):
             logger.error(f"Failed to list modlists: {e}")
             raise
 
-    def configure_modlist_post_steam(self, context: ModlistContext, 
+    def configure_modlist_post_steam(self, context: ModlistContext,
                                    progress_callback=None,
-                                   manual_steps_callback=None,
                                    completion_callback=None) -> bool:
         """Configure a modlist after Steam setup is complete.
         
@@ -173,7 +172,6 @@ class ModlistService(ModlistServiceInstallationMixin):
         Args:
             context: Modlist context with updated app_id
             progress_callback: Optional callback for progress updates
-            manual_steps_callback: Called when manual steps needed
             completion_callback: Called when configuration is complete
             
         Returns:
@@ -253,12 +251,12 @@ class ModlistService(ModlistServiceInstallationMixin):
                 'path': str(context.install_dir),
                 'mo2_exe_path': str(context.install_dir / 'ModOrganizer.exe'),
                 'resolution': getattr(context, 'resolution', None),
-                'skip_confirmation': True,  # Service layer should be non-interactive
-                'manual_steps_completed': True,  # Manual steps were done in GUI
-                'appid': getattr(context, 'app_id', None),  # Use updated app_id from Steam
+                'skip_confirmation': True,
+                'appid': getattr(context, 'app_id', None),
                 'engine_installed': getattr(context, 'engine_installed', False),  # Path manipulation flag
                 'download_dir': str(context.download_dir) if getattr(context, 'download_dir', None) else None,
                 'modlist_source': getattr(context, 'modlist_source', None),
+                'suppress_completion_banner': True,
             }
             
             debug_callback(f"Configuration context built: {config_context}")
@@ -317,7 +315,11 @@ class ModlistService(ModlistServiceInstallationMixin):
                 debug_callback("Calling run_modlist_configuration_phase")
                 success = modlist_menu.run_modlist_configuration_phase(config_context)
                 debug_callback(f"Configuration phase result: {success}")
-                
+                context.steam_restart_needed = config_context.get('steam_restart_needed', False)
+                context.mounts_app_name = config_context.get('mounts_app_name', '')
+                context.mounts_exe_path = config_context.get('mounts_exe_path', '')
+                context.mounts_dl_path = config_context.get('mounts_dl_path', '')
+
                 # Restore stdout before ENB detection and completion callback
                 if original_stdout:
                     sys.stdout = original_stdout
@@ -405,20 +407,18 @@ class ModlistService(ModlistServiceInstallationMixin):
             
             return False
 
-    def configure_modlist(self, context: ModlistContext, 
-                         progress_callback=None, 
-                         manual_steps_callback=None,
+    def configure_modlist(self, context: ModlistContext,
+                         progress_callback=None,
                          completion_callback=None,
                          output_callback=None) -> bool:
         """Configure a modlist after installation.
-        
+
         Args:
             context: Modlist context
             progress_callback: Optional callback for progress updates
-            manual_steps_callback: Optional callback for manual steps
             completion_callback: Optional callback for completion
             output_callback: Optional callback for output/logging
-            
+
         Returns:
             True if configuration successful, False otherwise
         """
@@ -438,15 +438,14 @@ class ModlistService(ModlistServiceInstallationMixin):
                 'path': str(context.install_dir),
                 'mo2_exe_path': str(context.install_dir / 'ModOrganizer.exe'),
                 'resolution': getattr(context, 'resolution', None),
-                'skip_confirmation': True,  # Service layer should be non-interactive
-                'manual_steps_completed': False,
-                'appid': getattr(context, 'app_id', None),  # Fix: Include appid like other configuration paths
+                'skip_confirmation': True,
+                'appid': getattr(context, 'app_id', None),
                 'download_dir': str(context.download_dir) if getattr(context, 'download_dir', None) else None,
             }
 
             # DEBUG: Log what resolution we're passing
-            logger.info(f"DEBUG: config_context resolution = {config_context['resolution']}")
-            logger.info(f"DEBUG: context.resolution = {getattr(context, 'resolution', 'NOT_SET')}")
+            logger.info(f"config_context resolution = {config_context['resolution']}")
+            logger.info(f"context.resolution = {getattr(context, 'resolution', 'NOT_SET')}")
             
             # Run the complete configuration phase
             success = modlist_menu.run_modlist_configuration_phase(config_context)

@@ -212,7 +212,7 @@ class NexusAuthService:
         Returns:
             Tuple of (valid, username_or_error)
         """
-        return self.api_key_service.validate_api_key(api_key)
+        return self.api_key_service.validate_api_key_works(api_key)
 
     def ensure_valid_auth(self) -> Optional[str]:
         """

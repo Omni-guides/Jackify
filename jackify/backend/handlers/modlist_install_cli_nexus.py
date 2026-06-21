@@ -111,34 +111,10 @@ class ModlistInstallCLINexusMixin:
             return []
 
     def _enhance_nexus_error(self, line: str) -> str:
-        """
-        Enhance Nexus download error messages by adding the mod URL for easier troubleshooting.
-        """
-        import re
-        
-        # Pattern to match Nexus download errors with ModID and FileID
-        nexus_error_pattern = r"Failed to download '[^']+' from Nexus \(Game: ([^,]+), ModID: (\d+), FileID: \d+\):"
-        
-        match = re.search(nexus_error_pattern, line)
-        if match:
-            game_name = match.group(1)
-            mod_id = match.group(2)
-            
-            # Map game names to Nexus URL segments
-            game_url_map = {
-                'SkyrimSpecialEdition': 'skyrimspecialedition',
-                'Skyrim': 'skyrim', 
-                'Fallout4': 'fallout4',
-                'FalloutNewVegas': 'newvegas',
-                'Oblivion': 'oblivion',
-                'Starfield': 'starfield'
-            }
-            
-            game_url = game_url_map.get(game_name, game_name.lower())
-            mod_url = f"https://www.nexusmods.com/{game_url}/mods/{mod_id}"
-            
-            # Add URL on next line for easier debugging
-            return f"{line}\n  Nexus URL: {mod_url}"
-
+        """Enhance Nexus download error messages by adding the mod URL for easier troubleshooting."""
+        from jackify.backend.utils.engine_error_parser import nexus_url_from_error_line
+        url = nexus_url_from_error_line(line)
+        if url:
+            return f"{line}\n  Nexus URL: {url}"
         return line
 

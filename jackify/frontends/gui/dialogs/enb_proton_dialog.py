@@ -55,7 +55,7 @@ class ENBProtonDialog(QDialog):
             "QFrame#enbCard { "
             "  background: #23272e; "
             "  border-radius: 12px; "
-            "  border: 2px solid #e67e22; "  # Orange border for warning
+            "  border: 2px solid #f0c040;"  # Orange border for warning
             "}"
         )
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
@@ -67,17 +67,26 @@ class ENBProtonDialog(QDialog):
             "QLabel { "
             "  font-size: 24px; "
             "  font-weight: 700; "
-            "  color: #e67e22; "  # Orange warning color
+            "  color: #f0c040;"  # Orange warning color
             "  margin-bottom: 4px; "
             "}"
         )
         card_layout.addWidget(title_label)
 
-        # Main warning message
-        warning_text = (
-            f"If you plan on using ENB as part of <span style='color:#3fb7d6; font-weight:600;'>{self.modlist_name}</span>, "
-            f"you will need to use one of the following Proton versions, otherwise you will have issues running the modlist:"
-        )
+        from jackify.backend.data.modlist_proton_requirements import get_proton_requirement
+        _proton_req = get_proton_requirement(self.modlist_name)
+
+        if _proton_req:
+            warning_text = (
+                f"<span style='color:#3fb7d6; font-weight:600;'>{self.modlist_name}</span> "
+                f"requires a specific Proton version for ENB compatibility:"
+            )
+        else:
+            warning_text = (
+                f"If you plan on using ENB as part of <span style='color:#3fb7d6; font-weight:600;'>{self.modlist_name}</span>, "
+                f"you will need to use one of the following Proton versions, otherwise you will have issues running the modlist:"
+            )
+
         warning_label = QLabel(warning_text)
         warning_label.setAlignment(Qt.AlignCenter)
         warning_label.setWordWrap(True)
@@ -93,17 +102,28 @@ class ENBProtonDialog(QDialog):
         warning_label.setTextFormat(Qt.RichText)
         card_layout.addWidget(warning_label)
 
-        # Proton version list (in order of recommendation)
-        versions_text = (
-            "<div style='text-align: left; padding: 12px; background: #1a1d23; border-radius: 8px; margin: 8px 0;'>"
-            "<div style='font-size: 13px; color: #b0b0b0; margin-bottom: 8px;'><b style='color: #fff;'>(In order of recommendation)</b></div>"
-            "<div style='font-size: 14px; color: #fff; line-height: 1.8;'>"
-            "• <b style='color: #2ecc71;'>Proton-CachyOS</b><br/>"
-            "• <b style='color: #3498db;'>GE-Proton 10-14</b> or <b style='color: #3498db;'>lower</b><br/>"
-            "• <b style='color: #f39c12;'>Proton 9</b> from Valve"
-            "</div>"
-            "</div>"
-        )
+        if _proton_req:
+            versions_text = (
+                "<div style='text-align: left; padding: 12px; background: #1a1d23; border-radius: 8px; margin: 8px 0;'>"
+                f"<div style='font-size: 16px; color: #3fd0ea; font-weight: 700; margin-bottom: 8px;'>{_proton_req['required']}</div>"
+                f"<div style='font-size: 13px; color: #b0b0b0;'>{_proton_req['note']}</div>"
+                "</div>"
+            )
+        else:
+            versions_text = (
+                "<div style='text-align: left; padding: 12px; background: #1a1d23; border-radius: 8px; margin: 8px 0;'>"
+                "<div style='font-size: 13px; color: #b0b0b0; margin-bottom: 8px;'><b style='color: #fff;'>(In order of recommendation)</b></div>"
+                "<div style='font-size: 14px; color: #fff; line-height: 1.8;'>"
+                "- <b style='color: #3fd0ea;'>Proton-CachyOS</b><br/>"
+                "- <b style='color: #aaa;'>GE-Proton</b><br/>"
+                "- <b style='color: #777;'>Proton 9</b> from Valve"
+                "</div>"
+                "<div style='font-size: 12px; color: #777; font-style: italic; margin-top: 10px;'>"
+                "Valve Proton 10 has known ENB compatibility issues."
+                "</div>"
+                "</div>"
+            )
+
         versions_label = QLabel(versions_text)
         versions_label.setAlignment(Qt.AlignLeft)
         versions_label.setWordWrap(True)
@@ -117,26 +137,6 @@ class ENBProtonDialog(QDialog):
         )
         versions_label.setTextFormat(Qt.RichText)
         card_layout.addWidget(versions_label)
-
-        # Additional note
-        note_text = (
-            "<div style='font-size: 12px; color: #95a5a6; font-style: italic; margin-top: 8px;'>"
-            "Note: Valve's Proton 10 has known ENB compatibility issues."
-            "</div>"
-        )
-        note_label = QLabel(note_text)
-        note_label.setAlignment(Qt.AlignCenter)
-        note_label.setWordWrap(True)
-        note_label.setStyleSheet(
-            "QLabel { "
-            "  font-size: 12px; "
-            "  color: #95a5a6; "
-            "  font-style: italic; "
-            "  margin-top: 8px; "
-            "}"
-        )
-        note_label.setTextFormat(Qt.RichText)
-        card_layout.addWidget(note_label)
 
         layout.addStretch()
         layout.addWidget(card, alignment=Qt.AlignCenter)

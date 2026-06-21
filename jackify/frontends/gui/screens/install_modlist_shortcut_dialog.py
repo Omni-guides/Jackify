@@ -1,8 +1,13 @@
 """Steam shortcut conflict handling for InstallModlistScreen (Mixin)."""
+import logging
 import os
+
+from PySide6.QtCore import QThread, Signal
 
 from jackify.frontends.gui.dialogs.existing_setup_dialog import prompt_existing_setup_dialog
 from jackify.frontends.gui.services.message_service import MessageService
+
+logger = logging.getLogger(__name__)
 
 
 class InstallModlistShortcutDialogMixin:
@@ -62,7 +67,7 @@ class InstallModlistShortcutDialogMixin:
                 self._restore_controls_after_shortcut_dialog_abort()
                 return
             self._safe_append_text(f"Reusing existing Steam shortcut '{existing_name}'.")
-            self.continue_configuration_after_automated_prefix(int(existing_appid), modlist_name, install_dir, None)
+            self._reuse_shortcut_with_prefix_check(int(existing_appid), modlist_name, install_dir)
             return
 
         if action == "new":
@@ -78,6 +83,54 @@ class InstallModlistShortcutDialogMixin:
 
         self._safe_append_text("Shortcut creation cancelled by user")
         self._restore_controls_after_shortcut_dialog_abort()
+
+    def _reuse_shortcut_with_prefix_check(self, appid: int, modlist_name: str, install_dir: str) -> None:
+        """Continue configuration after conflict resolution, creating the prefix if it is missing."""
+        from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
+        svc = AutomatedPrefixService()
+        if svc.get_prefix_path(appid):
+            self.continue_configuration_after_automated_prefix(appid, modlist_name, install_dir, None)
+            return
+
+        logger.info("Proton prefix missing for AppID %s; creating before configuration", appid)
+        self._safe_append_text("[00:00:00] Proton prefix not found; creating prefix...")
+
+        class _PrefixCreateThread(QThread):
+            finished = Signal(bool)
+
+            def __init__(self, appid):
+                super().__init__()
+                self._appid = appid
+
+            def run(self):
+                try:
+                    from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
+                    ok = AutomatedPrefixService().create_prefix_with_proton_wrapper(self._appid)
+                    self.finished.emit(ok)
+                except Exception as exc:
+                    logger.error("Prefix creation thread failed: %s", exc)
+                    self.finished.emit(False)
+
+        _thread = _PrefixCreateThread(appid)
+
+        def _on_done(success):
+            _thread.deleteLater()
+            if not success:
+                logger.error("Failed to create Proton prefix for AppID %s", appid)
+                MessageService.warning(
+                    self,
+                    "Prefix Creation Failed",
+                    "Jackify could not create the Proton prefix.\n\n"
+                    "Try launching the modlist from Steam once to initialise it, then run Configure.",
+                )
+                self._restore_controls_after_shortcut_dialog_abort()
+                return
+            self._safe_append_text("[00:00:00] Proton prefix created.")
+            self.continue_configuration_after_automated_prefix(appid, modlist_name, install_dir, None)
+
+        _thread.finished.connect(_on_done)
+        self._prefix_create_thread = _thread
+        _thread.start()
 
     def retry_automated_workflow_with_new_name(self, new_name):
         """Retry the automated workflow with a new shortcut name."""

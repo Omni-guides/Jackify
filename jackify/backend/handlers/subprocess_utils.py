@@ -180,7 +180,7 @@ class ProcessManager:
     """
     Shared process manager for robust subprocess launching, tracking, and cancellation.
     """
-    def __init__(self, cmd, env=None, cwd=None, text=False, bufsize=0, separate_stderr=False, enable_stdin=False):
+    def __init__(self, cmd, env=None, cwd=None, text=False, bufsize=0, separate_stderr=False, enable_stdin=False, use_pty=False):
         self.cmd = cmd
         # Default to cleaned environment if None to prevent AppImage variable inheritance
         if env is None:
@@ -192,6 +192,8 @@ class ProcessManager:
         self.bufsize = bufsize
         self.separate_stderr = separate_stderr
         self.enable_stdin = enable_stdin
+        self.use_pty = use_pty
+        self._pty_master_fd = None
         self.proc = None
         self.process_group_pid = None
         self._stdin_lock = threading.Lock()
@@ -200,17 +202,39 @@ class ProcessManager:
     def _start_process(self):
         stderr_arg = subprocess.PIPE if self.separate_stderr else subprocess.STDOUT
         stdin_arg = subprocess.PIPE if self.enable_stdin else None
-        self.proc = subprocess.Popen(
-            self.cmd,
-            stdin=stdin_arg,
-            stdout=subprocess.PIPE,
-            stderr=stderr_arg,
-            env=self.env,
-            cwd=self.cwd,
-            text=self.text,
-            bufsize=self.bufsize,
-            start_new_session=True
-        )
+        if self.use_pty:
+            import pty
+            master_fd, slave_fd = pty.openpty()
+            self._pty_master_fd = master_fd
+            # TERM=dumb + NO_COLOR prevent CLF3 from using cursor movement or ANSI
+            # sequences (which would cause in-place overwrites we can't capture).
+            # isatty() still returns True on the slave, so Rust line-buffers stdout.
+            pty_env = dict(self.env) if self.env else {}
+            pty_env['TERM'] = 'dumb'
+            pty_env['NO_COLOR'] = '1'
+            self.proc = subprocess.Popen(
+                self.cmd,
+                stdin=stdin_arg,
+                stdout=slave_fd,
+                stderr=stderr_arg,
+                env=pty_env,
+                cwd=self.cwd,
+                start_new_session=True,
+                pass_fds=(slave_fd,),
+            )
+            os.close(slave_fd)
+        else:
+            self.proc = subprocess.Popen(
+                self.cmd,
+                stdin=stdin_arg,
+                stdout=subprocess.PIPE,
+                stderr=stderr_arg,
+                env=self.env,
+                cwd=self.cwd,
+                text=self.text,
+                bufsize=self.bufsize,
+                start_new_session=True,
+            )
         self.process_group_pid = os.getpgid(self.proc.pid)
 
     def cancel(self, timeout_terminate=2, timeout_kill=1, max_cleanup_attempts=3):
@@ -267,6 +291,12 @@ class ProcessManager:
                     cleanup_attempts += 1
         finally:
             # Always close pipes - unblocks threads blocked on read(1) or iterating stderr
+            if self._pty_master_fd is not None:
+                try:
+                    os.close(self._pty_master_fd)
+                except Exception:
+                    pass
+                self._pty_master_fd = None
             if self.proc:
                 for pipe in (self.proc.stdin, self.proc.stdout, self.proc.stderr):
                     if pipe:
@@ -289,6 +319,11 @@ class ProcessManager:
         return None
 
     def read_stdout_char(self):
+        if self._pty_master_fd is not None:
+            try:
+                return os.read(self._pty_master_fd, 1)
+            except (OSError, IOError):
+                return None
         if self.proc and self.proc.stdout:
             try:
                 return self.proc.stdout.read(1)

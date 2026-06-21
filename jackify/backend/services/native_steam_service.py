@@ -224,10 +224,19 @@ class NativeSteamService:
         try:
             # Create backup first
             if shortcuts_path.exists():
-                backup_path = shortcuts_path.with_suffix(f".vdf.backup_{int(time.time())}")
                 import shutil
+                import glob
+                backup_dir = shortcuts_path.parent / "backups"
+                backup_dir.mkdir(exist_ok=True)
+                backup_path = backup_dir / f"shortcuts_{int(time.time())}.bak"
                 shutil.copy2(shortcuts_path, backup_path)
                 logger.info(f"Created backup: {backup_path}")
+                existing = sorted(glob.glob(str(backup_dir / "shortcuts_*.bak")))
+                for old in existing[:-5]:
+                    try:
+                        os.remove(old)
+                    except Exception:
+                        pass
             
             # Ensure parent directory exists
             shortcuts_path.parent.mkdir(parents=True, exist_ok=True)
@@ -386,10 +395,19 @@ class NativeSteamService:
                 return False
             
             # Create backup first
-            backup_path = config_path.with_suffix(f".vdf.backup_{int(time.time())}")
             import shutil
+            import glob
+            backup_dir = config_path.parent / "backups"
+            backup_dir.mkdir(exist_ok=True)
+            backup_path = backup_dir / f"config_{int(time.time())}.bak"
             shutil.copy2(config_path, backup_path)
             logger.info(f"Created backup: {backup_path}")
+            existing = sorted(glob.glob(str(backup_dir / "config_*.bak")))
+            for old in existing[:-5]:
+                try:
+                    os.remove(old)
+                except Exception:
+                    pass
             
             # Read the file as text to avoid VDF library formatting issues
             with open(config_path, 'r', encoding='utf-8', errors='ignore') as f:

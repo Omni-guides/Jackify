@@ -137,7 +137,7 @@ class ModlistTasksScreen(QWidget):
         """Set up the menu buttons section"""
         # Menu options
         MENU_ITEMS = [
-            ("Install a Modlist (Automated)", "install_modlist", "Download and install modlists automatically"),
+            ("Install a Modlist", "install_modlist", "Download and install modlists automatically"),
             ("Configure New Modlist (Post-Download)", "configure_new_modlist", "Configure a newly downloaded modlist"),
             ("Configure Existing Modlist (In Steam)", "configure_existing_modlist", "Reconfigure an existing Steam modlist"),
         ]

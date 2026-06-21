@@ -1,5 +1,7 @@
 """TTW installation worker thread."""
 from PySide6.QtCore import QThread, Signal
+import os
+import signal
 import time
 
 from ..utils import strip_ansi_control_codes
@@ -21,11 +23,15 @@ class TTWInstallationThread(QThread):
 
     def cancel(self):
         self.cancelled = True
-        try:
-            if self.proc and self.proc.poll() is None:
-                self.proc.terminate()
-        except Exception:
-            pass
+        if self.proc and self.proc.poll() is None:
+            try:
+                pgid = os.getpgid(self.proc.pid)
+                os.killpg(pgid, signal.SIGTERM)
+            except Exception:
+                try:
+                    self.proc.terminate()
+                except Exception:
+                    pass
 
     def process_and_buffer_line(self, raw_line):
         """Clean one output line and queue it for batched emit."""
@@ -62,7 +68,7 @@ class TTWInstallationThread(QThread):
             from pathlib import Path
             import tempfile
 
-            self.process_and_buffer_line("Initializing TTW installation...")
+            self.process_and_buffer_line("Initialising TTW installation...")
             self.flush_output_buffer()
 
             filesystem_handler = FileSystemHandler()

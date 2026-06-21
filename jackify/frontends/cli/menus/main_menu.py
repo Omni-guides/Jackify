@@ -43,16 +43,20 @@ class MainMenuHandler:
             print(f"{COLOR_SELECTION}1.{COLOR_RESET} Modlist Tasks")
             print(f"   {COLOR_ACTION}→ Install & Configure Modlists{COLOR_RESET}")
             print(f"{COLOR_SELECTION}2.{COLOR_RESET} Additional Tasks & Tools")
-            print(f"   {COLOR_ACTION}→ Nexus OAuth, TTW Installation, Install Wabbajack{COLOR_RESET}")
+            print(f"   {COLOR_ACTION}→ Verifier, Diagnostics, Nexus OAuth & more{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}3.{COLOR_RESET} Tools Hub")
+            print(f"   {COLOR_ACTION}→ Install, update, or switch engines and tools{COLOR_RESET}")
             print(f"{COLOR_SELECTION}0.{COLOR_RESET} Exit Jackify")
-            choice = input(f"\n{COLOR_PROMPT}Enter your selection (0-2): {COLOR_RESET}").strip()
-            
+            choice = input(f"\n{COLOR_PROMPT}Enter your selection (0-3): {COLOR_RESET}").strip()
+
             if choice.lower() == 'q':  # Allow 'q' to re-display menu
                 continue
             if choice == "1":
                 return "wabbajack"
             elif choice == "2":
                 return "additional"
+            elif choice == "3":
+                return "tools_hub"
             elif choice == "0":
                 return "exit"
             else:

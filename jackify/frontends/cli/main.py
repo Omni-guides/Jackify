@@ -370,7 +370,7 @@ class JackifyCLI:
         # Now that we have args, configure logging properly
         self._configure_logging_final()
         
-        logger.debug('Initializing Jackify CLI Frontend')
+        logger.debug('Initialising Jackify CLI Frontend')
         logger.debug('JackifyCLI.run() called')
         logger.debug(f'Parsed args: {self.args}')
         
@@ -438,13 +438,10 @@ class JackifyCLI:
             print("  Then select: Additional Tasks > Install Wabbajack")
             return 0
         elif command == "install-mo2":
-            print("MO2 installation not yet implemented")
-            print("This functionality is coming soon!")
-            return 1
-        elif command == "configure-nxm":
-            print("NXM configuration not yet implemented")
-            print("This functionality is coming soon!")
-            return 1
+            from jackify.frontends.cli.commands.setup_mo2 import SetupMO2Command
+            SetupMO2Command().run()
+            return 0
+
         elif command == "recovery":
             return self._handle_legacy_recovery(args)
         elif command == "test-protontricks":
@@ -468,6 +465,8 @@ class JackifyCLI:
                 # HIDDEN FOR FIRST RELEASE - UNCOMMENT WHEN READY
                 elif choice == "additional":
                     self.menus['additional'].show_additional_tasks_menu(self)
+                elif choice == "tools_hub":
+                    self.menus['additional']._execute_tools_hub(self)
                 else:
                     logger.warning(f"Invalid choice '{choice}' received from show_main_menu.")
                     

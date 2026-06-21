@@ -7,6 +7,7 @@ Discovery, installation strategy, and verification live in mixins.
 """
 
 import os
+import shutil
 import subprocess
 import logging
 from pathlib import Path
@@ -53,6 +54,45 @@ class WinetricksHandler(
             return False
         if not components_to_install:
             return True
+
+        native_wineprefix = env.get('WINEPREFIX', wineprefix)
+        wine_binary = env.get('WINE', '')
+
+        # Native installer tier: direct-source downloads, no winetricks dependency.
+        native = None
+        if wine_binary:
+            try:
+                from .native_component_installer import NativeComponentInstaller
+                native = NativeComponentInstaller(native_wineprefix, wine_binary, env, self.logger)
+            except Exception as native_exc:
+                self.logger.warning("Native installer init failed: %s", native_exc)
+
+        if native:
+            try:
+                _native_ok, components_to_install = native.install_components(
+                    components_to_install, status_callback
+                )
+                if not components_to_install:
+                    self._set_windows_10_mode_after_install(native_wineprefix, env)
+                    return True
+            except Exception as native_exc:
+                self.logger.warning("Native installer skipped due to error: %s", native_exc)
+
+        # dotnet48 (NSF/CSF modlists) installs via the bundled winetricks verb. Fully remove
+        # Wine Mono first (files + mscoree stub + uninstaller entry + its NDP registry keys) so
+        # the prefix is in the clean "no .NET, no mono" state a fresh winetricks dotnet48 expects:
+        # this avoids the "same or higher version already installed" bail (the NDP keys are
+        # mono-registered, winetricks #2367) and lets winetricks complete the .NET first-run
+        # during the verb, so it does not fire at game launch.
+        # The status message persists through the install (the main winetricks call emits none
+        # before it blocks), so the UI shows dotnet48 rather than the prior native component.
+        if 'dotnet48' in components_to_install:
+            if status_callback:
+                status_callback("[NATIVE_INSTALL] dotnet48")
+                status_callback("Installing .NET Framework 4.8 (dotnet48) - the long step, can take several minutes")
+            self.logger.info("Installing dotnet48 via winetricks (NSF/CSF) - long-running step")
+            self._kill_wineserver_for_prefix(env)
+            self._remove_wine_mono(native_wineprefix)
 
         # Flatpak Steam: use protontricks only; bundled winetricks is unreliable (e.g. from AppImage)
         flatpak_steam = False
@@ -454,6 +494,70 @@ class WinetricksHandler(
             self.logger.debug("Killed wineserver for prefix so winetricks can start a fresh one")
         except Exception as e:
             self.logger.debug("Wineserver -k failed (non-fatal): %s", e)
+
+    def _remove_wine_mono(self, wineprefix: str) -> None:
+        """Fully remove Wine Mono so a clean winetricks dotnet48 install behaves as on a fresh
+        prefix - the state that installs without the "already installed" bail and without
+        deferring the .NET first-run to game launch.
+
+        Removes: the mono mscoree.dll stubs, the mono runtime directory, the "Wine Mono"
+        uninstaller registry sections, and the mono-registered NET Framework Setup\\NDP keys
+        (those are what trigger the #2367 bail). Wineserver must be dead so the system.reg
+        edit persists.
+        """
+        import time
+        time.sleep(2)
+
+        for sub in ('system32', 'syswow64'):
+            dll = os.path.join(wineprefix, 'drive_c', 'windows', sub, 'mscoree.dll')
+            try:
+                if os.path.isfile(dll):
+                    with open(dll, 'rb') as f:
+                        is_mono_stub = b'WINE_MONO_OVERRIDES' in f.read()
+                    if is_mono_stub:
+                        os.unlink(dll)
+                        self.logger.debug("Removed Mono mscoree.dll stub: %s", dll)
+            except Exception:
+                pass
+
+        mono_dir = os.path.join(wineprefix, 'drive_c', 'windows', 'mono')
+        if os.path.isdir(mono_dir):
+            shutil.rmtree(mono_dir, ignore_errors=True)
+            self.logger.debug("Removed Wine Mono runtime directory")
+
+        system_reg = os.path.join(wineprefix, 'system.reg')
+        if not os.path.isfile(system_reg):
+            return
+        try:
+            with open(system_reg, encoding='utf-8', errors='replace') as f:
+                lines = f.readlines()
+            out, section, drop = [], [], False
+            removed_mono, removed_ndp = 0, 0
+            for line in lines:
+                if line.lstrip().startswith('['):
+                    if section and not drop:
+                        out.extend(section)
+                    end = line.strip().rfind(']')
+                    key = line.strip()[1:end].lower() if end > 0 else ''
+                    drop = 'net framework setup\\\\ndp' in key
+                    if drop:
+                        removed_ndp += 1
+                    section = [line]
+                elif section:
+                    section.append(line)
+                    s = line.strip()
+                    if s.startswith('"DisplayName"=') and 'Wine Mono' in s and not drop:
+                        drop = True
+                        removed_mono += 1
+                else:
+                    out.append(line)
+            if section and not drop:
+                out.extend(section)
+            with open(system_reg, 'w', encoding='utf-8') as f:
+                f.writelines(out)
+            self.logger.info("Removed Wine Mono: %d uninstaller section(s) + %d NDP section(s)", removed_mono, removed_ndp)
+        except Exception as exc:
+            self.logger.warning("Wine Mono registry removal failed (non-fatal): %s", exc)
 
     def _cleanup_wine_processes(self):
         """Clean up winetricks processes only during component installation."""

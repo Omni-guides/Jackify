@@ -19,69 +19,6 @@ logger = logging.getLogger(__name__)
 class GameUtilsMixin:
     """Mixin for game-related utility operations"""
 
-    # TODO post-0.6: remove this method - dead code, never called.
-    # Superseded by registry injection (game paths written directly into the modlist prefix).
-    # def _generate_special_game_launch_options(self, special_game_type: str, modlist_install_dir: str) -> Optional[str]:
-    #     """
-    #     Generate launch options for FNV/Enderal games that require vanilla compatdata.
-    #
-    #     Args:
-    #         special_game_type: "fnv" or "enderal"
-    #         modlist_install_dir: Directory where the modlist is installed
-    #
-    #     Returns:
-    #         Complete launch options string with STEAM_COMPAT_DATA_PATH, or None if failed
-    #     """
-    #     if not special_game_type or special_game_type not in ["fnv", "enderal"]:
-    #         return None
-    #
-    #     logger.info(f"Generating {special_game_type.upper()} launch options")
-    #
-    #     # Map game types to AppIDs
-    #     appid_map = {"fnv": "22380", "enderal": "976620"}
-    #     appid = appid_map[special_game_type]
-    #
-    #     # Find vanilla game compatdata
-    #     from ..handlers.path_handler import PathHandler
-    #     compatdata_path = PathHandler.find_compat_data(appid)
-    #     if not compatdata_path:
-    #         logger.error(f"Could not find vanilla {special_game_type.upper()} compatdata directory (AppID {appid})")
-    #         return None
-    #
-    #     # Create STEAM_COMPAT_DATA_PATH string
-    #     compat_data_str = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}"'
-    #
-    #     # Generate STEAM_COMPAT_MOUNTS if multiple libraries exist
-    #     compat_mounts_str = ""
-    #     try:
-    #         all_libs = PathHandler.get_all_steam_library_paths()
-    #         main_steam_lib_path_obj = PathHandler.find_steam_library()
-    #         if main_steam_lib_path_obj and main_steam_lib_path_obj.name == "common":
-    #             main_steam_lib_path = main_steam_lib_path_obj.parent.parent
-    #         else:
-    #             main_steam_lib_path = main_steam_lib_path_obj
-    #
-    #         mount_paths = []
-    #         if main_steam_lib_path:
-    #             main_resolved = main_steam_lib_path.resolve()
-    #             for lib_path in all_libs:
-    #                 if lib_path.resolve() != main_resolved:
-    #                     mount_paths.append(str(lib_path.resolve()))
-    #
-    #         if mount_paths:
-    #             mount_paths_str = ':'.join(mount_paths)
-    #             compat_mounts_str = f'STEAM_COMPAT_MOUNTS="{mount_paths_str}"'
-    #             logger.info(f"Added STEAM_COMPAT_MOUNTS for {special_game_type.upper()}")
-    #     except Exception as e:
-    #         logger.warning(f"Error generating STEAM_COMPAT_MOUNTS for {special_game_type}: {e}")
-    #
-    #     # Combine all launch options
-    #     launch_options = f"{compat_mounts_str} {compat_data_str} %command%".strip()
-    #     launch_options = ' '.join(launch_options.split())  # Clean up spacing
-    #
-    #     logger.info(f"Generated {special_game_type.upper()} launch options: {launch_options}")
-    #     return launch_options
-
     def _find_steam_game(self, app_id: str, common_names: list) -> Optional[str]:
         """Find a Steam game installation path by AppID and common names"""
         import os

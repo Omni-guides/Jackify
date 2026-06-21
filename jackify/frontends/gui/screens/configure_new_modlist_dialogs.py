@@ -234,26 +234,18 @@ class ConfigureNewModlistDialogsMixin:
         if hasattr(self, '_pending_success_dialog_params'):
             params = self._pending_success_dialog_params
             del self._pending_success_dialog_params
-
-            self.file_progress_list.clear()
-
-            from ..dialogs import SuccessDialog
-            success_dialog = SuccessDialog(
-                modlist_name=params['modlist_name'],
-                workflow_type=params['workflow_type'],
-                time_taken=params['time_taken'],
-                game_name=params['game_name'],
-                parent=self,
+            self._run_verifier_then_show_success(
+                install_dir=params.get('install_dir', ''),
+                game_type=params.get('game_type', 'unknown'),
+                appid=params.get('appid', ''),
+                success_params={
+                    'modlist_name': params['modlist_name'],
+                    'workflow_type': params['workflow_type'],
+                    'time_taken': params['time_taken'],
+                    'game_name': params.get('game_name'),
+                    'enb_detected': params.get('enb_detected', False),
+                },
             )
-            success_dialog.show()
-
-            if params.get('enb_detected'):
-                try:
-                    from ..dialogs.enb_proton_dialog import ENBProtonDialog
-                    enb_dialog = ENBProtonDialog(modlist_name=params['modlist_name'], parent=self)
-                    enb_dialog.exec()
-                except Exception as e:
-                    logger.warning("Failed to show ENB dialog: %s", e)
 
     def show_next_steps_dialog(self, message):
         dlg = QDialog(self)

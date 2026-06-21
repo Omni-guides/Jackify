@@ -160,11 +160,11 @@ class AutomatedPrefixHandlersMixin:
             self.prefix_thread.start()
             
         except Exception as e:
-            logger.debug(f"DEBUG: Exception in start_automated_prefix_workflow: {e}")
-            logger.debug(f"DEBUG: Traceback: {traceback.format_exc()}")
+            logger.debug(f"Exception in start_automated_prefix_workflow: {e}")
             self._safe_append_text(f"ERROR: Failed to start automated workflow: {e}")
-            # Re-enable controls on exception
             self._enable_controls_after_operation()
+            self.cancel_btn.setVisible(True)
+            self.cancel_install_btn.setVisible(False)
 
     def on_automated_prefix_finished(self, success, prefix_path, new_appid_str, last_timestamp=None):
         """Handle completion of automated prefix creation"""

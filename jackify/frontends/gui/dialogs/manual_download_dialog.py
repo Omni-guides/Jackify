@@ -36,12 +36,12 @@ _STATUS_LABELS = {
 
 _STATUS_COLOURS = {
     'pending':       '#808080',
-    'browser_opened': '#3498db',
-    'validating':    '#f39c12',
-    'complete':      '#27ae60',
-    'deferred':      '#e67e22',
-    'skipped':       '#e67e22',
-    'error':         '#e74c3c',
+    'browser_opened': '#3fd0ea',
+    'validating':    '#f0c040',
+    'complete':      '#3fd0ea',
+    'deferred':      '#f0c040',
+    'skipped':       '#888',
+    'error':         '#e05050',
 }
 
 # Column indices
@@ -59,6 +59,15 @@ def _fmt_size(n: int) -> str:
             return f"{n:.0f} {unit}"
         n /= 1024
     return f"{n:.1f} TB"
+
+
+class _SizeTableItem(QTableWidgetItem):
+    """QTableWidgetItem that sorts by raw byte count stored in UserRole."""
+    def __lt__(self, other: 'QTableWidgetItem') -> bool:
+        try:
+            return int(self.data(Qt.UserRole) or 0) < int(other.data(Qt.UserRole) or 0)
+        except (TypeError, ValueError):
+            return super().__lt__(other)
 
 
 class _Bridge(QObject):
@@ -152,15 +161,17 @@ class ManualDownloadDialog(QDialog):
 
         # Batch-insert new rows with viewport updates suspended to avoid O(n²) repaints
         if new_items:
+            self._table.setSortingEnabled(False)
             self._table.setUpdatesEnabled(False)
             try:
                 start_row = self._table.rowCount()
                 self._table.setRowCount(start_row + len(new_items))
                 for i, item in enumerate(new_items):
                     self._fill_row(start_row + i, item)
-                    self._row_map[item.file_name] = start_row + i
             finally:
                 self._table.setUpdatesEnabled(True)
+                self._table.setSortingEnabled(True)
+                self._rebuild_row_map()
                 self._table.viewport().update()
 
         self._refresh_header()
@@ -222,7 +233,9 @@ class ManualDownloadDialog(QDialog):
         self._table.setSelectionBehavior(QTableWidget.SelectRows)
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
+        self._table.setSortingEnabled(True)
         self._table.verticalHeader().setVisible(False)
+        self._table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self._table.cellDoubleClicked.connect(self._on_row_double_clicked)
         self._table.setStyleSheet(
             "QTableWidget { background: #1a1d23; alternate-background-color: #1e2228; "
@@ -284,6 +297,14 @@ class ManualDownloadDialog(QDialog):
         self._open_selected_btn.clicked.connect(self._on_open_selected)
         btn_row.addWidget(self._open_selected_btn)
 
+        self._scan_now_btn = QPushButton("Scan Now")
+        self._scan_now_btn.setToolTip(
+            "Re-scan the watch directory for already-downloaded files.\n"
+            "Use this if a file downloaded successfully but was not detected automatically."
+        )
+        self._scan_now_btn.clicked.connect(self._on_scan_now)
+        btn_row.addWidget(self._scan_now_btn)
+
         btn_row.addStretch()
 
         self._start_pause_btn = QPushButton("Start")
@@ -308,9 +329,13 @@ class ManualDownloadDialog(QDialog):
     def _fill_row(self, row: int, item: DownloadItem) -> None:
         """Populate cells for a pre-allocated row (row must already exist in the table)."""
         from PySide6.QtGui import QColor
-        self._table.setItem(row, _COL_MOD, QTableWidgetItem(item.mod_name))
+        mod_cell = QTableWidgetItem(item.mod_name)
+        mod_cell.setData(Qt.UserRole, item.file_name)  # stable ID for row lookups after sort
+        self._table.setItem(row, _COL_MOD, mod_cell)
         self._table.setItem(row, _COL_NAME, QTableWidgetItem(item.file_name))
-        self._table.setItem(row, _COL_SIZE, QTableWidgetItem(_fmt_size(item.expected_size)))
+        size_cell = _SizeTableItem(_fmt_size(item.expected_size))
+        size_cell.setData(Qt.UserRole, item.expected_size)
+        self._table.setItem(row, _COL_SIZE, size_cell)
         colour = _STATUS_COLOURS.get(item.status, '#808080')
         status_cell = QTableWidgetItem(_STATUS_LABELS.get(item.status, item.status))
         status_cell.setForeground(QColor(colour))
@@ -325,6 +350,26 @@ class ManualDownloadDialog(QDialog):
             status_cell.setText(_STATUS_LABELS.get(item.status, item.status))
             status_cell.setForeground(QColor(_STATUS_COLOURS.get(item.status, '#808080')))
             status_cell.setToolTip(item.error_message or "")
+
+    def _rebuild_row_map(self) -> None:
+        self._row_map.clear()
+        for row in range(self._table.rowCount()):
+            cell = self._table.item(row, _COL_MOD)
+            if cell:
+                file_name = cell.data(Qt.UserRole)
+                if file_name:
+                    self._row_map[file_name] = row
+
+    def _sync_pending_order_to_visual(self) -> None:
+        visual_order: dict[str, int] = {}
+        for row in range(self._table.rowCount()):
+            cell = self._table.item(row, _COL_MOD)
+            if cell:
+                file_name = cell.data(Qt.UserRole)
+                if file_name:
+                    visual_order[file_name] = row
+        with self._manager._lock:
+            self._manager._items.sort(key=lambda i: visual_order.get(i.file_name, 999999))
 
     def _refresh_header(self) -> None:
         items = self._manager.items
@@ -344,6 +389,10 @@ class ManualDownloadDialog(QDialog):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    def _on_header_clicked(self, logical_index: int) -> None:
+        self._rebuild_row_map()
+        self._sync_pending_order_to_visual()
 
     def _on_item_updated_slot(self, item: DownloadItem) -> None:
         row = self._row_map.get(item.file_name)
@@ -369,7 +418,6 @@ class ManualDownloadDialog(QDialog):
             self._folder_label.setText(chosen)
             self._manager._watch_dir = self._watch_dir
             self._manager._watcher._config.watch_directory = self._watch_dir
-            self._manager._watcher._known = {}
             try:
                 cfg = ConfigHandler()
                 cfg.set("manual_download_watch_directory", str(self._watch_dir))
@@ -429,6 +477,16 @@ class ManualDownloadDialog(QDialog):
         if not file_name:
             return
         self._manager.reopen_item(file_name)
+
+    def _on_scan_now(self) -> None:
+        self._scan_now_btn.setEnabled(False)
+        self._scan_now_btn.setText("Scanning...")
+        self._manager.force_rescan()
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(2000, lambda: (
+            self._scan_now_btn.setEnabled(True),
+            self._scan_now_btn.setText("Scan Now"),
+        ))
 
     def _on_row_double_clicked(self, row: int, _column: int) -> None:
         file_item = self._table.item(row, _COL_NAME)

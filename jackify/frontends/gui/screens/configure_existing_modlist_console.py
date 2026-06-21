@@ -12,6 +12,52 @@ class ConfigureExistingModlistConsoleMixin:
 
     def _handle_progress_update(self, text):
         """Handle progress updates - update console, activity window, and progress indicator"""
+        if text.startswith("[NATIVE_DL] "):
+            parts = text.split(None, 3)
+            if len(parts) == 4:
+                _, component, pct_str, speed_str = parts
+                try:
+                    pct, speed = float(pct_str), float(speed_str)
+                    self.file_progress_list.update_or_add_item(
+                        "__native_component__",
+                        f"Wine component: {component} | {pct:.0f}% ({speed:.1f} MB/s)",
+                        pct,
+                    )
+                except ValueError:
+                    pass
+            return
+        if text.startswith("[NATIVE_INSTALL] "):
+            component = text[17:].strip()
+            self._stop_component_install_pulse()
+            done = getattr(self, '_native_done_components', 0)
+            total = getattr(self, '_native_total_components', 0)
+            remaining = max(0, total - done)
+            suffix = f" ({remaining} remaining)" if remaining > 0 else ""
+            self.file_progress_list.update_or_add_item(
+                "__native_component__",
+                f"Wine component: {component}{suffix}",
+                0.0,
+            )
+            self.progress_indicator.set_status(f"Installing {component}...", 60)
+            self._current_native_component = component
+            self._native_done_components = done + 1
+            return
+        if text.startswith("[NATIVE_WAIT] "):
+            parts = text.split(None, 2)
+            if len(parts) >= 3:
+                component, elapsed_s = parts[1], parts[2].strip()
+                done = getattr(self, '_native_done_components', 1)
+                total = getattr(self, '_native_total_components', 0)
+                remaining = max(0, total - done)
+                suffix = f" ({remaining} remaining)" if remaining > 0 else ""
+                self.file_progress_list.update_or_add_item(
+                    "__native_component__",
+                    f"Wine component: {component} | {elapsed_s}s{suffix}",
+                    0.0,
+                )
+                self.progress_indicator.set_status(f"Installing {component}... ({elapsed_s}s)", 60)
+            return
+
         # Always append to console
         self._safe_append_text(text)
 
@@ -27,13 +73,24 @@ class ConfigureExistingModlistConsoleMixin:
             self._stop_component_install_pulse()
             self.progress_indicator.set_status("Applying registry files...", 40)
             self.file_progress_list.update_or_add_item("__phase__", "Applying registry...", 0.0)
-        elif "installing wine components" in message_lower or "wine component" in message_lower:
+        elif (
+            "installing wine components" in message_lower
+            or "wine component" in message_lower
+            or "vcrun" in message_lower
+            or ("dotnet" in message_lower and "fix" not in message_lower)
+        ):
             self.progress_indicator.set_status("Installing wine components...", 60)
-            if not hasattr(self, '_component_install_timer') or not self._component_install_timer:
-                self._start_component_install_pulse()
             comp_list = self._parse_wine_components_message(text)
             if comp_list:
-                self._start_component_install_pulse_with_components(comp_list)
+                self._native_total_components = len(comp_list)
+                self._native_done_components = 0
+                self.file_progress_list.update_or_add_item(
+                    "__native_component__",
+                    f"Wine components: {len(comp_list)} queued",
+                    0.0,
+                )
+            elif not getattr(self, '_component_install_timer', None) or not self._component_install_timer.isActive():
+                self._start_component_install_pulse()
         elif "wine components verified" in message_lower or "wine components installed" in message_lower:
             self._stop_component_install_pulse()
             self.progress_indicator.set_status("Wine components installed", 65)
@@ -127,14 +184,22 @@ class ConfigureExistingModlistConsoleMixin:
         if not hasattr(self, '_component_install_start_time') or not self._component_install_start_time:
             return
         if hasattr(self, '_component_install_list') and self._component_install_list:
-            progresses = [
-                FileProgress(
-                    filename=f"Wine component: {comp}",
-                    operation=OperationType.UNKNOWN,
-                    percent=0.0,
-                )
-                for comp in self._component_install_list
-            ]
+            dl_state = getattr(self, '_native_component_progress', {})
+            progresses = []
+            for comp in self._component_install_list:
+                if comp in dl_state:
+                    pct, speed = dl_state[comp]
+                    progresses.append(FileProgress(
+                        filename=f"Wine component: {comp} | {pct:.0f}% ({speed:.1f} MB/s)",
+                        operation=OperationType.DOWNLOAD,
+                        percent=pct,
+                    ))
+                else:
+                    progresses.append(FileProgress(
+                        filename=f"Wine component: {comp}",
+                        operation=OperationType.UNKNOWN,
+                        percent=0.0,
+                    ))
             self.file_progress_list.update_files(progresses, current_phase=None)
         else:
             self.file_progress_list.update_or_add_item("__wine_components__", "Installing Wine components...", 0.0)
@@ -146,5 +211,7 @@ class ConfigureExistingModlistConsoleMixin:
             self._component_install_timer = None
         if hasattr(self, '_component_install_list'):
             del self._component_install_list
+        if hasattr(self, '_native_component_progress'):
+            del self._native_component_progress
 
 

@@ -32,6 +32,15 @@ class MainWindowBackendMixin:
         from jackify.backend.services.update_service import UpdateService
         from jackify import __version__
         self.update_service = UpdateService(__version__)
+
+        from jackify.backend.services.nxm_ipc import NxmIpcServer
+        self._nxm_ipc_server = NxmIpcServer(self)
+        self._nxm_ipc_server.url_received.connect(self._on_nxm_url_received)
+        self._nxm_ipc_server.start()
+
+        from jackify.backend.services.nxm_protocol import ensure_nxm_registered
+        ensure_nxm_registered()
+
         logger.debug(f"GUI Backend initialized - Steam Deck: {self.system_info.is_steamdeck}")
 
     def _is_steamdeck(self):

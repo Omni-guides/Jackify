@@ -23,10 +23,9 @@ class TTWWorkflowMixin:
     def validate_and_start_install(self):
         import time
         self._install_workflow_start_time = time.time()
-        logger.debug('DEBUG: validate_and_start_install called')
 
         self.config_handler.reload_config()
-        logger.debug('DEBUG: Reloaded config from disk')
+        logger.debug("Reloaded config from disk")
 
         if not self._check_ttw_requirements():
             return
@@ -87,13 +86,13 @@ class TTWWorkflowMixin:
                                     shutil.rmtree(item)
                                 else:
                                     item.unlink()
-                            logger.debug(f"DEBUG: Deleted all contents of {install_dir}")
+                            logger.debug(f"Deleted all contents of {install_dir}")
                         except Exception as e:
                             MessageService.show_error(self, install_dir_create_failed(str(install_dir), str(e)))
                             self._enable_controls_after_operation()
                             return
                 except Exception as e:
-                    logger.debug(f"DEBUG: Error checking directory contents: {e}")
+                    logger.debug(f"Error checking directory contents: {e}")
 
             if not os.path.isdir(install_dir):
                 create = MessageService.question(self, "Create Directory?",
@@ -118,18 +117,15 @@ class TTWWorkflowMixin:
             self.cancel_btn.setVisible(False)
             self.cancel_install_btn.setVisible(True)
 
-            logger.debug(f'DEBUG: Calling run_ttw_installer with mpi_path={mpi_path}, install_dir={install_dir}')
+            logger.debug(f"Calling run_ttw_installer with mpi_path={mpi_path}, install_dir={install_dir}")
             self.run_ttw_installer(mpi_path, install_dir)
         except Exception as e:
-            logger.debug(f"DEBUG: Exception in validate_and_start_install: {e}")
-            logger.debug(f"DEBUG: Traceback: {traceback.format_exc()}")
             self._enable_controls_after_operation()
             self.cancel_btn.setVisible(True)
             self.cancel_install_btn.setVisible(False)
-            logger.debug("DEBUG: Controls re-enabled in exception handler")
 
     def run_ttw_installer(self, mpi_path, install_dir):
-        logger.debug('DEBUG: run_ttw_installer called - USING THREADED BACKEND WRAPPER')
+        logger.debug("run_ttw_installer called - USING THREADED BACKEND WRAPPER")
 
         self.config_handler._load_config()
 
@@ -141,11 +137,11 @@ class TTWWorkflowMixin:
         self._safe_append_text("Starting TTW installation...")
 
         self.file_progress_list.clear()
-        self._update_ttw_phase("Initializing TTW installation", 0, 0, 0)
+        self._update_ttw_phase("Initialising TTW installation", 0, 0, 0)
         QApplication.processEvents()
 
         self.status_banner.setVisible(True)
-        self.status_banner.setText("Initializing TTW installation...")
+        self.status_banner.setText("Initialising TTW installation...")
         self.show_details_checkbox.setVisible(True)
 
         self.status_banner.setStyleSheet(f"""
@@ -178,7 +174,7 @@ class TTWWorkflowMixin:
 
     def on_installation_finished(self, success, message):
         """Handle installation completion."""
-        logger.debug(f"DEBUG: on_installation_finished called with success={success}, message={message}")
+        logger.debug(f"on_installation_finished called with success={success}, message={message}")
 
         if hasattr(self, 'ttw_elapsed_timer'):
             self.ttw_elapsed_timer.stop()
@@ -189,8 +185,8 @@ class TTWWorkflowMixin:
             seconds = elapsed % 60
             self.status_banner.setText(f"Installation completed successfully! Total time: {minutes}m {seconds}s")
             self.status_banner.setStyleSheet("""
-                background-color: #1a4d1a;
-                color: #4CAF50;
+                background-color: #1a3040;
+                color: #3fd0ea;
                 padding: 8px;
                 border-radius: 4px;
                 font-weight: bold;
@@ -220,11 +216,11 @@ class TTWWorkflowMixin:
             self.process_finished(1, QProcess.CrashExit)
 
     def process_finished(self, exit_code, exit_status):
-        logger.debug(f"DEBUG: process_finished called with exit_code={exit_code}, exit_status={exit_status}")
+        logger.debug(f"process_finished called with exit_code={exit_code}, exit_status={exit_status}")
         self.start_btn.setEnabled(True)
         self.cancel_btn.setVisible(True)
         self.cancel_install_btn.setVisible(False)
-        logger.debug("DEBUG: Button states reset in process_finished")
+        logger.debug("Button states reset in process_finished")
 
         if exit_code == 0:
             self._safe_append_text("\nTTW installation completed successfully!")

@@ -359,6 +359,8 @@ class InstallationProgress:
             # Check for BSA building
             if 'bsa' in phase_lower or ('building' in phase_lower and self.phase == InstallationPhase.INSTALL):
                 return "Building BSAs"
+            if ('extract' in phase_lower or 'queu' in phase_lower) and self.phase == InstallationPhase.INSTALL:
+                return "Queuing Archives"
 
         # For FINALIZE and INITIALIZATION phases, prefer phase_name over the generic label.
         # INITIALIZATION cycles through many short sections ("Configuring Installer",

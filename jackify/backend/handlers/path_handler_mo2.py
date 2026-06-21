@@ -21,9 +21,10 @@ TARGET_EXECUTABLES_LOWER = [
     "skse64_loader.exe", "f4se_loader.exe", "nvse_loader.exe", "obse_loader.exe",
     "sfse_loader.exe", "obse64_loader.exe", "falloutnv.exe"
 ]
-STOCK_GAME_FOLDERS = ["Stock Game", "StockGame", "Game Root", "Stock Folder", "Skyrim Stock"]
-SDCARD_PREFIX = '/run/media/mmcblk0p1/'
-
+STOCK_GAME_FOLDERS = [
+    "Stock Game", "StockGame", "STOCK GAME", "Stock Game Folder",
+    "Game Root", "Stock Folder", "Skyrim Stock", "root/Skyrim Special Edition",
+]
 
 class PathHandlerMO2Mixin:
     """Mixin providing ModOrganizer.ini path updates and formatting."""
@@ -324,7 +325,8 @@ class PathHandlerMO2Mixin:
             return False
 
     def edit_binary_working_paths(self, modlist_ini_path: Path, modlist_dir_path: Path, modlist_sdcard: bool,
-                                  steam_libraries: Optional[List[Path]] = None) -> bool:
+                                  steam_libraries: Optional[List[Path]] = None,
+                                  compat_data_path: Optional[Path] = None) -> bool:
         """Update all binary paths and working directories in ModOrganizer.ini. Critical, regression-prone."""
         try:
             logger.debug(f"Updating binary paths and working directories in {modlist_ini_path} to use root: {modlist_dir_path}")
@@ -352,17 +354,32 @@ class PathHandlerMO2Mixin:
                             logger.debug(f"Extracted existing gamePath: {existing_game_path}, drive letter: {gamepath_drive_letter}")
                         break
             if modlist_sdcard and existing_game_path and existing_game_path.startswith('/run/media') and gamepath_line_index != -1:
-                sdcard_pattern = r'^/run/media/deck/[^/]+(/Games/.*)$'
-                match = re.match(sdcard_pattern, existing_game_path)
-                if match:
-                    stripped_path = match.group(1)
-                    windows_path = stripped_path.replace('/', '\\\\')
+                stripped_path = None
+                if compat_data_path:
+                    dosdevices_d = compat_data_path / "pfx" / "dosdevices" / "d:"
+                    if dosdevices_d.exists():
+                        try:
+                            d_target = os.readlink(str(dosdevices_d))
+                            d_mount = Path(d_target).as_posix().rstrip('/')
+                            if existing_game_path.startswith(d_mount):
+                                stripped_path = existing_game_path[len(d_mount):]
+                                logger.debug(f"Resolved SD card D: mount via dosdevices: {d_mount}")
+                        except Exception as e:
+                            logger.warning(f"Could not read dosdevices/d: symlink: {e}")
+                if stripped_path is None:
+                    # Strip the /run/media/deck/<volume> prefix to get the relative path
+                    sdcard_pattern = r'^/run/media/[^/]+/[^/]+(.+)$'
+                    m = re.match(sdcard_pattern, existing_game_path)
+                    if m:
+                        stripped_path = m.group(1)
+                    else:
+                        logger.warning(f"Could not strip SD card prefix from gamePath (no dosdevices symlink available): {existing_game_path}")
+                if stripped_path is not None:
+                    windows_path = stripped_path.lstrip('/').replace('/', '\\\\')
                     new_gamepath_value = f"D:\\\\{windows_path}"
                     new_gamepath_line = f"gamePath = @ByteArray({new_gamepath_value})\n"
                     logger.info(f"Updating gamePath for SD card: {lines[gamepath_line_index].strip()} -> {new_gamepath_line.strip()}")
                     lines[gamepath_line_index] = new_gamepath_line
-                else:
-                    logger.warning(f"SD card path doesn't match expected pattern: {existing_game_path}")
             game_path_updated = False
             binary_paths_updated = 0
             working_dirs_updated = 0
@@ -601,6 +618,12 @@ class PathHandlerMO2Mixin:
             if not m:
                 continue
             raw = m.group(1).strip()
+            ba = re.match(r'@ByteArray\((.+)\)$', raw)
+            if ba:
+                raw = ba.group(1).strip()
+            # Engine's RemapMO2File writes a raw Linux path directly
+            if raw.startswith('/'):
+                return raw
             # Expect Z:\\path\\... or D:\\path\\... (MO2 doubles backslashes in the file)
             drive_m = re.match(r'^([ZzDd]):(.+)$', raw)
             if not drive_m:

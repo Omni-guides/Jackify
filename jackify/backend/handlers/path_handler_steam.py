@@ -166,11 +166,11 @@ class PathHandlerSteamMixin:
             if r not in seen and r != main_resolved:
                 seen.add(r)
                 result.append(r)
-        for extra in (install_dir, download_dir):
-            mp = self.get_mountpoint(extra) if extra else None
-            if mp and mp not in seen:
-                seen.add(mp)
-                result.append(mp)
+        if download_dir:
+            p = str(Path(str(download_dir)).resolve())
+            if p not in seen:
+                seen.add(p)
+                result.append(p)
         return result
 
     @staticmethod

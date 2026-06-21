@@ -191,7 +191,7 @@ class TTWIntegrationMixin:
                     self.status_banner.setText("TTW integration completed successfully!")
                     self.status_banner.setStyleSheet(f"""
                         QLabel {{
-                            background-color: #28a745;
+                            background-color: #1a3040;
                             color: white;
                             font-weight: bold;
                             padding: 8px;

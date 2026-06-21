@@ -1,7 +1,8 @@
 """Execution workflow methods for InstallModlistScreen (Mixin)."""
 
 from pathlib import Path
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QMessageBox
 import logging
 import os
 
@@ -14,15 +15,107 @@ logger = logging.getLogger(__name__)
 
 class InstallWorkflowExecutionMixin:
     """Mixin containing install-run and manual-download dialog execution methods."""
+
+    def _session_engine_id(self) -> str:
+        """Return the engine to use for this install based on the install screen checkbox."""
+        return "clf3" if self.engine_checkbox.isChecked() else "jackify-engine"
+
+    def _ensure_clf3_installed(self) -> bool:
+        """
+        If CLF3 is already installed, return True immediately.
+        If not, show a download dialog and install it, returning True on success.
+        """
+        from jackify.backend.services.tool_registry import ToolRegistry
+        status = ToolRegistry().get_status("clf3")
+        if status and status.installed:
+            return True
+
+        reply = QMessageBox.question(
+            self,
+            "CLF3 Not Installed",
+            "The experimental engine (CLF3) is not installed.\n\n"
+            "Download and install it now to continue?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return False
+
+        return self._download_clf3_with_dialog()
+
+    def _download_clf3_with_dialog(self) -> bool:
+        """Download CLF3 in a modal dialog with a pulsing progress bar. Returns True on success."""
+
+        class _Clf3InstallThread(QThread):
+            finished_signal = Signal(bool, str)
+
+            def run(self):
+                try:
+                    ok, msg = ToolRegistry().install("clf3")
+                    self.finished_signal.emit(ok, msg)
+                except Exception as exc:
+                    self.finished_signal.emit(False, str(exc))
+
+        from jackify.backend.services.tool_registry import ToolRegistry
+        from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Installing CLF3")
+        dlg.setModal(True)
+        dlg.setMinimumWidth(360)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        label = QLabel("Downloading CLF3 (experimental engine)...")
+        label.setStyleSheet("color: #ccc; font-size: 13px;")
+        layout.addWidget(label)
+
+        bar = QProgressBar()
+        bar.setRange(0, 0)
+        bar.setTextVisible(False)
+        bar.setFixedHeight(6)
+        bar.setStyleSheet(f"""
+            QProgressBar {{ border: none; background-color: #333; border-radius: 3px; }}
+            QProgressBar::chunk {{ background-color: {JACKIFY_COLOR_BLUE}; border-radius: 3px; }}
+        """)
+        layout.addWidget(bar)
+
+        result = [False, ""]
+
+        thread = _Clf3InstallThread()
+
+        def on_done(ok: bool, msg: str):
+            result[0] = ok
+            result[1] = msg
+            dlg.accept()
+
+        thread.finished_signal.connect(on_done)
+        thread.start()
+        dlg.exec()
+        thread.wait(5000)
+
+        if not result[0]:
+            QMessageBox.critical(
+                self,
+                "CLF3 Install Failed",
+                f"Could not install CLF3:\n\n{result[1]}",
+            )
+            return False
+
+        label.setText("CLF3 installed.")
+        return True
+
     def validate_and_start_install(self):
         import time
         self._install_workflow_start_time = time.time()
-        logger.debug('DEBUG: validate_and_start_install called')
+
+        # Disable controls before processEvents to prevent double-click re-entry
+        self._disable_controls_during_operation()
 
         # Immediately show "Initialising" status to provide feedback
         self.progress_indicator.set_status("Initialising...", 0)
         from PySide6.QtWidgets import QApplication
-        QApplication.processEvents()  # Force UI update
+        QApplication.processEvents()
 
         # Reload config to pick up any settings changes made in Settings dialog
         self.config_handler.reload_config()
@@ -30,12 +123,18 @@ class InstallWorkflowExecutionMixin:
         # Check protontricks before proceeding
         if not self._check_protontricks():
             self.progress_indicator.reset()
+            self._enable_controls_after_operation()
             return
-
-        # Disable all controls during installation (except Cancel)
-        self._disable_controls_during_operation()
         
         try:
+            install_dir = self.install_dir_edit.text().strip()
+            downloads_dir = self.downloads_dir_edit.text().strip()
+
+            if self._session_engine_id() == "clf3" and not self._ensure_clf3_installed():
+                self.progress_indicator.reset()
+                self._enable_controls_after_operation()
+                return
+
             tab_index = self.source_tabs.currentIndex()
             install_mode = 'online'
             if tab_index == 1:  # .wabbajack File tab
@@ -70,8 +169,22 @@ class InstallWorkflowExecutionMixin:
                 
                 # CRITICAL: Use machine_url, NOT button text
                 modlist = machine_url
-            install_dir = self.install_dir_edit.text().strip()
-            downloads_dir = self.downloads_dir_edit.text().strip()
+
+                if self._session_engine_id() == "clf3":
+                    download_url = self.selected_modlist_info.get('download_url')
+                    if not download_url:
+                        self._abort_with_message(
+                            "warning",
+                            "Download URL Unavailable",
+                            "Could not determine the download URL for this modlist.\n\n"
+                            "Use the '.wabbajack File' tab to select a local file instead."
+                        )
+                        return
+                    from jackify.shared.paths import get_jackify_downloads_dir
+                    list_id = machine_url.split('/')[-1] if '/' in machine_url else machine_url
+                    wabbajack_local = str(get_jackify_downloads_dir() / f"{list_id}.wabbajack")
+                    modlist = wabbajack_local
+                    self._clf3_cdn_url = download_url
 
             # Get authentication token (OAuth or API key) with automatic refresh
             api_key, oauth_info = self.auth_service.get_auth_for_engine()
@@ -92,8 +205,6 @@ class InstallWorkflowExecutionMixin:
             logger.info("Authentication Status at Install Start")
             logger.info(f"Method: {auth_method or 'UNKNOWN'}")
             logger.info(f"Token length: {len(api_key)} chars")
-            if len(api_key) >= 8:
-                logger.info(f"Token (partial): {api_key[:4]}...{api_key[-4:]}")
 
             if auth_method == 'oauth':
                 token_handler = self.auth_service.token_handler
@@ -169,14 +280,14 @@ class InstallWorkflowExecutionMixin:
                 self._current_resolution = raw_resolution
                 success = self.resolution_service.save_resolution(resolution)
                 if success:
-                    logger.debug(f"DEBUG: Resolution saved successfully: {resolution}")
+                    logger.debug(f"Resolution saved successfully: {resolution}")
                 else:
-                    logger.debug("DEBUG: Failed to save resolution")
+                    logger.debug("Failed to save resolution")
             else:
                 # Clear saved resolution if "Leave unchanged" is selected
                 if self.resolution_service.has_saved_resolution():
                     self.resolution_service.clear_saved_resolution()
-                    logger.debug("DEBUG: Saved resolution cleared")
+                    logger.debug("Saved resolution cleared")
             
             ensure_flatpak_steam_filesystem_access(Path(install_dir))
 
@@ -227,7 +338,7 @@ class InstallWorkflowExecutionMixin:
                 if hasattr(self, 'selected_modlist_info') and self.selected_modlist_info:
                     readme_url = self.selected_modlist_info.get('readme_url')
                     game_name = self.selected_modlist_info.get('game', '')
-                    logger.debug(f"DEBUG: Detected game_name from selected_modlist_info: '{game_name}'")
+                    logger.debug(f"Detected game_name from selected_modlist_info: '{game_name}'")
                     
                     # Map game name to game type
                     game_mapping = {
@@ -247,12 +358,12 @@ class InstallWorkflowExecutionMixin:
                         "baldur's gate 3": 'bg3',
                     }
                     game_type = game_mapping.get(game_name.lower())
-                    logger.debug(f"DEBUG: Mapped game_name '{game_name}' to game_type: '{game_type}'")
+                    logger.debug(f"Mapped game_name '{game_name}' to game_type: '{game_type}'")
                     if not game_type:
                         game_type = 'unknown'
-                        logger.debug(f"DEBUG: Game type not found in mapping, setting to 'unknown'")
+                        logger.debug(f"Game type not found in mapping, setting to 'unknown'")
                 else:
-                    logger.debug(f"DEBUG: No selected_modlist_info found")
+                    logger.debug(f"No selected_modlist_info found")
                     game_type = 'unknown'
             
             # Store game type and name for later use
@@ -260,13 +371,13 @@ class InstallWorkflowExecutionMixin:
             self._current_game_name = game_name
             
             # Check if game is supported
-            logger.debug(f"DEBUG: Checking if game_type '{game_type}' is supported")
-            logger.debug(f"DEBUG: game_type='{game_type}', game_name='{game_name}'")
+            logger.debug(f"Checking if game_type '{game_type}' is supported")
+            logger.debug(f"game_type='{game_type}', game_name='{game_name}'")
             is_supported = self.wabbajack_parser.is_supported_game(game_type) if game_type else False
-            logger.debug(f"DEBUG: is_supported_game('{game_type}') returned: {is_supported}")
+            logger.debug(f"is_supported_game('{game_type}') returned: {is_supported}")
             
             if game_type and not is_supported:
-                logger.debug(f"DEBUG: Game '{game_type}' is not supported, showing dialog")
+                logger.debug(f"Game '{game_type}' is not supported, showing dialog")
                 from ..widgets.unsupported_game_dialog import UnsupportedGameDialog
                 dialog = UnsupportedGameDialog(self, game_name)
                 if not dialog.show_dialog(self, game_name):
@@ -366,7 +477,8 @@ class InstallWorkflowExecutionMixin:
                     self._record_pre_update_ini_snapshot(install_real)
             
             # CRITICAL: Final safety check - ensure online modlists use machine_url
-            if install_mode == 'online':
+            # CLF3 is exempt: it uses a pre-resolved local .wabbajack path, not machine_url
+            if install_mode == 'online' and self._session_engine_id() != "clf3":
                 if hasattr(self, 'selected_modlist_info') and self.selected_modlist_info:
                     expected_machine_url = self.selected_modlist_info.get('machine_url')
                     if expected_machine_url:
@@ -393,27 +505,31 @@ class InstallWorkflowExecutionMixin:
                     readme_url = readme_url.replace("/main/", "/blob/main/")
                     readme_url = readme_url.replace("/master/", "/blob/master/")
                 logger.info(f"Opening modlist readme: {readme_url}")
-                clean_env = {k: v for k, v in os.environ.items() if k not in ("LD_LIBRARY_PATH", "LD_PRELOAD")}
-                subprocess.Popen(["xdg-open", readme_url], env=clean_env)
+                _strip = {"LD_LIBRARY_PATH", "LD_PRELOAD", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "PYTHONPATH", "PYTHONHOME"}
+                clean_env = {k: v for k, v in os.environ.items() if k not in _strip}
+                subprocess.Popen(["xdg-open", readme_url], env=clean_env, start_new_session=True)
                 self._safe_append_text(
                     "Modlist readme opened in your browser. "
                     "Check it for any manual post-install steps before launching the game."
                 )
 
-            logger.debug(f'DEBUG: Calling run_modlist_installer with modlist={modlist}, install_dir={install_dir}, downloads_dir={downloads_dir}, install_mode={install_mode}')
+            logger.debug(f"Calling run_modlist_installer with modlist={modlist}, install_dir={install_dir}, downloads_dir={downloads_dir}, install_mode={install_mode}")
             self.run_modlist_installer(modlist, install_dir, downloads_dir, api_key, install_mode, oauth_info)
         except Exception as e:
-            logger.debug(f"DEBUG: Exception in validate_and_start_install: {e}")
-            import traceback
-            logger.debug(f"DEBUG: Traceback: {traceback.format_exc()}")
-            # Re-enable all controls after exception
+            logger.error("Unexpected error in validate_and_start_install", exc_info=True)
             self._enable_controls_after_operation()
             self.cancel_btn.setVisible(True)
             self.cancel_install_btn.setVisible(False)
-            logger.debug(f"DEBUG: Controls re-enabled in exception handler")
+            from jackify.shared.paths import get_jackify_logs_dir
+            from ..services.message_service import MessageService
+            MessageService.critical(
+                self,
+                "Installation Error",
+                f"Could not start the installation.\n\n{e}\n\n"
+                f"Details were written to the Jackify log at:\n{get_jackify_logs_dir()}",
+            )
 
     def run_modlist_installer(self, modlist, install_dir, downloads_dir, api_key, install_mode='online', oauth_info=None):
-        logger.debug('DEBUG: run_modlist_installer called - USING THREADED BACKEND WRAPPER')
         
         # Rotate log file at start of each workflow run (keep 5 backups)
         from jackify.backend.handlers.logging_handler import LoggingHandler
@@ -434,10 +550,15 @@ class InstallWorkflowExecutionMixin:
         self._downloads_dir = downloads_dir
         self.install_thread = InstallerThread(
             modlist, install_dir, downloads_dir, api_key, self.modlist_name_edit.text().strip(), install_mode,
-            progress_state_manager=self.progress_state_manager,  # R&D: Pass progress state manager
-            auth_service=self.auth_service,  # Fix Issue #127: Pass auth_service for Premium detection diagnostics
-            oauth_info=oauth_info,  # Pass OAuth state for auto-refresh
+            progress_state_manager=self.progress_state_manager,
+            auth_service=self.auth_service,
+            oauth_info=oauth_info,
+            game_type=getattr(self, '_current_game_type', None),
+            clf3_cdn_url=getattr(self, '_clf3_cdn_url', None),
+            engine_id=self._session_engine_id(),
         )
+        self._clf3_cdn_url = None
+        self._active_session_engine_id = self._session_engine_id()
         self.install_thread.output_received.connect(self.on_installation_output)
         self.install_thread.progress_received.connect(self.on_installation_progress)
         self.install_thread.progress_updated.connect(self.on_progress_updated)  # R&D: Connect progress update

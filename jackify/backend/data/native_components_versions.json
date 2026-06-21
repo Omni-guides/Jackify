@@ -1,0 +1,57 @@
+{
+  "_comment": "Version-pinned URLs and COM data for native component installer. Update per release.",
+  "dotnet6": {
+    "x86_zip_url": "https://dotnetcli.azureedge.net/dotnet/Runtime/6.0.36/dotnet-runtime-6.0.36-win-x86.zip",
+    "x64_zip_url": "https://dotnetcli.azureedge.net/dotnet/Runtime/6.0.36/dotnet-runtime-6.0.36-win-x64.zip"
+  },
+  "dotnet7": {
+    "x86_zip_url": "https://dotnetcli.azureedge.net/dotnet/Runtime/7.0.20/dotnet-runtime-7.0.20-win-x86.zip",
+    "x64_zip_url": "https://dotnetcli.azureedge.net/dotnet/Runtime/7.0.20/dotnet-runtime-7.0.20-win-x64.zip"
+  },
+  "dotnet8": {
+    "x86_zip_url": "https://dotnetcli.azureedge.net/dotnet/Runtime/8.0.12/dotnet-runtime-8.0.12-win-x86.zip",
+    "x64_zip_url": "https://dotnetcli.azureedge.net/dotnet/Runtime/8.0.12/dotnet-runtime-8.0.12-win-x64.zip"
+  },
+  "dotnet9": {
+    "x86_zip_url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/9.0.16/dotnet-runtime-9.0.16-win-x86.zip",
+    "x64_zip_url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/9.0.16/dotnet-runtime-9.0.16-win-x64.zip"
+  },
+  "dotnet10": {
+    "x86_zip_url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.8/dotnet-runtime-10.0.8-win-x86.zip",
+    "x64_zip_url": "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.8/dotnet-runtime-10.0.8-win-x64.zip"
+  },
+  "dotnetdesktop6": {
+    "x86_zip_url": "https://dotnetcli.azureedge.net/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x86.zip",
+    "x64_zip_url": "https://dotnetcli.azureedge.net/dotnet/WindowsDesktop/6.0.36/windowsdesktop-runtime-6.0.36-win-x64.zip"
+  },
+  "dotnetdesktop9": {
+    "x86_zip_url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/9.0.16/windowsdesktop-runtime-9.0.16-win-x86.zip",
+    "x64_zip_url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/9.0.16/windowsdesktop-runtime-9.0.16-win-x64.zip"
+  },
+  "dotnetdesktop10": {
+    "x86_zip_url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.8/windowsdesktop-runtime-10.0.8-win-x86.zip",
+    "x64_zip_url": "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.8/windowsdesktop-runtime-10.0.8-win-x64.zip"
+  },
+  "xact_clsids": {
+    "xactengine2_0.dll": ["{0AA000AA-F404-11D9-BD7A-0010DC4F8F81}"],
+    "xactengine2_4.dll": ["{BC3E0FC6-2E0D-4C45-BC61-D9C328319BD8}"],
+    "xactengine2_7.dll": ["{CD0D66EC-8057-43F5-ACBD-66DFB36FD78C}"],
+    "xactengine2_9.dll": ["{343E68E6-8F82-4A8D-A2DA-6E9A944B378C}"],
+    "xactengine3_0.dll": ["{3B80EE2A-B0F5-4780-9E30-90CB39685B03}"],
+    "xactengine3_1.dll": ["{962F5027-99BE-4692-A468-85802CF8DE61}"],
+    "xactengine3_2.dll": ["{D3332F02-3DD0-4DE9-9AEC-20D85C4111B6}"],
+    "xactengine3_3.dll": ["{94C1AFFA-66E7-4961-9521-CFDEF3128D4F}"],
+    "xactengine3_4.dll": ["{0977D092-2D95-4E43-8D42-9DDCC2545ED5}"],
+    "xactengine3_5.dll": ["{074B110F-7F58-4743-AEA5-12F15B5074ED}"],
+    "xactengine3_6.dll": ["{248D8A3B-6256-44D3-A018-2AC96C459F47}"],
+    "xactengine3_7.dll": ["{BCC782BC-6492-4C22-8C35-F5D72FE73C6E}"],
+    "xaudio2_0.dll": ["{FAC23F48-31F5-45A8-B49B-5225D61401AA}", "{6F6EA3A9-2CF5-41CF-91C1-2170B1540063}", "{C0C56F46-29B1-44E9-9939-A32CE86867E2}"],
+    "xaudio2_1.dll": ["{E21A7345-EB21-468E-BE50-804DB97CF708}", "{F4769300-B949-4DF9-B333-00D33932E9A6}", "{C1E3F122-A2EA-442C-854F-20D98F8357A1}"],
+    "xaudio2_2.dll": ["{B802058A-464A-42DB-BC10-B650D6F2586A}", "{629CF0DE-3ECC-41E7-9926-F7E43EEBEC51}", "{F5CA7B34-8055-42C0-B836-216129EB7E30}"],
+    "xaudio2_3.dll": ["{4C5E637A-16C7-4DE3-9C46-5ED22181962D}", "{9CAB402C-1D37-44B4-886D-FA4F36170A4C}", "{E180344B-AC83-4483-959E-18A5C56A5E19}"],
+    "xaudio2_4.dll": ["{03219E78-5BC3-44D1-B92E-F63D89CC6526}", "{8BB7778B-645B-4475-9A73-1DE3170BD3AF}", "{C7338B95-52B8-4542-AA79-42EB016C8C1C}"],
+    "xaudio2_5.dll": ["{4C9B6DDE-6809-46E6-A278-9B6A97588670}", "{D06DF0D0-8518-441E-822F-5451D5C595B8}", "{2139E6DA-C341-4774-9AC3-B4E026347F64}"],
+    "xaudio2_6.dll": ["{3EDA9B49-2085-498B-9BB2-39A6778493DE}", "{CECEC95A-D894-491A-BEE3-5E106FB59F2D}", "{E48C5A3F-93EF-43BB-A092-2C7CEB946F27}"],
+    "xaudio2_7.dll": ["{5A508685-A254-4FBA-9B82-9A24B00306AF}", "{6A93130E-1D53-41D1-A9CF-E758800BB179}", "{CAC1105F-619B-4D04-831A-44E1CBF12D57}"]
+  }
+}

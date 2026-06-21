@@ -1,5 +1,57 @@
 # Jackify Changelog
 
+## v0.7 - Tools Hub, Engine Choice, NXM Link Handling, Native Component Install, NSF/CSF Support
+**Release Date:** TBD
+
+### Engine Choice and Tools Hub
+- jackify-engine is no longer stored in the Jackify repository. It is fetched from GitHub during the AppImage build and can be updated independently via the Jackify Tools Hub without requiring a new Jackify release.
+- EXPERIMENTAL: Choose between jackify-engine (hash-matched with Wabbajack, proven) and CLF3 (faster install, not hash-matched with Wabbajack). Use the **Use Experimental Engine** checkbox on the Install Modlist screen, or switch permanently via the Tools Hub.
+- A new Tools Hub available from Additional Tasks: download, update, downgrade a growing list of additional tools such as TTW Linux Installer and Radium Textures, as well as install engines.
+
+### NXM Link Handling
+- Jackify can become the registered nxm:// handler for your system.
+- Clicking a Nexus "Mod Manager Download" or "Vortex" button link while MO2 is open routes the download directly to MO2 in your active modlist prefix.
+- If MO2 is not running, the link opens Jackify to a standalone dialog to select which modlist to send the download to.
+
+### .NET Script Framework (NSF) / Custom Skills Framework (CSF) Support
+- Skyrim 1.5.97 Modlists using NetScriptFramework and Custom Skills Framework are now detected automatically. dotnet48 is installed via the bundled winetricks verb after Wine Mono is removed, then the prefix is configured so CSF's menu loads correctly.
+
+### Native Wine Component Installer
+- Direct-source installation for d3dcompiler, xact, vcrun2022, vcrun2012, and dotnet 6/7/8. Components are downloaded directly from Microsoft/Mozilla and extracted or installed.
+- winetricks and protontricks remain as fallback for any component not handled natively. All being well, first step towards removing the hard requirement of protontricks.
+
+### Install Verification
+- After install and configure workflows complete, Jackify verifies that the Wine prefix, Steam shortcut, and Proton compatibility tool are all correctly in place. Results are shown in the success dialog with a breakdown of any issues found. Up to 100 checks are performed depending on the game type and modlist contents.
+- Verification can be run on an existing Modlist at any time from the Additional Tools menu.
+
+### Diagnostics Bundle
+- Export a diagnostics bundle (logs, system info, config summary) from Additional Tasks. Attach to bug reports to speed up support.
+
+### GOG and Epic Games via Heroic
+- Both jackify-engine and Jackify should now detect games installed via Heroic Launcher (GOG and Epic), including both native and Flatpak Heroic installations - note that the Modlist itself HAS to support the GOG/Epic version of the base game, and not many do - there is nothing I can do about this.
+- GOG/Epic versions of FO3/FNV should now be usable for TTW generation.
+
+### Fixes
+- Configure Existing Modlist now correctly updates `STEAM_COMPAT_MOUNTS` in your Steam shortcut's launch options to include MO2's download_directory so that it is accessible inside MO2.
+- Jackify Download Manager manual download columns are now sortable, including numeric sort for file sizes.
+- SD card game path detection no longer incorrectly requires a `/Games/` component in the path.
+- Download directory should now correctly show the in-Proton path and not the Linux FS path, which was corrupting the download_directory path in MO2.
+- Proton version selection now scans installed versions dynamically. Proton 11 (and any future version) is found and ranked correctly.
+- Steam grid artwork: if a modlist ships a partial SteamIcons directory, missing slots are now filled from SteamGridDB rather than left blank.
+- FO4VR: vcrun2012 applied automatically during tool configuration, as per community suggestion.
+- Fallout 4: Creation Kit missing-files error is now detected correctly, rather than stating Skyrim CK is missing.
+- Improved cancellation during Wine component installation. Now terminates winetricks and Wine subprocesses immediately rather than waiting for them to finish.
+- Fixed: Manual downloads could open the same download link a second time within seconds if the file was still being written to disk when the watcher first detected it.
+- Fixed: Files that finished downloading were sometimes not picked up by the watch folder scanner, leaving items stuck on "pending" and requiring manual intervention.
+- Added a "Scan Now" button to the manual download dialog to force an immediate re-scan of the watch directory without waiting for the next automatic poll.
+
+### Engine (0.5.6)
+- Heroic Launcher game detection (GOG + Epic, native and Flatpak).
+- Fixed case-duplicate archive entries causing hash-mismatch failures on Linux when archives contain files differing only in case.
+- Fixed garbled progress lines where tails of longer messages bled through on carriage-return output.
+
+---
+
 ## v0.6.0.1 - Hotfix
 **Release Date:** 24/04/26
 
@@ -41,7 +93,7 @@
 **Release Date:** 29/03/26
 
 - Fixed self-update failing silently due to the downloaded archive overwriting the extraction target before the update helper could apply it.
-- Engine updated to 0.5.3. NAME_MAX pre-flight check removed — was incorrectly blocking installs on standard filesystems. eCryptFS/fscrypt users still receive an error at the point of failure.
+- Engine updated to 0.5.3. NAME_MAX pre-flight check removed (was incorrectly blocking installs on standard filesystems). eCryptFS/fscrypt users still receive an error at the point of failure.
 - Fixed Google Drive downloads failing. The Wabbajack CDN proxy was returning a cached broken response for some files; the engine now detects the hash mismatch, retries direct, and constructs a `drive.usercontent.google.com` URL with `confirm=t` to bypass the virus-scan warning page.
 - Fixed focus stealing from other windows during the Wine component install phase.
 - Fixed a crash on window close from a leaked focus-reclaim timer.

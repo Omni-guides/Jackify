@@ -153,7 +153,7 @@ class SettingsDialogTabsMixin:
         api_key = self.config_handler.get_api_key()
         self.api_key_edit.setText(api_key if api_key else "")
         self.api_key_edit.setToolTip("Your Nexus API Key (legacy authentication method)")
-        self.api_key_edit.textChanged.connect(self._on_api_key_changed)
+        self.api_key_edit.editingFinished.connect(self._on_api_key_changed)
         self.api_show_btn = QToolButton()
         self.api_show_btn.setCheckable(True)
         self.api_show_btn.setIcon(QIcon.fromTheme("view-visible"))
@@ -296,6 +296,20 @@ class SettingsDialogTabsMixin:
         )
         self.force_github_updates_checkbox.setStyleSheet("color: #fff;")
         component_layout.addWidget(self.force_github_updates_checkbox)
+
+        self.clf3_default_checkbox = QCheckBox("Use CLF3 as default install engine")
+        self.clf3_default_checkbox.setToolTip(
+            "Use CLF3 (SulfurNitride) as the default engine for all installs. "
+            "CLF3 will be downloaded automatically if not already installed. "
+            "You can still override this per-install on the Install screen."
+        )
+        self.clf3_default_checkbox.setStyleSheet("color: #fff;")
+        try:
+            from jackify.backend.services.tool_registry import get_active_engine_id
+            self.clf3_default_checkbox.setChecked(get_active_engine_id() == "clf3")
+        except Exception:
+            pass
+        component_layout.addWidget(self.clf3_default_checkbox)
 
         advanced_layout.addWidget(component_group)
         advanced_layout.addStretch()

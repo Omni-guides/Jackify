@@ -5,7 +5,6 @@ from .screen_focus_reclaim import FocusReclaimMixin, STEAM_RESTART_SENTINEL
 from PySide6.QtGui import QFont
 from jackify.frontends.gui.services.message_service import MessageService
 from jackify.shared.errors import manual_steps_incomplete, configuration_failed
-from jackify.frontends.gui.dialogs import SuccessDialog
 from jackify.backend.handlers.validation_handler import ValidationHandler
 from jackify.backend.models.modlist import ModlistContext
 from pathlib import Path
@@ -22,7 +21,8 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
 
     def on_configuration_progress(self, progress_msg):
         """Handle progress updates from modlist configuration"""
-        self._safe_append_text(progress_msg)
+        if not (progress_msg.startswith("[NATIVE_DL] ") or progress_msg.startswith("[NATIVE_INSTALL] ") or progress_msg.startswith("[NATIVE_WAIT] ")):
+            self._safe_append_text(progress_msg)
         self._handle_post_install_progress(progress_msg)
 
     def show_steam_restart_progress(self, message):
@@ -90,7 +90,6 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                 if self._show_somnium_guidance:
                     self._show_somnium_post_install_guidance()
                 
-                # Show celebration SuccessDialog after the entire workflow
                 if not hasattr(self, '_install_workflow_start_time'):
                     self._install_workflow_start_time = time.time()
                 time_taken = int(time.time() - self._install_workflow_start_time)
@@ -147,15 +146,16 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
 
                 if vnv_automation_running:
                     self._cleanup_config_thread()
-                    # Store success dialog params for later (after VNV automation completes)
                     self._pending_success_dialog_params = {
                         'modlist_name': modlist_name,
+                        'workflow_type': "update" if getattr(self, "_is_update_install", False) else "install",
                         'time_taken': time_str,
                         'game_name': game_name,
-                        'enb_detected': enb_detected
+                        'enb_detected': enb_detected,
+                        'install_dir': install_dir,
+                        'game_type': getattr(self, '_current_game_type', 'unknown') or 'unknown',
+                        'appid': getattr(self, '_current_appid', '') or '',
                     }
-                    # Keep post-install feedback active during VNV automation
-                    # Don't show success dialog yet - will be shown in _on_vnv_complete
                     return
 
                 # No VNV automation - end post-install feedback now
@@ -167,29 +167,19 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                     except Exception as e:
                         logger.warning("Update mode verify: failed post-config INI verification: %s", e)
 
-                # Clear Activity window before showing success dialog
-                self.file_progress_list.clear()
-
-                # Show normal success dialog
                 workflow_type = "update" if getattr(self, "_is_update_install", False) else "install"
-                success_dialog = SuccessDialog(
-                    modlist_name=modlist_name,
-                    workflow_type=workflow_type,
-                    time_taken=time_str,
-                    game_name=game_name,
-                    parent=self
+                game_type_for_verify = getattr(self, '_current_game_type', 'unknown') or 'unknown'
+                self._run_verifier_then_show_success(
+                    install_dir=install_dir,
+                    game_type=game_type_for_verify,
+                    success_params={
+                        'modlist_name': modlist_name,
+                        'workflow_type': workflow_type,
+                        'time_taken': time_str,
+                        'game_name': game_name,
+                        'enb_detected': enb_detected,
+                    },
                 )
-                success_dialog.show()
-
-                # Show ENB Proton dialog if ENB was detected (use stored detection result, no re-detection)
-                if enb_detected:
-                    try:
-                        from ..dialogs.enb_proton_dialog import ENBProtonDialog
-                        enb_dialog = ENBProtonDialog(modlist_name=modlist_name, parent=self)
-                        enb_dialog.exec()  # Modal dialog - blocks until user clicks OK
-                    except Exception as e:
-                        # Non-blocking: if dialog fails, just log and continue
-                        logger.warning(f"Failed to show ENB dialog: {e}")
             elif hasattr(self, '_manual_steps_retry_count') and self._manual_steps_retry_count >= 3:
                 # Max retries reached - show failure message
                 self._end_post_install_feedback(False)
@@ -426,8 +416,7 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                 'modlist_source': None,
                 'resolution': getattr(self, '_current_resolution', None),
                 'skip_confirmation': True,
-                'manual_steps_completed': True,  # Mark as completed since automated prefix is done
-                'appid': new_appid,  # Use the NEW AppID from automated prefix creation
+                'appid': new_appid,
                 'game_name': self.context.get('game_name', 'Skyrim Special Edition') if hasattr(self, 'context') else 'Skyrim Special Edition'
             }
             self.context = updated_context  # Ensure context is always set
@@ -490,15 +479,9 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                         def completion_callback(success, message, modlist_name, enb_detected=False):
                             self.configuration_complete.emit(success, message, modlist_name, enb_detected)
                             
-                        def manual_steps_callback(modlist_name, retry_count):
-                            # Should not reach here -- prefix creation already complete
-                            self.progress_update.emit(f"Unexpected manual steps callback for {modlist_name}")
-                        
-                        # Call the service method for post-Steam configuration
                         result = modlist_service.configure_modlist_post_steam(
                             context=modlist_context,
                             progress_callback=progress_callback,
-                            manual_steps_callback=manual_steps_callback,
                             completion_callback=completion_callback
                         )
                         
@@ -533,8 +516,8 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                 'modlist_source': None,
                 'resolution': getattr(self, '_current_resolution', None),
                 'skip_confirmation': True,
-                'manual_steps_completed': True,  # Mark as completed
-                'appid': new_appid  # Use the NEW AppID from Steam
+                'appid': new_appid
+
             }
             
             logger.debug(f"Updated context with new AppID: {new_appid}")
@@ -624,15 +607,9 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                     def completion_callback(success, message, modlist_name):
                         self.configuration_complete.emit(success, message, modlist_name)
                         
-                    def manual_steps_callback(modlist_name, retry_count):
-                        # Should not reach here -- manual steps already complete
-                        self.progress_update.emit(f"Unexpected manual steps callback for {modlist_name}")
-                    
-                    # Call the new service method for post-Steam configuration
                     result = modlist_service.configure_modlist_post_steam(
                         context=modlist_context,
                         progress_callback=progress_callback,
-                        manual_steps_callback=manual_steps_callback,
                         completion_callback=completion_callback
                     )
                     

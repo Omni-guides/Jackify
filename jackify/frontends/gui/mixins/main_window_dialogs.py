@@ -126,8 +126,39 @@ class MainWindowDialogsMixin:
             start_new_session=True
         )
 
+    def _on_nxm_url_received(self, url: str) -> None:
+        """Handle an incoming nxm:// URL from the IPC server or initial launch."""
+        try:
+            from jackify.backend.services.nxm_url import parse_nxm_url
+            from jackify.backend.services import nxm_session
+            from jackify.tools.verify_install import discover_installed_modlists
+            from jackify.frontends.gui.dialogs.nxm_download_dialog import NxmDownloadDialog
+
+            nxm = parse_nxm_url(url)
+            modlists = discover_installed_modlists()
+            if not modlists:
+                from jackify.frontends.gui.dialogs.nxm_download_dialog import show_no_modlists_error
+                show_no_modlists_error()
+                return
+
+            # Prefer the actively running MO2 instance; fall back to session memory.
+            auto_start = nxm_session.detect_active_mo2_modlist(modlists)
+            if auto_start is None:
+                remembered = nxm_session.get_remembered_modlist()
+                if remembered:
+                    auto_start = next((m for m in modlists if m["name"] == remembered), None)
+
+            dlg = NxmDownloadDialog(nxm, modlists, parent=self, auto_start_modlist=auto_start)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+        except Exception as e:
+            logger.warning("Failed to handle NXM URL %r: %s", url, e)
+
     def cleanup_processes(self):
         try:
+            if hasattr(self, '_nxm_ipc_server') and self._nxm_ipc_server is not None:
+                self._nxm_ipc_server.stop()
             if hasattr(self, '_update_thread') and self._update_thread is not None:
                 self._update_thread = self._stop_qthread(self._update_thread, "_update_thread")
             if hasattr(self, '_gallery_cache_preload_thread') and self._gallery_cache_preload_thread is not None:

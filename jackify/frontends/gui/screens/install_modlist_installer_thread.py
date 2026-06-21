@@ -12,7 +12,7 @@ from typing import Optional
 from PySide6.QtCore import QThread, Signal
 import logging
 
-from jackify.backend.utils.engine_error_parser import parse_engine_error_line, error_from_exit_code
+from jackify.backend.utils.engine_error_parser import parse_engine_error_line, error_from_exit_code, nexus_url_from_error_line
 from jackify.backend.utils.cc_content_detector import is_cc_content_error, extract_cc_filename, is_creation_kit_missing_error
 from jackify.shared.errors import JackifyError, cc_content_missing, creation_kit_missing
 
@@ -35,14 +35,17 @@ class InstallerThread(QThread):
 
     def __init__(self, modlist, install_dir, downloads_dir, api_key, modlist_name,
                  install_mode='online', progress_state_manager=None, auth_service=None,
-                 oauth_info=None):
+                 oauth_info=None, game_type=None, clf3_cdn_url=None, engine_id=None):
         super().__init__()
         self.modlist = modlist
         self.install_dir = install_dir
         self.downloads_dir = downloads_dir
         self.api_key = api_key
         self.modlist_name = modlist_name
+        self.game_type = game_type
         self.install_mode = install_mode
+        self.clf3_cdn_url = clf3_cdn_url
+        self.engine_id = engine_id
         self.cancelled = False
         self.process_manager = None
         self.progress_state_manager = progress_state_manager
@@ -126,16 +129,58 @@ class InstallerThread(QThread):
 
         return False
 
+    # CLF3 tracing line patterns (after ANSI stripping, from tracing_subscriber::fmt default format)
+    _CLF3_TRACING_INFO_RE = re.compile(
+        r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+(INFO|DEBUG|TRACE)\s+'
+    )
+    _CLF3_TRACING_WARN_RE = re.compile(
+        r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+(WARN|ERROR)\s+\S+:\s+(.*)'
+    )
+    _CLF3_PHASE_HEADER_RE = re.compile(r'^=== .+ ===$')
+    _CLF3_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+
     def _read_stderr(self):
+        import time as _time
+        _stderr_log = os.environ.get("JACKIFY_CLF3_VERBOSE")
+        _stderr_fh = open("/tmp/clf3_stderr.log", "w", encoding="utf-8") if _stderr_log else None
+        _last_clf3_phase: str = ''
         try:
             for raw in self.process_manager.proc.stderr:
                 line = raw.decode('utf-8', errors='replace').strip()
                 if not line:
                     continue
                 logger.debug(f"Engine stderr: {line}")
+                if _stderr_fh:
+                    _stderr_fh.write(line + "\n")
+                    _stderr_fh.flush()
                 self._raw_stderr_lines.append(line)
                 if len(self._raw_stderr_lines) > 40:
                     self._raw_stderr_lines.pop(0)
+
+                # CLF3: JSON events are on stdout; human-readable detail and tracing go to stderr.
+                # Forward phase headers and log() messages to Show Details.
+                # Verbose INFO/DEBUG/TRACE tracing is dropped; WARN/ERROR is shown stripped.
+                clf3_parser = getattr(self, '_clf3_parser', None)
+                if clf3_parser is not None:
+                    clean = self._CLF3_ANSI_RE.sub('', line)
+                    error = parse_engine_error_line(clean)
+                    if error and self.last_error is None:
+                        self.last_error = error
+                    warn_m = self._CLF3_TRACING_WARN_RE.match(clean)
+                    if warn_m:
+                        self.output_received.emit(f"[WARN] {warn_m.group(2)}\n")
+                    elif not self._CLF3_TRACING_INFO_RE.match(clean):
+                        if self._CLF3_PHASE_HEADER_RE.match(clean):
+                            if clean != _last_clf3_phase:
+                                _last_clf3_phase = clean
+                                self.output_received.emit(clean + '\n')
+                        else:
+                            self.output_received.emit(clean + '\n')
+                    _act = getattr(self, '_clf3_last_activity', None)
+                    if _act is not None:
+                        _act[0] = _time.monotonic()
+                    continue
+
                 error = parse_engine_error_line(line)
                 if error and self.last_error is None:
                     self.last_error = error
@@ -149,9 +194,13 @@ class InstallerThread(QThread):
                     if self.last_error is None and is_cc_content_error(line):
                         self.last_error = cc_content_missing(extract_cc_filename(line) or "")
                     if self.last_error is None and is_creation_kit_missing_error(line):
-                        self.last_error = creation_kit_missing()
+                        self.last_error = creation_kit_missing(self.game_type)
         except Exception as e:
             logger.debug(f"Stderr reader error: {e}")
+        finally:
+            if _stderr_fh:
+                _stderr_fh.close()
+                logger.info("CLF3 stderr log written to /tmp/clf3_stderr.log")
 
     def _remember_stdout_line(self, line: str) -> None:
         """Keep a bounded tail of meaningful stdout lines for failure diagnostics."""
@@ -214,6 +263,9 @@ class InstallerThread(QThread):
         """Build a user-facing failure message with the best available root cause."""
         root_cause = self._extract_root_cause_line()
         if root_cause:
+            nexus_url = nexus_url_from_error_line(root_cause)
+            if nexus_url:
+                root_cause = f"{root_cause}\nMod page: {nexus_url}"
             if self._resource_limit_hint and "file descriptor" not in root_cause.lower():
                 return f"{root_cause}\n\nPossible contributing issue: {self._resource_limit_hint}"
             return root_cause
@@ -251,42 +303,195 @@ class InstallerThread(QThread):
             "Install failed, but the engine did not provide a specific error line."
         )
 
+    def _run_clf3_heartbeat(self, last_activity: list, stop: threading.Event) -> None:
+        """Emit periodic 'finalising' updates to Show Details when stdout goes silent.
+
+        Fires once when silence exceeds THRESHOLD, then repeats every REPEAT seconds
+        of continued silence — so extended waits remain visible to the user.
+        Samples /proc/<pid>/io to show write throughput, giving the user concrete
+        evidence that extraction is progressing even when CLF3 emits no output.
+        Resets when real output arrives so a new silence period can trigger it again.
+        """
+        import copy
+        import time as _time
+        THRESHOLD = 8.0
+        INTERVAL = 5.0
+        REPEAT = 30.0
+        last_heartbeat_at = [0.0]
+        while not stop.wait(INTERVAL):
+            proc = self.process_manager.proc if self.process_manager else None
+            if not proc or proc.poll() is not None:
+                break
+            now = _time.monotonic()
+            elapsed_since_activity = now - last_activity[0]
+            if elapsed_since_activity < THRESHOLD:
+                continue
+            # Allow first fire when silence starts; then only re-fire every REPEAT seconds.
+            already_fired = last_heartbeat_at[0] >= last_activity[0]
+            if already_fired and (now - last_heartbeat_at[0]) < REPEAT:
+                continue
+            clf3_parser = getattr(self, '_clf3_parser', None)
+            phase = (clf3_parser.get_state().phase_name if clf3_parser else None) or 'Working'
+            wait_secs = int(elapsed_since_activity)
+            # Sample write_bytes to show active extraction throughput.
+            # The N/N dispatch counter fires when all archives are handed to worker threads;
+            # the workers themselves continue decompressing in parallel after that point.
+            # /proc/<pid>/io write_bytes confirms real I/O is happening.
+            if not already_fired:
+                total = clf3_parser.get_state().phase_max_steps if clf3_parser else 0
+                archive_str = f"{total} archives" if total else "archives"
+                self.output_received.emit(f"[Decompressing {archive_str}: workers running...]\n")
+            if clf3_parser:
+                from jackify.shared.progress_models import InstallationPhase
+                current = clf3_parser.get_state()
+                heartbeat_state = copy.copy(current)
+                heartbeat_state.phase = InstallationPhase.FINALIZE
+                heartbeat_state.phase_name = "Decompressing"
+                heartbeat_state.phase_step = 0
+                heartbeat_state.phase_max_steps = 0
+                heartbeat_state.overall_percent = 99.0
+                heartbeat_state.message = "Decompressing archives..."
+                self.progress_updated.emit(heartbeat_state)
+            last_heartbeat_at[0] = now
+
+    def _run_clf3_stdout_loop(self, last_activity: list) -> None:
+        """Read CLF3 stdout line-by-line and forward to Show Details.
+
+        JSON progress events (keyed on "type") and plain human-readable text both arrive
+        on stdout. Manual download events (keyed on "event") also appear on stdout.
+
+        Extraction dispatch counters ("Extracting: N/M") are dropped — named per-archive
+        completion lines already cover this information.
+        Directive counters ("Processing: N/M") are buffered; only the final value is
+        emitted when the next non-counter line arrives, avoiding a 1315-line flood.
+        """
+        import time as _time
+        _COUNTER_LINE_RE = re.compile(r'^(?:Extracting|Building BSA|DDS Transform): \d+/\d+$')
+        _PROCESSING_RE = re.compile(r'^Processing: \d+/\d+$')
+        _PHASE_HEADER_RE = re.compile(r'^=== .+ ===$')
+        _buffered_processing = None
+        _last_phase_header: str = ''
+        ansi_escape = re.compile(rb'\x1b\[[0-9;?]*[ -/]*[@-~]')
+        for raw in self.process_manager.proc.stdout:
+            if self.cancelled:
+                self.cancel()
+                break
+            decoded = ansi_escape.sub(b'', raw).decode('utf-8', errors='replace').rstrip('\r\n')
+            stripped = decoded.strip()
+            if not stripped:
+                continue
+            last_activity[0] = _time.monotonic()
+            self._remember_stdout_line(decoded)
+            if self._handle_engine_event(decoded):
+                continue
+            if stripped.startswith('{'):
+                clf3_parser = getattr(self, '_clf3_parser', None)
+                if clf3_parser and clf3_parser.process_line(stripped):
+                    state = clf3_parser.get_state()
+                    self.progress_updated.emit(state)
+                    msg = state.message
+                    if msg.startswith('Extracting ') and '(' in msg and state.phase_name == "Extracting":
+                        # Relabel as "Queuing" — the N/M counter tracks archive dispatch
+                        # to worker threads, not completion of decompression.
+                        self.output_received.emit(msg.replace('Extracting ', 'Queuing ', 1) + '\n')
+                continue
+            if _COUNTER_LINE_RE.match(stripped):
+                continue
+            if _PROCESSING_RE.match(stripped):
+                _buffered_processing = stripped
+                continue
+            if _buffered_processing is not None:
+                self.output_received.emit(_buffered_processing + '\n')
+                _buffered_processing = None
+            if _PHASE_HEADER_RE.match(stripped):
+                if stripped == _last_phase_header:
+                    continue
+                _last_phase_header = stripped
+            self.output_received.emit(decoded + '\n')
+        if _buffered_processing is not None:
+            self.output_received.emit(_buffered_processing + '\n')
+
     def run(self):
         try:
-            from jackify.backend.core.modlist_operations import get_jackify_engine_path
-            engine_path = get_jackify_engine_path()
-            if not os.path.exists(engine_path):
-                error_msg = f"Engine not found at: {engine_path}"
-                logger.debug(f"DEBUG: {error_msg}")
+            from jackify.backend.services.engine_invoker import (
+                get_active_engine_id, get_engine_path, build_install_command,
+                resolve_game_dir, resolve_game_location,
+            )
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            config_handler = ConfigHandler()
+
+            engine_id = self.engine_id if self.engine_id else get_active_engine_id()
+            engine_path = get_engine_path(engine_id)
+            if not engine_path or not os.path.exists(engine_path):
+                error_msg = f"Engine not found: {engine_id} ({engine_path or 'path unknown'})"
+                logger.error(error_msg)
                 self.installation_finished.emit(False, error_msg)
                 return
             if not os.access(engine_path, os.X_OK):
                 error_msg = f"Engine is not executable: {engine_path}"
-                logger.debug(f"DEBUG: {error_msg}")
+                logger.error(error_msg)
                 self.installation_finished.emit(False, error_msg)
                 return
-            logger.debug(f"DEBUG: Using engine at: {engine_path}")
-            if self.install_mode == 'file':
-                cmd = [engine_path, "install", "--show-file-progress", "-w", self.modlist, "-o", self.install_dir, "-d", self.downloads_dir]
-            else:
-                cmd = [engine_path, "install", "--show-file-progress", "-m", self.modlist, "-o", self.install_dir, "-d", self.downloads_dir]
-            from jackify.backend.handlers.config_handler import ConfigHandler
-            config_handler = ConfigHandler()
+
+            logger.debug(f"Using engine {engine_id} at: {engine_path}")
+
             debug_mode = config_handler.get('debug_mode', False)
-            if debug_mode:
-                cmd.append('--debug')
-                logger.debug("DEBUG: Added --debug flag to jackify-engine command")
-            logger.debug(f"DEBUG: FULL Engine command: {' '.join(cmd)}")
-            logger.debug(f"DEBUG: modlist value being passed: '{self.modlist}'")
+            game_dir = None
+            clf3_mode = (engine_id == "clf3")
+            if clf3_mode:
+                location = resolve_game_location(self.game_type)
+                if location:
+                    game_dir, game_store = location
+                    if game_store != 'steam':
+                        store_label = {'gog': 'GOG', 'epic': 'Epic Games'}.get(game_store, game_store)
+                        self.output_received.emit(
+                            f"[WARN] Game detected from {store_label}, not Steam. "
+                            "Most Wabbajack modlists require the Steam version. "
+                            "If the install fails with hash errors, a store version mismatch is likely the cause.\n"
+                        )
+                else:
+                    logger.warning("CLF3: could not resolve game directory for game_type=%s", self.game_type)
+
+            if clf3_mode and self.clf3_cdn_url and not os.path.isfile(self.modlist):
+                self.output_received.emit("Downloading modlist file via CLF3...\n")
+                import subprocess as _sp
+                from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
+                fetch_cmd = [engine_path, "fetch", self.clf3_cdn_url, "--output", self.modlist]
+                logger.debug("CLF3 fetch command: %s", " ".join(fetch_cmd))
+                fetch_env = get_clean_subprocess_env({})
+                fetch_cwd = os.path.dirname(self.modlist) or os.path.expanduser("~")
+                os.makedirs(fetch_cwd, exist_ok=True)
+                fetch_result = _sp.run(fetch_cmd, capture_output=True, text=True, env=fetch_env, cwd=fetch_cwd)
+                if fetch_result.returncode != 0:
+                    err = fetch_result.stderr.strip() or fetch_result.stdout.strip() or "unknown error"
+                    self.installation_finished.emit(False, f"Failed to download modlist file:\n\n{err}")
+                    return
+                self.output_received.emit("Modlist file ready.\n")
+
+            cmd = build_install_command(
+                engine_id=engine_id,
+                engine_path=engine_path,
+                wabbajack=self.modlist,
+                install_dir=self.install_dir,
+                downloads_dir=self.downloads_dir,
+                game_dir=game_dir,
+                install_mode=self.install_mode,
+                debug=debug_mode,
+            )
+            logger.debug(f"FULL Engine command: {' '.join(cmd)}")
+            logger.debug(f"modlist value being passed: '{self.modlist}'")
             from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
             writeback_path = str(self.auth_service.get_token_writeback_path()) if self.auth_service else None
-            env_vars = {'NEXUS_API_KEY': self.api_key}
-            if self.oauth_info:
-                env_vars['NEXUS_OAUTH_INFO'] = self.oauth_info
-                from jackify.backend.services.nexus_oauth_service import NexusOAuthService
-                env_vars['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
-            if writeback_path:
-                env_vars['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
+            if clf3_mode:
+                env_vars = {'NEXUS_OAUTH_TOKEN': self.api_key}
+            else:
+                env_vars = {'NEXUS_API_KEY': self.api_key}
+                if self.oauth_info:
+                    env_vars['NEXUS_OAUTH_INFO'] = self.oauth_info
+                    from jackify.backend.services.nexus_oauth_service import NexusOAuthService
+                    env_vars['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
+                if writeback_path:
+                    env_vars['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
             env = get_clean_subprocess_env(env_vars)
 
             # Install-time resource preflight: keep this visible in workflow output so
@@ -306,172 +511,188 @@ class InstallerThread(QThread):
                 logger.debug(f"Resource preflight check failed: {e}")
 
             from jackify.backend.handlers.subprocess_utils import ProcessManager
+            if clf3_mode:
+                import time as _time
+                from jackify.backend.handlers.progress_parser_clf3 import CLF3ProgressStateManager
+                self._clf3_parser = CLF3ProgressStateManager()
+                self._clf3_last_activity = [_time.monotonic()]
+            else:
+                self._clf3_parser = None
             self.process_manager = ProcessManager(cmd, env=env, text=False, separate_stderr=True, enable_stdin=True)
             stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
             stderr_thread.start()
-            ansi_escape = re.compile(rb'\x1b\[[0-9;?]*[ -/]*[@-~]')
-            buffer = b''
-            last_was_blank = False
-            while True:
-                if self.cancelled:
-                    self.cancel()
-                    break
-                char = self.process_manager.read_stdout_char()
-                if not char:
-                    break
-                buffer += char
-                while b'\n' in buffer or b'\r' in buffer:
-                    if b'\r' in buffer and (buffer.index(b'\r') < buffer.index(b'\n') if b'\n' in buffer else True):
-                        line, buffer = buffer.split(b'\r', 1)
-                        line = ansi_escape.sub(b'', line)
-                        decoded = line.decode('utf-8', errors='replace')
-                        config_handler = ConfigHandler()
-                        debug_mode = config_handler.get('debug_mode', False)
-                        from jackify.backend.utils.nexus_premium_detector import is_non_premium_indicator
-                        is_premium_error, matched_pattern = is_non_premium_indicator(decoded)
-                        if not self._premium_signal_sent and is_premium_error:
-                            self._premium_signal_sent = True
-                            logger.warning("=" * 80)
-                            logger.warning("PREMIUM DETECTION TRIGGERED - DIAGNOSTIC DUMP (Issue #111)")
-                            logger.warning("=" * 80)
-                            logger.warning(f"Matched pattern: '{matched_pattern}'")
-                            logger.warning(f"Triggering line: '{decoded.strip()}'")
-                            logger.warning("AUTHENTICATION DIAGNOSTICS:")
-                            logger.warning(f"  Auth value present: {'YES' if self.api_key else 'NO'}")
-                            if self.api_key:
-                                logger.warning(f"  Auth value length: {len(self.api_key)} chars")
-                                if len(self.api_key) >= 8:
-                                    logger.warning(f"  Auth value (partial): {self.api_key[:4]}...{self.api_key[-4:]}")
-                                auth_method = self.auth_service.get_auth_method() if self.auth_service else None
-                                logger.warning(f"  Auth method: {auth_method or 'UNKNOWN'}")
-                                if auth_method == 'oauth' and self.auth_service:
-                                    token_handler = self.auth_service.token_handler
-                                    token_info = token_handler.get_token_info()
-                                    logger.warning("  OAuth Token Status:")
-                                    logger.warning(f"    Has token file: {token_info.get('has_token', False)}")
-                                    logger.warning(f"    Has refresh token: {token_info.get('has_refresh_token', False)}")
-                                    if 'expires_in_minutes' in token_info:
-                                        logger.warning(f"    Expires in: {token_info['expires_in_minutes']:.1f} minutes")
-                                    if 'refresh_token_age_days' in token_info:
-                                        logger.warning(f"    Refresh token age: {token_info['refresh_token_age_days']:.1f} days")
-                                    if token_info.get('error'):
-                                        logger.warning(f"    Error: {token_info['error']}")
-                            logger.warning("Previous engine output (last 10 lines):")
-                            for i, buffered_line in enumerate(self._engine_output_buffer, 1):
-                                logger.warning(f"  -{len(self._engine_output_buffer) - i + 1}: {buffered_line}")
-                            logger.warning("If user HAS Premium, this is a FALSE POSITIVE")
-                            logger.warning("=" * 80)
-                            self.premium_required_detected.emit(decoded.strip() or "Nexus Premium required")
-                        self._engine_output_buffer.append(decoded.strip())
-                        if len(self._engine_output_buffer) > self._buffer_size:
-                            self._engine_output_buffer.pop(0)
-                        if self.last_error is None and is_cc_content_error(decoded):
-                            self.last_error = cc_content_missing(extract_cc_filename(decoded) or "")
-                        if self.last_error is None and is_creation_kit_missing_error(decoded):
-                            self.last_error = creation_kit_missing()
-                        if self.progress_state_manager:
-                            updated = self.progress_state_manager.process_line(decoded)
-                            if updated:
-                                progress_state = self.progress_state_manager.get_state()
-                                if progress_state.active_files and debug_mode:
-                                    logger.debug(f"DEBUG: Parser detected {len(progress_state.active_files)} active files from line: {decoded[:80]}")
-                                self.progress_updated.emit(progress_state)
-                        if '[FILE_PROGRESS]' in decoded:
-                            self._install_progress_started = True
-                            parts = decoded.split('[FILE_PROGRESS]', 1)
-                            if parts[0].strip():
-                                self.progress_received.emit(parts[0].rstrip())
-                        else:
-                            self.progress_received.emit(decoded + '\r')
-                    elif b'\n' in buffer:
-                        line, buffer = buffer.split(b'\n', 1)
-                        line = ansi_escape.sub(b'', line)
-                        decoded = line.decode('utf-8', errors='replace')
-                        from jackify.backend.utils.nexus_premium_detector import is_non_premium_indicator
-                        is_premium_error, matched_pattern = (False, None) if decoded.strip().startswith('{') else is_non_premium_indicator(decoded)
-                        if not self._premium_signal_sent and is_premium_error:
-                            self._premium_signal_sent = True
-                            logger.warning("=" * 80)
-                            logger.warning("PREMIUM DETECTION TRIGGERED - DIAGNOSTIC DUMP (Issue #111)")
-                            logger.warning("=" * 80)
-                            logger.warning(f"Matched pattern: '{matched_pattern}'")
-                            logger.warning(f"Triggering line: '{decoded.strip()}'")
-                            logger.warning("AUTHENTICATION DIAGNOSTICS:")
-                            logger.warning(f"  Auth value present: {'YES' if self.api_key else 'NO'}")
-                            if self.api_key:
-                                logger.warning(f"  Auth value length: {len(self.api_key)} chars")
-                                if len(self.api_key) >= 8:
-                                    logger.warning(f"  Auth value (partial): {self.api_key[:4]}...{self.api_key[-4:]}")
-                                auth_method = self.auth_service.get_auth_method() if self.auth_service else None
-                                logger.warning(f"  Auth method: {auth_method or 'UNKNOWN'}")
-                                if auth_method == 'oauth' and self.auth_service:
-                                    token_handler = self.auth_service.token_handler
-                                    token_info = token_handler.get_token_info()
-                                    logger.warning("  OAuth Token Status:")
-                                    logger.warning(f"    Has token file: {token_info.get('has_token', False)}")
-                                    logger.warning(f"    Has refresh token: {token_info.get('has_refresh_token', False)}")
-                                    if 'expires_in_minutes' in token_info:
-                                        logger.warning(f"    Expires in: {token_info['expires_in_minutes']:.1f} minutes")
-                                    if 'refresh_token_age_days' in token_info:
-                                        logger.warning(f"    Refresh token age: {token_info['refresh_token_age_days']:.1f} days")
-                                    if token_info.get('error'):
-                                        logger.warning(f"    Error: {token_info['error']}")
-                            logger.warning("Previous engine output (last 10 lines):")
-                            for i, buffered_line in enumerate(self._engine_output_buffer, 1):
-                                logger.warning(f"  -{len(self._engine_output_buffer) - i + 1}: {buffered_line}")
-                            logger.warning("If user HAS Premium, this is a FALSE POSITIVE")
-                            logger.warning("=" * 80)
-                            self.premium_required_detected.emit(decoded.strip() or "Nexus Premium required")
-                        if not self._non_premium_info_sent and 'non-premium' in decoded.lower() and 'routing' in decoded.lower():
-                            self._non_premium_info_sent = True
-                            self.non_premium_detected.emit()
-                        self._engine_output_buffer.append(decoded.strip())
-                        if len(self._engine_output_buffer) > self._buffer_size:
-                            self._engine_output_buffer.pop(0)
-                        if self.last_error is None and is_cc_content_error(decoded):
-                            self.last_error = cc_content_missing(extract_cc_filename(decoded) or "")
-                        if self.last_error is None and is_creation_kit_missing_error(decoded):
-                            self.last_error = creation_kit_missing()
-                        config_handler = ConfigHandler()
-                        debug_mode = config_handler.get('debug_mode', False)
-                        if self.progress_state_manager:
-                            updated = self.progress_state_manager.process_line(decoded)
-                            if updated:
-                                progress_state = self.progress_state_manager.get_state()
-                                if progress_state.active_files and debug_mode:
-                                    logger.debug(f"DEBUG: Parser detected {len(progress_state.active_files)} active files from line: {decoded[:80]}")
-                                self.progress_updated.emit(progress_state)
-                        if self._handle_engine_event(decoded):
-                            last_was_blank = False
-                            continue
+
+            if clf3_mode:
+                heartbeat_stop = threading.Event()
+                heartbeat_thread = threading.Thread(
+                    target=self._run_clf3_heartbeat,
+                    args=(self._clf3_last_activity, heartbeat_stop),
+                    daemon=True,
+                )
+                heartbeat_thread.start()
+                self._run_clf3_stdout_loop(self._clf3_last_activity)
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=2.0)
+            else:
+                ansi_escape = re.compile(rb'\x1b\[[0-9;?]*[ -/]*[@-~]')
+                buffer = b''
+                last_was_blank = False
+                while True:
+                    if self.cancelled:
+                        self.cancel()
+                        break
+                    char = self.process_manager.read_stdout_char()
+                    if not char:
+                        break
+                    buffer += char
+                    while b'\n' in buffer or b'\r' in buffer:
+                        if b'\r' in buffer and (buffer.index(b'\r') < buffer.index(b'\n') if b'\n' in buffer else True):
+                            line, buffer = buffer.split(b'\r', 1)
+                            line = ansi_escape.sub(b'', line)
+                            decoded = line.decode('utf-8', errors='replace')
+                            config_handler = ConfigHandler()
+                            debug_mode = config_handler.get('debug_mode', False)
+                            from jackify.backend.utils.nexus_premium_detector import is_non_premium_indicator
+                            is_premium_error, matched_pattern = is_non_premium_indicator(decoded)
+                            if not self._premium_signal_sent and is_premium_error:
+                                self._premium_signal_sent = True
+                                logger.warning("=" * 80)
+                                logger.warning("PREMIUM DETECTION TRIGGERED - DIAGNOSTIC DUMP (Issue #111)")
+                                logger.warning("=" * 80)
+                                logger.warning(f"Matched pattern: '{matched_pattern}'")
+                                logger.warning(f"Triggering line: '{decoded.strip()}'")
+                                logger.warning("AUTHENTICATION DIAGNOSTICS:")
+                                logger.warning(f"  Auth value present: {'YES' if self.api_key else 'NO'}")
+                                if self.api_key:
+                                    logger.warning(f"  Auth value length: {len(self.api_key)} chars")
+                                    auth_method = self.auth_service.get_auth_method() if self.auth_service else None
+                                    logger.warning(f"  Auth method: {auth_method or 'UNKNOWN'}")
+                                    if auth_method == 'oauth' and self.auth_service:
+                                        token_handler = self.auth_service.token_handler
+                                        token_info = token_handler.get_token_info()
+                                        logger.warning("  OAuth Token Status:")
+                                        logger.warning(f"    Has token file: {token_info.get('has_token', False)}")
+                                        logger.warning(f"    Has refresh token: {token_info.get('has_refresh_token', False)}")
+                                        if 'expires_in_minutes' in token_info:
+                                            logger.warning(f"    Expires in: {token_info['expires_in_minutes']:.1f} minutes")
+                                        if 'refresh_token_age_days' in token_info:
+                                            logger.warning(f"    Refresh token age: {token_info['refresh_token_age_days']:.1f} days")
+                                        if token_info.get('error'):
+                                            logger.warning(f"    Error: {token_info['error']}")
+                                logger.warning("Previous engine output (last 10 lines):")
+                                for i, buffered_line in enumerate(self._engine_output_buffer, 1):
+                                    logger.warning(f"  -{len(self._engine_output_buffer) - i + 1}: {buffered_line}")
+                                logger.warning("If user HAS Premium, this is a FALSE POSITIVE")
+                                logger.warning("=" * 80)
+                                self.premium_required_detected.emit(decoded.strip() or "Nexus Premium required")
+                            self._engine_output_buffer.append(decoded.strip())
+                            if len(self._engine_output_buffer) > self._buffer_size:
+                                self._engine_output_buffer.pop(0)
+                            if self.last_error is None and is_cc_content_error(decoded):
+                                self.last_error = cc_content_missing(extract_cc_filename(decoded) or "")
+                            if self.last_error is None and is_creation_kit_missing_error(decoded):
+                                self.last_error = creation_kit_missing(self.game_type)
+                            if self.progress_state_manager:
+                                updated = self.progress_state_manager.process_line(decoded)
+                                if updated:
+                                    progress_state = self.progress_state_manager.get_state()
+                                    if progress_state.active_files and debug_mode:
+                                        logger.debug(f"Parser detected {len(progress_state.active_files)} active files from line: {decoded[:80]}")
+                                    self.progress_updated.emit(progress_state)
+                            if '[FILE_PROGRESS]' in decoded:
+                                self._install_progress_started = True
+                                parts = decoded.split('[FILE_PROGRESS]', 1)
+                                if parts[0].strip():
+                                    self.progress_received.emit(parts[0].rstrip())
+                            else:
+                                self.progress_received.emit(decoded + '\r')
+                        elif b'\n' in buffer:
+                            line, buffer = buffer.split(b'\n', 1)
+                            line = ansi_escape.sub(b'', line)
+                            decoded = line.decode('utf-8', errors='replace')
+                            from jackify.backend.utils.nexus_premium_detector import is_non_premium_indicator
+                            is_premium_error, matched_pattern = (False, None) if decoded.strip().startswith('{') else is_non_premium_indicator(decoded)
+                            if not self._premium_signal_sent and is_premium_error:
+                                self._premium_signal_sent = True
+                                logger.warning("=" * 80)
+                                logger.warning("PREMIUM DETECTION TRIGGERED - DIAGNOSTIC DUMP (Issue #111)")
+                                logger.warning("=" * 80)
+                                logger.warning(f"Matched pattern: '{matched_pattern}'")
+                                logger.warning(f"Triggering line: '{decoded.strip()}'")
+                                logger.warning("AUTHENTICATION DIAGNOSTICS:")
+                                logger.warning(f"  Auth value present: {'YES' if self.api_key else 'NO'}")
+                                if self.api_key:
+                                    logger.warning(f"  Auth value length: {len(self.api_key)} chars")
+                                    auth_method = self.auth_service.get_auth_method() if self.auth_service else None
+                                    logger.warning(f"  Auth method: {auth_method or 'UNKNOWN'}")
+                                    if auth_method == 'oauth' and self.auth_service:
+                                        token_handler = self.auth_service.token_handler
+                                        token_info = token_handler.get_token_info()
+                                        logger.warning("  OAuth Token Status:")
+                                        logger.warning(f"    Has token file: {token_info.get('has_token', False)}")
+                                        logger.warning(f"    Has refresh token: {token_info.get('has_refresh_token', False)}")
+                                        if 'expires_in_minutes' in token_info:
+                                            logger.warning(f"    Expires in: {token_info['expires_in_minutes']:.1f} minutes")
+                                        if 'refresh_token_age_days' in token_info:
+                                            logger.warning(f"    Refresh token age: {token_info['refresh_token_age_days']:.1f} days")
+                                        if token_info.get('error'):
+                                            logger.warning(f"    Error: {token_info['error']}")
+                                logger.warning("Previous engine output (last 10 lines):")
+                                for i, buffered_line in enumerate(self._engine_output_buffer, 1):
+                                    logger.warning(f"  -{len(self._engine_output_buffer) - i + 1}: {buffered_line}")
+                                logger.warning("If user HAS Premium, this is a FALSE POSITIVE")
+                                logger.warning("=" * 80)
+                                self.premium_required_detected.emit(decoded.strip() or "Nexus Premium required")
+                            if not self._non_premium_info_sent and 'non-premium' in decoded.lower() and 'routing' in decoded.lower():
+                                self._non_premium_info_sent = True
+                                self.non_premium_detected.emit()
+                            self._engine_output_buffer.append(decoded.strip())
+                            if len(self._engine_output_buffer) > self._buffer_size:
+                                self._engine_output_buffer.pop(0)
+                            if self.last_error is None and is_cc_content_error(decoded):
+                                self.last_error = cc_content_missing(extract_cc_filename(decoded) or "")
+                            if self.last_error is None and is_creation_kit_missing_error(decoded):
+                                self.last_error = creation_kit_missing(self.game_type)
+                            config_handler = ConfigHandler()
+                            debug_mode = config_handler.get('debug_mode', False)
+                            if self.progress_state_manager:
+                                updated = self.progress_state_manager.process_line(decoded)
+                                if updated:
+                                    progress_state = self.progress_state_manager.get_state()
+                                    if progress_state.active_files and debug_mode:
+                                        logger.debug(f"Parser detected {len(progress_state.active_files)} active files from line: {decoded[:80]}")
+                                    self.progress_updated.emit(progress_state)
+                            if self._handle_engine_event(decoded):
+                                last_was_blank = False
+                                continue
+                            self._remember_stdout_line(decoded)
+                            if '[FILE_PROGRESS]' in decoded:
+                                self._install_progress_started = True
+                                parts = decoded.split('[FILE_PROGRESS]', 1)
+                                if parts[0].strip():
+                                    self.output_received.emit(parts[0].rstrip())
+                                last_was_blank = False
+                                continue
+                            if decoded.strip() == '':
+                                if not last_was_blank:
+                                    self.output_received.emit('\n')
+                                last_was_blank = True
+                            else:
+                                self.output_received.emit(decoded + '\n')
+                                last_was_blank = False
+                if buffer:
+                    line = ansi_escape.sub(b'', buffer)
+                    decoded = line.decode('utf-8', errors='replace')
+                    if '[FILE_PROGRESS]' in decoded:
+                        parts = decoded.split('[FILE_PROGRESS]', 1)
+                        if parts[0].strip():
+                            self.output_received.emit(parts[0].rstrip())
+                    else:
                         self._remember_stdout_line(decoded)
-                        if '[FILE_PROGRESS]' in decoded:
-                            self._install_progress_started = True
-                            parts = decoded.split('[FILE_PROGRESS]', 1)
-                            if parts[0].strip():
-                                self.output_received.emit(parts[0].rstrip())
-                            last_was_blank = False
-                            continue
-                        if decoded.strip() == '':
-                            if not last_was_blank:
-                                self.output_received.emit('\n')
-                            last_was_blank = True
-                        else:
-                            self.output_received.emit(decoded + '\n')
-                            last_was_blank = False
-            if buffer:
-                line = ansi_escape.sub(b'', buffer)
-                decoded = line.decode('utf-8', errors='replace')
-                if '[FILE_PROGRESS]' in decoded:
-                    parts = decoded.split('[FILE_PROGRESS]', 1)
-                    if parts[0].strip():
-                        self.output_received.emit(parts[0].rstrip())
-                else:
-                    self._remember_stdout_line(decoded)
-                    self.output_received.emit(decoded)
+                        self.output_received.emit(decoded)
             stderr_thread.join(timeout=5)
             returncode = self.process_manager.wait()
-            if writeback_path and self.auth_service:
+            if writeback_path and self.auth_service and not clf3_mode:
                 self.auth_service.apply_token_writeback(writeback_path)
             if self.process_manager.proc and self.process_manager.proc.stdout:
                 try:
@@ -479,7 +700,7 @@ class InstallerThread(QThread):
                     if remaining:
                         decoded_remaining = remaining.decode('utf-8', errors='replace')
                         if decoded_remaining.strip():
-                            logger.debug(f"DEBUG: Remaining output after process exit: {decoded_remaining[:500]}")
+                            logger.debug(f"Remaining output after process exit: {decoded_remaining[:500]}")
                             if '[FILE_PROGRESS]' in decoded_remaining:
                                 parts = decoded_remaining.split('[FILE_PROGRESS]', 1)
                                 if parts[0].strip():
@@ -487,7 +708,7 @@ class InstallerThread(QThread):
                             else:
                                 self.output_received.emit(decoded_remaining)
                 except Exception as e:
-                    logger.debug(f"DEBUG: Error reading remaining output: {e}")
+                    logger.debug(f"Error reading remaining output: {e}")
             if returncode != 0 and not self.cancelled and self.last_error is None:
                 stderr_tail = self._raw_stderr_lines[-10:] if self._raw_stderr_lines else []
                 stdout_tail = self._raw_stdout_lines[-10:] if self._raw_stdout_lines else []

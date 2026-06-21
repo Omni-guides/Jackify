@@ -1,5 +1,5 @@
 """Progress and installation event handlers for InstallModlistScreen (Mixin)."""
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QProcess, QTimer
 from PySide6.QtWidgets import QMessageBox
 from PySide6.QtGui import QTextCursor
 from jackify.frontends.gui.services.message_service import MessageService
@@ -187,7 +187,11 @@ class ProgressHandlersMixin:
         )
         is_extraction_phase = (
             progress_state.phase == InstallationPhase.EXTRACT or
-            (progress_state.phase_name and 'extract' in progress_state.phase_name.lower())
+            (progress_state.phase_name and (
+                'extract' in progress_state.phase_name.lower()
+                or 'queu' in progress_state.phase_name.lower()
+                or 'decompress' in progress_state.phase_name.lower()
+            ))
         )
         
         # Detect BSA building phase - check multiple indicators
@@ -228,23 +232,29 @@ class ProgressHandlersMixin:
             self._bsa_hold_deadline = now_mono
 
         if is_installation_phase:
-            # During installation, we may have BSA building AND file installation happening
-            # Show both: install summary + any active BSA files
-            # Render loop handles smooth updates - just set target state
-            
+            self._stop_clf3_decompress_pulse()
             current_step = progress_state.phase_step
+            phase_lower = (progress_state.phase_name or "").lower()
+
+            if "bsa" in phase_lower:
+                step_label = f"Building BSA: {current_step}/{progress_state.phase_max_steps}"
+            elif "dds" in phase_lower or "texture" in phase_lower:
+                step_label = f"Converting Textures: {current_step}/{progress_state.phase_max_steps}"
+            elif "extract" in phase_lower or "queu" in phase_lower:
+                step_label = f"Queuing Archives: {current_step}/{progress_state.phase_max_steps}"
+            else:
+                step_label = f"Installing Files: {current_step}/{progress_state.phase_max_steps}"
 
             display_items = []
 
-            # Line 1: Always show "Installing Files: X/Y" at the top (no progress bar, no size)
             if current_step > 0 or progress_state.phase_max_steps > 0:
                 install_line = FileProgress(
-                    filename=f"Installing Files: {current_step}/{progress_state.phase_max_steps}",
+                    filename=step_label,
                     operation=OperationType.INSTALL,
                     percent=0.0,
                     speed=-1.0
                 )
-                install_line._no_progress_bar = True  # Flag to hide progress bar
+                install_line._no_progress_bar = True
                 display_items.append(install_line)
 
             # Lines 2+: Show converting textures and BSA files
@@ -293,25 +303,31 @@ class ProgressHandlersMixin:
             # Update target state (render loop handles smooth display)
             # Explicitly pass None for summary_info to clear any stale summary data
             if display_items:
-                self.file_progress_list.update_files(display_items, current_phase="Installing", summary_info=None)
+                self.file_progress_list.update_files(display_items, current_phase=phase_label or "Installing", summary_info=None)
             return
         elif is_extraction_phase:
-            # Show summary info for Extracting phase (step count)
-            # Render loop handles smooth updates - just set target state
-            # Explicitly pass empty list for file_progresses to clear any stale file list
-            current_step = progress_state.phase_step
-            summary_info = {
-                'current_step': current_step,
-                'max_steps': progress_state.phase_max_steps,
-            }
-            phase_display_name = phase_label or "Extracting"
-            self.file_progress_list.update_files([], current_phase=phase_display_name, summary_info=summary_info)
+            phase_lower = (progress_state.phase_name or "").lower()
+            if 'decompress' in phase_lower:
+                label = progress_state.message or "Decompressing archives..."
+                self._clf3_decompress_label = label
+                if not getattr(self, '_clf3_decompress_timer', None):
+                    self._start_clf3_decompress_pulse(label)
+            else:
+                self._stop_clf3_decompress_pulse()
+                current_step = progress_state.phase_step
+                summary_info = {
+                    'current_step': current_step,
+                    'max_steps': progress_state.phase_max_steps,
+                }
+                phase_display_name = phase_label or "Queuing Archives"
+                self.file_progress_list.update_files([], current_phase=phase_display_name, summary_info=summary_info)
             return
         elif progress_state.active_files:
+            self._stop_clf3_decompress_pulse()
             if self.debug:
-                logger.debug(f"DEBUG: Updating file progress list with {len(progress_state.active_files)} files")
+                logger.debug(f"Updating file progress list with {len(progress_state.active_files)} files")
                 for fp in progress_state.active_files:
-                    logger.debug(f"DEBUG:   - {fp.filename}: {fp.percent:.1f}% ({fp.operation.value})")
+                    logger.debug(f"  - {fp.filename}: {fp.percent:.1f}% ({fp.operation.value})")
             # Pass phase label to update header (e.g., "[Activity - Downloading]")
             # Explicitly clear summary_info when showing file list
             try:
@@ -320,33 +336,64 @@ class ProgressHandlersMixin:
                 # Widget was deleted - ignore to prevent coredump
                 if "already deleted" in str(e):
                     if self.debug:
-                        logger.debug(f"DEBUG: Ignoring widget deletion error: {e}")
+                        logger.debug(f"Ignoring widget deletion error: {e}")
                     return
                 raise
             except Exception as e:
                 # Catch any other exceptions to prevent coredump
                 if self.debug:
-                    logger.debug(f"DEBUG: Error updating file progress list: {e}")
+                    logger.debug(f"Error updating file progress list: {e}")
                 import logging
                 logging.getLogger(__name__).error(f"Error updating file progress list: {e}", exc_info=True)
         else:
-            # Show empty state so widget stays visible even when no files are active
+            self._stop_clf3_decompress_pulse()
+            # When there are no active files but phase progress counters are set (CLF3 streaming
+            # pipeline: extraction runs inside the Downloading phase with no per-file events),
+            # show a summary widget so the Activity tab is not blank.
+            summary_info = None
+            if progress_state.phase_step > 0 or progress_state.phase_max_steps > 0:
+                summary_info = {
+                    'current_step': progress_state.phase_step,
+                    'max_steps': progress_state.phase_max_steps,
+                }
             try:
-                self.file_progress_list.update_files([], current_phase=phase_label)
+                self.file_progress_list.update_files([], current_phase=phase_label, summary_info=summary_info)
             except RuntimeError as e:
-                # Widget was deleted - ignore to prevent coredump
                 if "already deleted" in str(e):
                     return
                 raise
             except Exception as e:
-                # Catch any other exceptions to prevent coredump
-                import logging
-                logging.getLogger(__name__).error(f"Error updating file progress list: {e}", exc_info=True)
+                logger.error(f"Error updating file progress list: {e}", exc_info=True)
+
+    def _start_clf3_decompress_pulse(self, label: str = "Decompressing archives..."):
+        self._clf3_decompress_label = label
+        if not getattr(self, '_clf3_decompress_timer', None):
+            self._clf3_decompress_timer = QTimer(self)
+            self._clf3_decompress_timer.timeout.connect(self._clf3_decompress_heartbeat)
+        self._clf3_decompress_timer.start(250)
+
+    def _clf3_decompress_heartbeat(self):
+        label = getattr(self, '_clf3_decompress_label', "Decompressing archives...")
+        self.file_progress_list.update_or_add_item("__clf3_decompress__", label, 0.0)
+
+    def _stop_clf3_decompress_pulse(self):
+        timer = getattr(self, '_clf3_decompress_timer', None)
+        if timer:
+            timer.stop()
+            self._clf3_decompress_timer = None
+        self._clf3_decompress_label = None
 
     def on_installation_finished(self, success, message):
         """Handle installation completion"""
-        logger.debug(f"DEBUG: on_installation_finished called with success={success}, message={message}")
-        # R&D: Clear all progress displays when installation completes
+        self._stop_clf3_decompress_pulse()
+        logger.debug(f"on_installation_finished called with success={success}, message={message}")
+        # installation_finished is emitted from inside run() via a queued connection,
+        # so run() may still be executing its finally block when this slot fires.
+        # Destroying the thread object while run() is still on the stack causes
+        # "QThread: Destroyed while thread is still running" / SIGABRT.
+        thread = getattr(self, 'install_thread', None)
+        if thread and thread.isRunning():
+            thread.wait(3000)
         self.progress_state_manager.reset()
         # Clear file list but keep CPU tracking running for configuration phase
         self.file_progress_list.list_widget.clear()
@@ -381,6 +428,13 @@ class ProgressHandlersMixin:
                     )
             except Exception as _meta_err:
                 logger.debug(f"Modlist meta write skipped: {_meta_err}")
+
+            try:
+                from jackify.backend.utils.clf3_postinstall import inject_mo2_download_dir
+                if thread and getattr(thread, 'install_dir', None) and getattr(thread, 'downloads_dir', None):
+                    inject_mo2_download_dir(thread.install_dir, thread.downloads_dir)
+            except Exception as _ini_err:
+                logger.debug(f"MO2 INI download_directory injection skipped: {_ini_err}")
 
             logger.info(f"Installation succeeded: {message}")
             if self.show_details_checkbox.isChecked():
@@ -418,12 +472,12 @@ class ProgressHandlersMixin:
             self.process_finished(1, QProcess.CrashExit)  # Simulate error
 
     def process_finished(self, exit_code, exit_status):
-        logger.debug(f"DEBUG: process_finished called with exit_code={exit_code}, exit_status={exit_status}")
+        logger.debug(f"process_finished called with exit_code={exit_code}, exit_status={exit_status}")
         # Reset button states
         self.start_btn.setEnabled(True)
         self.cancel_btn.setVisible(True)
         self.cancel_install_btn.setVisible(False)
-        logger.debug("DEBUG: Button states reset in process_finished")
+        logger.debug("Button states reset in process_finished")
 
         # Stop manual download manager if it is still running (e.g. install failed mid-phase)
         if getattr(self, '_manual_dl_manager', None) is not None:

@@ -24,7 +24,6 @@ from jackify.backend.handlers.subprocess_utils import ProcessManager
 from jackify.backend.services.api_key_service import APIKeyService
 from jackify.backend.services.resolution_service import ResolutionService
 from jackify.backend.handlers.config_handler import ConfigHandler
-from ..dialogs import SuccessDialog
 from PySide6.QtWidgets import QApplication
 from jackify.frontends.gui.services.message_service import MessageService
 from jackify.shared.resolution_utils import get_resolution_fallback
@@ -36,11 +35,12 @@ from .configure_new_modlist_dialogs import ConfigureNewModlistDialogsMixin, Modl
 from .screen_back_mixin import ScreenBackMixin
 from .install_modlist_ttw import TTWIntegrationMixin
 from .install_modlist_postinstall import PostInstallFeedbackMixin
+from .install_verifier_mixin import InstallVerifierMixin
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 logger = logging.getLogger(__name__)
 
-class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegrationMixin, ConfigureNewModlistUISetupMixin, ConfigureNewModlistConsoleMixin, ConfigureNewModlistWorkflowMixin, ConfigureNewModlistDialogsMixin, PostInstallFeedbackMixin, QWidget):
+class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegrationMixin, InstallVerifierMixin, ConfigureNewModlistUISetupMixin, ConfigureNewModlistConsoleMixin, ConfigureNewModlistWorkflowMixin, ConfigureNewModlistDialogsMixin, PostInstallFeedbackMixin, QWidget):
     resize_request = Signal(str)
 
     def cancel_and_cleanup(self):
@@ -48,6 +48,8 @@ class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegr
         if getattr(self, '_vnv_controller', None) is not None:
             self._vnv_controller.cleanup()
             self._vnv_controller = None
+        appid = str(getattr(self, 'context', {}).get('appid', '') or '')
+        self._kill_prefix_wine_processes(appid)
         self.cleanup_processes()
         self.collapse_show_details_before_leave()
         self.go_back()
@@ -84,31 +86,27 @@ class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegr
                     'time_taken': self._calculate_time_taken(),
                     'game_name': getattr(self, '_current_game_name', None),
                     'enb_detected': enb_detected,
+                    'install_dir': install_dir,
+                    'game_type': game_type,
+                    'appid': getattr(self, '_current_appid', '') or '',
                 }
                 return
 
             # Calculate time taken
             time_taken = self._calculate_time_taken()
 
-            # Clear Activity window before showing success dialog
-            self.file_progress_list.clear()
-
-            success_dialog = SuccessDialog(
-                modlist_name=modlist_name,
-                workflow_type="configure_new",
-                time_taken=time_taken,
-                game_name=getattr(self, '_current_game_name', None),
-                parent=self
+            game_type = self._detect_game_type_from_mo2_ini(install_dir) if install_dir else "unknown"
+            self._run_verifier_then_show_success(
+                install_dir=install_dir or "",
+                game_type=game_type,
+                success_params={
+                    'modlist_name': modlist_name,
+                    'workflow_type': 'configure_new',
+                    'time_taken': time_taken,
+                    'game_name': getattr(self, '_current_game_name', None),
+                    'enb_detected': enb_detected,
+                },
             )
-            success_dialog.show()
-
-            if enb_detected:
-                try:
-                    from ..dialogs.enb_proton_dialog import ENBProtonDialog
-                    enb_dialog = ENBProtonDialog(modlist_name=modlist_name, parent=self)
-                    enb_dialog.exec()
-                except Exception as e:
-                    logger.warning("Failed to show ENB dialog: %s", e)
         else:
             self._safe_append_text(f"Configuration failed: {message}")
             MessageService.show_error(self, configuration_failed(str(message)))

@@ -131,31 +131,31 @@ class PathHandlerGameMixin:
 
     @classmethod
     def find_vanilla_game_paths(cls, game_names=None) -> Dict[str, Path]:
-        """For each known game, iterate all Steam libraries and look for the canonical game directory in steamapps/common."""
-        GAME_DIR_NAMES = {
-            "Skyrim Special Edition": ["Skyrim Special Edition"],
-            "Fallout 4": ["Fallout 4"],
-            "Fallout New Vegas": ["Fallout New Vegas"],
-            "Oblivion": ["Oblivion"],
-            "Fallout 3": ["Fallout 3", "Fallout 3 goty"]
+        """Locate vanilla game installations via Steam, Heroic GOG, or Heroic Epic."""
+        GAME_TYPE_MAP = {
+            "Skyrim Special Edition": "skyrim",
+            "Fallout 4":              "fallout4",
+            "Fallout New Vegas":      "falloutnv",
+            "Oblivion":               "oblivion",
+            "Fallout 3":              "fallout3",
         }
         if game_names is None:
-            game_names = list(GAME_DIR_NAMES.keys())
-        all_steam_libraries = cls.get_all_steam_library_paths()
-        logger.info(f"[DEBUG] Detected Steam libraries: {all_steam_libraries}")
+            game_names = list(GAME_TYPE_MAP.keys())
+
+        from jackify.backend.handlers.vanilla_game_finder import VanillaGameFinder
+        finder = VanillaGameFinder()
         found_games = {}
         for game in game_names:
-            possible_names = GAME_DIR_NAMES.get(game, [game])
-            for lib in all_steam_libraries:
-                for name in possible_names:
-                    candidate = lib / "steamapps" / "common" / name
-                    logger.info(f"[DEBUG] Checking for vanilla game directory: {candidate}")
-                    if candidate.is_dir():
-                        found_games[game] = candidate
-                        logger.info(f"Found vanilla game directory for {game}: {candidate}")
-                        break
-                if game in found_games:
-                    break
+            game_type = GAME_TYPE_MAP.get(game)
+            if not game_type:
+                continue
+            result = finder.find(game_type)
+            if result:
+                path, store = result
+                found_games[game] = path
+                logger.info("Found vanilla game %s via %s at %s", game, store, path)
+            else:
+                logger.debug("No installation found for %s", game)
         return found_games
 
     def _detect_stock_game_path(self) -> bool:

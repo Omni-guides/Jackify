@@ -19,6 +19,7 @@ Usage:
 """
 
 import logging
+import warnings
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -46,10 +47,12 @@ class ThreadLifecycleMixin:
             return None
 
         for name in (signal_names or []):
-            try:
-                getattr(thread, name).disconnect()
-            except Exception:
-                pass
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                try:
+                    getattr(thread, name).disconnect()
+                except Exception:
+                    pass
 
         # Register in the module-level set so the reference survives screen destruction.
         # Remove from registry when the thread finishes so it can be GC'd cleanly.
@@ -67,6 +70,36 @@ class ThreadLifecycleMixin:
         except Exception:
             pass
         self._park_all_threads()
+
+    def _kill_prefix_wine_processes(self, appid: str = '') -> None:
+        """Kill wine/winetricks subprocesses on user-initiated cancel.
+
+        Called before parking threads so the blocked subprocess.run() calls inside
+        the thread actually return rather than running until completion.
+        """
+        import os
+        import subprocess
+        for pattern in ('winetricks', 'protontricks'):
+            subprocess.run(['pkill', '-9', '-f', pattern], capture_output=True)
+        if not appid:
+            return
+        try:
+            from jackify.backend.handlers.path_handler import PathHandler
+            from jackify.backend.handlers.winetricks_handler import WinetricksHandler
+            compat = PathHandler.find_compat_data(str(appid))
+            if not compat:
+                return
+            pfx = str(compat / 'pfx')
+            wine_bin = WinetricksHandler()._get_wine_binary_for_prefix(pfx)
+            if not wine_bin:
+                return
+            wineserver = os.path.join(os.path.dirname(wine_bin), 'wineserver')
+            if os.path.isfile(wineserver):
+                subprocess.run([wineserver, '-k'],
+                               env={**os.environ, 'WINEPREFIX': pfx},
+                               timeout=5, capture_output=True)
+        except Exception:
+            pass
 
     def _park_all_threads(self):
         """Park every running QThread attribute found on this instance.

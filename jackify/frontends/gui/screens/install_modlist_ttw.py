@@ -33,13 +33,13 @@ class TTWIntegrationMixin:
 
             # Check 3: TTW must not already be installed
             if self._detect_existing_ttw(install_dir):
-                logger.debug("DEBUG: TTW already installed, skipping prompt")
+                logger.debug("TTW already installed, skipping prompt")
                 return False
 
             return True
 
         except Exception as e:
-            logger.debug(f"DEBUG: Error checking TTW eligibility: {e}")
+            logger.debug(f"Error checking TTW eligibility: {e}")
             return False
 
     def _detect_existing_ttw(self, install_dir: str) -> bool:
@@ -73,15 +73,15 @@ class TTWIntegrationMixin:
                     # Verify it has actual TTW content by checking for the main ESM
                     ttw_esm = folder / "TaleOfTwoWastelands.esm"
                     if ttw_esm.exists():
-                        logger.debug(f"DEBUG: Found existing TTW installation: {folder.name}")
+                        logger.debug(f"Found existing TTW installation: {folder.name}")
                         return True
                     else:
-                        logger.debug(f"DEBUG: Found TTW folder but no ESM, skipping: {folder.name}")
+                        logger.debug(f"Found TTW folder but no ESM, skipping: {folder.name}")
 
             return False
 
         except Exception as e:
-            logger.debug(f"DEBUG: Error detecting existing TTW: {e}")
+            logger.debug(f"Error detecting existing TTW: {e}")
             return False  # Assume not installed on error
 
     def _initiate_ttw_workflow(self, modlist_name: str, install_dir: str):
@@ -173,39 +173,33 @@ class TTWIntegrationMixin:
                 vnv_automation_running = self._check_and_run_vnv_automation(self._ttw_modlist_name, self._ttw_install_dir)
 
             if vnv_automation_running:
-                # Store success dialog params for later (after VNV automation completes)
                 self._pending_success_dialog_params = {
                     'modlist_name': modlist_name,
+                    'workflow_type': 'install',
                     'time_taken': time_str,
                     'game_name': game_name,
-                    'enb_detected': False,  # TTW installs don't have ENB
-                    'ttw_version': ttw_version if 'ttw_version' in locals() else None
+                    'enb_detected': False,
+                    'install_dir': getattr(self, '_ttw_install_dir', '') or '',
+                    'game_type': 'falloutnv',
+                    'appid': getattr(self, '_current_appid', '') or '',
                 }
-                # Keep post-install feedback active during VNV automation
-                # Don't show success dialog yet - will be shown in _on_vnv_complete
                 return
 
             # No VNV automation - end post-install feedback now
             self._end_post_install_feedback(True)
 
-            # Clear Activity window before showing success dialog
-            self.file_progress_list.clear()
-
-            # Show enhanced success dialog
-            from ..dialogs import SuccessDialog
-            success_dialog = SuccessDialog(
-                modlist_name=modlist_name,
-                workflow_type="install",
-                time_taken=time_str,
-                game_name=game_name,
-                parent=self
+            self._run_verifier_then_show_success(
+                install_dir=getattr(self, '_ttw_install_dir', '') or '',
+                game_type='falloutnv',
+                appid=getattr(self, '_current_appid', '') or '',
+                success_params={
+                    'modlist_name': modlist_name,
+                    'workflow_type': 'install',
+                    'time_taken': time_str,
+                    'game_name': game_name,
+                    'enb_detected': False,
+                },
             )
-
-            # Add TTW installation info to dialog if possible
-            if 'ttw_version' in locals() and hasattr(success_dialog, 'add_info_line'):
-                success_dialog.add_info_line(f"TTW {ttw_version} integrated successfully")
-
-            success_dialog.show()
 
         except Exception as e:
             logger.debug(f"ERROR: Failed to show final success dialog: {e}")

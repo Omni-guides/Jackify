@@ -65,6 +65,47 @@ class MainWindowStartupMixin:
         except Exception as e:
             print(f"Error checking protontricks: {e}")
 
+    def _check_tool_updates_on_startup(self):
+        class _ToolUpdateCheckThread(QThread):
+            updates_found = Signal(bool)
+
+            def run(self):
+                try:
+                    from jackify.backend.services.tool_registry import ToolRegistry, get_effective_definitions
+                    registry = ToolRegistry()
+                    for defn in get_effective_definitions():
+                        if defn.pinned_version is not None:
+                            continue
+                        status = registry.get_status(defn.tool_id)
+                        if not status or not status.installed:
+                            continue
+                        logger.debug(
+                            "Startup tool update check: %s installed=%s version=%s",
+                            defn.tool_id, status.installed, status.installed_version,
+                        )
+                        tag = registry.check_latest_version(defn.tool_id)
+                        logger.debug("Startup tool update check: %s latest=%s", defn.tool_id, tag)
+                        if tag and status.installed_version and tag.lstrip("v") != status.installed_version.lstrip("v"):
+                            logger.debug("Startup tool update check: update available for %s", defn.tool_id)
+                            self.updates_found.emit(True)
+                            return
+                    self.updates_found.emit(False)
+                except Exception as e:
+                    logger.warning("Tool update check failed: %s", e, exc_info=True)
+                    self.updates_found.emit(False)
+
+        def on_result(has_updates: bool):
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: (
+                self.main_menu.notify_tool_updates(has_updates)
+                if hasattr(self, 'main_menu') and hasattr(self.main_menu, 'notify_tool_updates')
+                else None
+            ))
+
+        self._tool_update_check_thread = _ToolUpdateCheckThread()
+        self._tool_update_check_thread.updates_found.connect(on_result)
+        self._tool_update_check_thread.start()
+
     def _check_for_updates_on_startup(self):
         try:
             logger.debug("Checking for updates on startup...")

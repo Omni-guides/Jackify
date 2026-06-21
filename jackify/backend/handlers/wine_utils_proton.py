@@ -382,44 +382,56 @@ class WineUtilsProtonMixin:
 
     @staticmethod
     def scan_valve_proton_versions() -> List[Dict[str, Any]]:
-        """Scan for available Valve Proton versions with fallback priority."""
+        """Scan for available Valve Proton versions. Discovers all installed X.Y releases dynamically."""
         logger.info("Scanning for available Valve Proton versions...")
         found_versions = []
+        seen_names: set = set()
         steam_libs = WineUtilsProtonMixin.get_steam_library_paths()
         if not steam_libs:
             logger.warning("No Steam library paths found")
             return []
-        preferred_versions = [
-            ("Proton - Experimental", 150),
-            ("Proton 10.0", 140),
-            ("Proton 9.0", 130),
-            ("Proton 9.0 (Beta)", 125)
-        ]
+
         for steam_path in steam_libs:
-            logger.debug(f"Scanning Steam library: {steam_path}")
-            for version_name, priority in preferred_versions:
-                proton_path = steam_path / version_name
-                wine_bin = proton_path / "files" / "bin" / "wine"
-                if wine_bin.exists() and wine_bin.is_file():
-                    compat_name = WineUtilsProtonMixin.resolve_steam_compat_name(proton_path)
-                    found_versions.append({
-                        'name': version_name,
-                        'path': proton_path,
-                        'wine_bin': wine_bin,
-                        'priority': priority,
-                        'type': 'Valve-Proton',
-                        'steam_compat_name': compat_name,
-                    })
-                    logger.debug(f"Found {version_name} at {proton_path}")
-        found_versions.sort(key=lambda x: x['priority'], reverse=True)
-        unique_versions = []
-        seen_names = set()
-        for version in found_versions:
-            if version['name'] not in seen_names:
-                unique_versions.append(version)
-                seen_names.add(version['name'])
-        logger.info(f"Found {len(unique_versions)} unique Valve Proton version(s)")
-        return unique_versions
+            if not steam_path.is_dir():
+                continue
+            for entry in steam_path.iterdir():
+                if not entry.is_dir():
+                    continue
+                name = entry.name
+                wine_bin = entry / "files" / "bin" / "wine"
+                if not wine_bin.is_file():
+                    continue
+                if name in seen_names:
+                    continue
+
+                if name == "Proton - Experimental":
+                    major, minor, is_beta = 9999, 9999, False
+                else:
+                    m = re.match(r'^Proton (\d+)\.(\d+)(\s+\(Beta\))?$', name)
+                    if not m:
+                        continue
+                    major, minor, is_beta = int(m.group(1)), int(m.group(2)), bool(m.group(3))
+
+                compat_name = WineUtilsProtonMixin.resolve_steam_compat_name(entry)
+                found_versions.append({
+                    'name': name,
+                    'path': entry,
+                    'wine_bin': wine_bin,
+                    'priority': major * 10 + (0 if is_beta else 1),
+                    'major_version': major,
+                    'minor_version': minor,
+                    'type': 'Valve-Proton',
+                    'steam_compat_name': compat_name,
+                })
+                seen_names.add(name)
+                logger.debug(f"Found Valve Proton: {name}")
+
+        found_versions.sort(
+            key=lambda x: (x['major_version'], x['minor_version'], 0 if x['name'].endswith('(Beta)') else 1),
+            reverse=True,
+        )
+        logger.info(f"Found {len(found_versions)} Valve Proton version(s)")
+        return found_versions
 
     @staticmethod
     def scan_all_proton_versions() -> List[Dict[str, Any]]:

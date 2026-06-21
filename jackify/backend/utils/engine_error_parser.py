@@ -7,6 +7,42 @@ from jackify.shared.errors import (
     game_not_found_for_modlist,
 )
 
+_HTTP_TIMEOUT_RE = re.compile(
+    r"httpclient\.timeout|request was canceled.*timeout|timed?\s*out.*elaps",
+    re.IGNORECASE,
+)
+
+_NEXUS_DOWNLOAD_RE = re.compile(
+    r"Game:\s*([A-Za-z0-9]+),\s*ModID:\s*(\d+)",
+    re.IGNORECASE,
+)
+
+_NEXUS_GAME_SLUGS = {
+    "skyrimspecialedition": "skyrimspecialedition",
+    "skyrim": "skyrim",
+    "skyrimvr": "skyrimvr",
+    "fallout4": "fallout4",
+    "fallout4vr": "fallout4vr",
+    "falloutneeds": "newvegas",
+    "falloutnewvegas": "newvegas",
+    "fallout3": "fallout3",
+    "oblivion": "oblivion",
+    "oblivionremastered": "oblivionremastered",
+    "starfield": "starfield",
+    "baldursgate3": "baldursgate3",
+}
+
+
+def nexus_url_from_error_line(line: str) -> Optional[str]:
+    """Extract a Nexus mod page URL from an engine download-failure line, or return None."""
+    m = _NEXUS_DOWNLOAD_RE.search(line)
+    if not m:
+        return None
+    game_raw = m.group(1).lower()
+    mod_id = m.group(2)
+    slug = _NEXUS_GAME_SLUGS.get(game_raw, game_raw)
+    return f"https://www.nexusmods.com/{slug}/mods/{mod_id}"
+
 
 def _ctx_detail(ctx: dict) -> Optional[str]:
     if not ctx:
@@ -14,9 +50,28 @@ def _ctx_detail(ctx: dict) -> Optional[str]:
     return format_technical_context(context=ctx)
 
 
+def _download_timeout_error(detail: str, ctx: dict) -> InstallError:
+    return InstallError(
+        "Download Timed Out",
+        "A download request timed out before completing.",
+        suggestion="Retry the install - Wabbajack will resume from where it stopped.",
+        solutions=[
+            "Re-run the install - Wabbajack resumes and will reattempt timed-out downloads.",
+            "Check your internet connection is stable.",
+            "Disable VPN or proxy if active.",
+            "Check if Nexus Mods is reachable at nexusmods.com.",
+            "If timeouts persist, try installing during off-peak hours or from a faster connection.",
+        ],
+        technical=_ctx_detail(ctx) or detail,
+    )
+
+
 def _engine_error(msg: str, ctx: dict) -> InstallError:
     """Map generic engine_error payloads to user-visible, actionable InstallError variants."""
     text = (msg or "").strip()
+    if _HTTP_TIMEOUT_RE.search(text):
+        return _download_timeout_error(text, ctx)
+
     match = re.search(r"can't find game\s+([A-Za-z0-9_:-]+)", text, flags=re.IGNORECASE)
     if match:
         game_name = match.group(1)
@@ -126,12 +181,19 @@ _TYPE_MAP = {
     ),
 }
 
+
+def _exit_code_6_error(detail: str, context: dict) -> JackifyError:
+    if detail and _HTTP_TIMEOUT_RE.search(detail):
+        return _download_timeout_error(detail, context)
+    return wabbajack_install_failed(format_technical_context(detail=detail, context=context) or detail)
+
+
 _EXIT_CODE_MAP = {
     2: lambda d, c: _TYPE_MAP["auth_failed"](d, c or {}),
     3: lambda d, c: _TYPE_MAP["network_error"](d, c or {}),
     4: lambda d, c: _TYPE_MAP["disk_full"](d, c or {}),
     5: lambda d, c: _TYPE_MAP["validation_failed"](d, c or {}),
-    6: lambda d, c: wabbajack_install_failed(format_technical_context(detail=d, context=c) or d),
+    6: _exit_code_6_error,
 }
 
 

@@ -49,9 +49,10 @@ from .install_modlist_workflow import InstallWorkflowMixin
 from .install_modlist_nexus import NexusAuthMixin
 from .install_modlist_selection import ModlistSelectionMixin
 from .screen_back_mixin import ScreenBackMixin
+from .install_verifier_mixin import InstallVerifierMixin
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
-class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlistUISetupMixin, ConsoleOutputMixin, ProgressHandlersMixin, PostInstallFeedbackMixin, AutomatedPrefixHandlersMixin, ConfigurationPhaseMixin, QWidget, TTWIntegrationMixin, VNVAutomationMixin, InstallWorkflowMixin, NexusAuthMixin, ModlistSelectionMixin):
+class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifierMixin, InstallModlistUISetupMixin, ConsoleOutputMixin, ProgressHandlersMixin, PostInstallFeedbackMixin, AutomatedPrefixHandlersMixin, ConfigurationPhaseMixin, QWidget, TTWIntegrationMixin, VNVAutomationMixin, InstallWorkflowMixin, NexusAuthMixin, ModlistSelectionMixin):
     resize_request = Signal(str)  # Signal for expand/collapse like TTW screen
     def _collect_actionable_controls(self):
         """Collect all actionable controls that should be disabled during operations (except Cancel)"""
@@ -78,6 +79,7 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
             self.nexus_login_btn,
             # Checkboxes
             self.auto_restart_checkbox,
+            self.engine_checkbox,
         ]
 
     def _disable_controls_during_operation(self):
@@ -113,12 +115,13 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
         os.makedirs(os.path.dirname(self.modlist_log_path), exist_ok=True)
 
     def _open_url_safe(self, url):
-        """Safely open URL via subprocess to avoid Qt library clashes inside the AppImage runtime"""
         import subprocess
+        _strip = {"LD_LIBRARY_PATH", "LD_PRELOAD", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "PYTHONPATH", "PYTHONHOME"}
+        clean_env = {k: v for k, v in os.environ.items() if k not in _strip}
         try:
-            subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(['xdg-open', url], env=clean_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         except Exception as e:
-            print(f"Warning: Could not open URL {url}: {e}")
+            logger.warning(f"Could not open URL {url}: {e}")
 
     def resizeEvent(self, event):
         """Handle window resize to prioritize form over console"""
@@ -216,7 +219,7 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
                 set_responsive_minimum(main_window, min_width=960, min_height=420)
                 # DO NOT resize - let window stay at current size
         except Exception as e:
-            logger.debug(f"DEBUG: showEvent exception: {e}")
+            logger.debug(f"showEvent exception: {e}")
     
     def _start_gallery_cache_preload(self):
         """DEPRECATED: Gallery cache preload now happens at app startup in JackifyMainWindow"""
@@ -248,22 +251,22 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
                         # Check if we got mods
                         modlists_with_mods = sum(1 for m in metadata.modlists if hasattr(m, 'mods') and m.mods)
                         if modlists_with_mods > 0:
-                            logger.debug(f"DEBUG: Gallery cache ready ({modlists_with_mods} modlists with mods)")
+                            logger.debug(f"Gallery cache ready ({modlists_with_mods} modlists with mods)")
                         else:
                             # Cache didn't have mods, but we fetched fresh - should have mods now
-                            logger.debug("DEBUG: Gallery cache updated")
+                            logger.debug("Gallery cache updated")
                     else:
-                        logger.debug("DEBUG: Failed to load gallery cache")
+                        logger.debug("Failed to load gallery cache")
                         
                 except Exception as e:
-                    logger.debug(f"DEBUG: Gallery cache preload error: {str(e)}")
+                    logger.debug(f"Gallery cache preload error: {str(e)}")
         
         # Start thread (non-blocking, invisible to user)
         self._gallery_cache_preload_thread = GalleryCachePreloadThread()
         # Don't connect finished signal - we don't need to do anything, just let it run
         self._gallery_cache_preload_thread.start()
         
-        logger.debug("DEBUG: Started background gallery cache preload")
+        logger.debug("Started background gallery cache preload")
 
     def hideEvent(self, event):
         """Called when the widget is hidden. Do not clear main window constraints so collapse from go_back() sticks."""
@@ -284,17 +287,17 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
             if saved_install_parent:
                 suggested_install_dir = os.path.join(saved_install_parent, modlist_name)
                 self.install_dir_edit.setText(suggested_install_dir)
-                logger.debug(f"DEBUG: Updated install directory suggestion: {suggested_install_dir}")
+                logger.debug(f"Updated install directory suggestion: {suggested_install_dir}")
             
             # Update download directory suggestion
             saved_download_parent = self.config_handler.get_default_download_parent_dir()
             if saved_download_parent:
                 suggested_download_dir = os.path.join(saved_download_parent, "Downloads")
                 self.downloads_dir_edit.setText(suggested_download_dir)
-                logger.debug(f"DEBUG: Updated download directory suggestion: {suggested_download_dir}")
+                logger.debug(f"Updated download directory suggestion: {suggested_download_dir}")
                 
         except Exception as e:
-            logger.debug(f"DEBUG: Error updating directory suggestions: {e}")
+            logger.debug(f"Error updating directory suggestions: {e}")
     
     def _save_parent_directories(self, install_dir, downloads_dir):
         """Removed automatic saving - user should set defaults in settings"""
@@ -422,6 +425,15 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
 
     def cleanup_processes(self):
         """Clean up any running processes when the window closes or is cancelled"""
+        self._stop_clf3_decompress_pulse()
+
+        fpl = getattr(self, 'file_progress_list', None)
+        if fpl is not None:
+            try:
+                fpl.stop_cpu_tracking()
+            except Exception:
+                pass
+
         if getattr(self, '_vnv_controller', None) is not None:
             self._vnv_controller.cleanup()
             self._vnv_controller = None
@@ -446,7 +458,7 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
                 setattr(self, attr_name, None)
                 return
 
-            logger.debug(f"DEBUG: Stopping {attr_name}")
+            logger.debug(f"Stopping {attr_name}")
 
             if cancel_method and hasattr(thread, cancel_method):
                 try:
@@ -543,13 +555,16 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
                 self._pending_manual_download_events = None
 
                 # Cancel the installation thread if it exists
-                if hasattr(self, 'install_thread') and self.install_thread and self.install_thread.isRunning():
-                    self.install_thread.cancel()
-                    self.install_thread.wait(12000)  # Allow time for child processes (7zz) to die; no terminate() - pthread_cancel corrupts Python
-                    if self.install_thread.isRunning():
-                        logger.warning("WARNING: InstallationThread still running after 12s cancel wait; retrying")
+                try:
+                    if hasattr(self, 'install_thread') and self.install_thread and self.install_thread.isRunning():
                         self.install_thread.cancel()
-                        self.install_thread.wait(5000)
+                        self.install_thread.wait(12000)  # Allow time for child processes (7zz) to die; no terminate() - pthread_cancel corrupts Python
+                        if self.install_thread.isRunning():
+                            logger.warning("WARNING: InstallationThread still running after 12s cancel wait; retrying")
+                            self.install_thread.cancel()
+                            self.install_thread.wait(5000)
+                except RuntimeError:
+                    self.install_thread = None
 
                 # Park prefix/config threads - disconnect their signals and let them
                 # finish naturally rather than terminating unsafely.
@@ -559,6 +574,16 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallModlist
                         ["progress_update", "workflow_complete", "error_occurred"],
                     )
                 if hasattr(self, 'config_thread') and self.config_thread:
+                    _ctx = getattr(self, 'context', None)
+                    _appid = str(
+                        getattr(self, '_current_appid', '')
+                        or ((_ctx.get('appid', '') if isinstance(_ctx, dict) else '') or '')
+                    )
+                    try:
+                        self.config_thread.requestInterruption()
+                    except Exception:
+                        pass
+                    self._kill_prefix_wine_processes(_appid)
                     self.config_thread = self._park_thread(
                         self.config_thread,
                         ["progress_update", "configuration_complete", "error_occurred"],

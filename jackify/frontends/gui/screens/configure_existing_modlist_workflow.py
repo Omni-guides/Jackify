@@ -56,20 +56,21 @@ class ConfigureExistingModlistWorkflowMixin:
             MessageService.critical(self, "Invalid Shortcut", "The selected shortcut is missing required information.", safety_level="medium")
             self._enable_controls_after_operation()
             return
-        self._current_appid = shortcut.get('AppID', shortcut.get('appid', ''))
+        raw_appid = shortcut.get('AppID', shortcut.get('appid', ''))
+        self._current_appid = str(raw_appid) if raw_appid != '' else ''
         resolution = self.resolution_combo.currentText()
         # Handle resolution saving
         if resolution and resolution != "Leave unchanged":
             success = self.resolution_service.save_resolution(resolution)
             if success:
-                logger.debug(f"DEBUG: Resolution saved successfully: {resolution}")
+                logger.debug(f"Resolution saved successfully: {resolution}")
             else:
-                logger.debug("DEBUG: Failed to save resolution")
+                logger.debug("Failed to save resolution")
         else:
             # Clear saved resolution if "Leave unchanged" is selected
             if self.resolution_service.has_saved_resolution():
                 self.resolution_service.clear_saved_resolution()
-                logger.debug("DEBUG: Saved resolution cleared")
+                logger.debug("Saved resolution cleared")
         # Start the workflow (no shortcut creation needed)
         self.start_workflow(modlist_name, install_dir, resolution)
 
@@ -104,6 +105,7 @@ class ConfigureExistingModlistWorkflowMixin:
                 progress_update = Signal(str)
                 configuration_complete = Signal(bool, str, str, bool)
                 error_occurred = Signal(str)
+                steam_restart_needed = Signal(str, str, str)  # app_name, exe_path, dl_path
                 
                 def __init__(self, modlist_name, install_dir, resolution, system_info, detect_func):
                     super().__init__()
@@ -128,10 +130,11 @@ class ConfigureExistingModlistWorkflowMixin:
                         
                         # Create modlist context for existing modlist configuration
                         mo2_exe_path = os.path.join(self.install_dir, "ModOrganizer.exe")
+                        from jackify.backend.services.nxm_downloader import resolve_mo2_download_dir
                         modlist_context = ModlistContext(
                             name=self.modlist_name,
                             install_dir=Path(self.install_dir),
-                            download_dir=None,
+                            download_dir=resolve_mo2_download_dir(Path(self.install_dir)),
                             game_type=detected_game_type,
                             nexus_api_key='',  # Not needed for configuration-only
                             modlist_value='',  # Not needed for existing modlist
@@ -147,25 +150,30 @@ class ConfigureExistingModlistWorkflowMixin:
                         # Define callbacks
                         def progress_callback(message):
                             self.progress_update.emit(message)
-                            
+
+                        # Store completion args rather than emitting immediately so we can
+                        # emit steam_restart_needed first when a restart is required.
+                        completion_args = [None]
+
                         def completion_callback(success, message, modlist_name, enb_detected=False):
-                            self.configuration_complete.emit(success, message, modlist_name, enb_detected)
-                            
-                        def manual_steps_callback(modlist_name, retry_count):
-                            # Existing modlists shouldn't need manual steps, but handle gracefully
-                            self.progress_update.emit(f"Note: Manual steps callback triggered for {modlist_name} (retry {retry_count})")
-                        
-                        # Call the working configuration service method
+                            completion_args[0] = (success, message, modlist_name, enb_detected)
+
                         self.progress_update.emit("Starting existing modlist configuration...")
-                        
-                        # For existing modlists, call configure_modlist_post_steam directly
-                        # since Steam setup and manual steps should already be done
                         success = modlist_service.configure_modlist_post_steam(
                             context=modlist_context,
                             progress_callback=progress_callback,
-                            manual_steps_callback=manual_steps_callback,
                             completion_callback=completion_callback
                         )
+
+                        if getattr(modlist_context, 'steam_restart_needed', False):
+                            self.steam_restart_needed.emit(
+                                getattr(modlist_context, 'mounts_app_name', ''),
+                                getattr(modlist_context, 'mounts_exe_path', ''),
+                                getattr(modlist_context, 'mounts_dl_path', ''),
+                            )
+
+                        if completion_args[0] is not None:
+                            self.configuration_complete.emit(*completion_args[0])
 
                         if not success:
                             self.error_occurred.emit(
@@ -183,11 +191,52 @@ class ConfigureExistingModlistWorkflowMixin:
             self.config_thread.progress_update.connect(self._handle_progress_update)
             self.config_thread.configuration_complete.connect(self.on_configuration_complete)
             self.config_thread.error_occurred.connect(self.on_configuration_error)
+            self.config_thread.steam_restart_needed.connect(self._on_steam_restart_needed)  # (app_name, exe_path, dl_path)
             self.config_thread.start()
             
         except Exception as e:
             self._safe_append_text(f"[ERROR] Failed to start configuration: {e}")
             MessageService.show_error(self, configuration_failed(str(e)))
+
+    def _on_steam_restart_needed(self, app_name: str, exe_path: str, dl_path: str):
+        """Prompt before stopping Steam to write a deferred STEAM_COMPAT_MOUNTS update.
+
+        Receives the shortcut identity and path from the signal so it can call
+        ensure_mounts_in_steam_compat on the GUI's ShortcutHandler (not the backend's).
+
+        Sets _awaiting_steam_restart before showing the dialog so that
+        on_configuration_complete (fired by the nested event loop during exec())
+        defers the success/ENB dialogs until after this handler finishes.
+        """
+        from PySide6.QtWidgets import QMessageBox
+        from jackify.frontends.gui.services.message_service import MessageService
+        self._awaiting_steam_restart = True
+        try:
+            reply = MessageService.question(
+                self,
+                "Restart Steam?",
+                "The download directory mount needs to be added to STEAM_COMPAT_MOUNTS for this "
+                "modlist. Steam must be stopped to write this change safely.\n\n"
+                "Any running game will be closed. Do you want Jackify to restart Steam now?",
+                safety_level="medium",
+            )
+            if reply == QMessageBox.No:
+                logger.info("User declined Steam restart; STEAM_COMPAT_MOUNTS update skipped")
+            else:
+                try:
+                    from jackify.backend.services.steam_restart_service import shutdown_steam, start_steam
+                    shutdown_steam()
+                    self.shortcut_handler.ensure_mounts_in_steam_compat(app_name, exe_path, dl_path)
+                    start_steam()
+                except Exception as e:
+                    logger.warning("Steam restart/mounts update failed: %s", e)
+        finally:
+            self._awaiting_steam_restart = False
+            if hasattr(self, '_deferred_completion_args') and self._deferred_completion_args is not None:
+                args = self._deferred_completion_args
+                self._deferred_completion_args = None
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.on_configuration_complete(*args))
 
     def _check_and_run_vnv_automation(self, modlist_name: str, install_dir: str) -> bool:
         """Check if VNV automation should run and start it if applicable.
@@ -227,26 +276,18 @@ class ConfigureExistingModlistWorkflowMixin:
         if hasattr(self, '_pending_success_dialog_params'):
             params = self._pending_success_dialog_params
             del self._pending_success_dialog_params
-
-            self.file_progress_list.clear()
-
-            from ..dialogs import SuccessDialog
-            success_dialog = SuccessDialog(
-                modlist_name=params['modlist_name'],
-                workflow_type=params['workflow_type'],
-                time_taken=params['time_taken'],
-                game_name=params['game_name'],
-                parent=self,
+            self._run_verifier_then_show_success(
+                install_dir=params.get('install_dir', ''),
+                game_type=params.get('game_type', 'unknown'),
+                appid=params.get('appid', ''),
+                success_params={
+                    'modlist_name': params['modlist_name'],
+                    'workflow_type': params['workflow_type'],
+                    'time_taken': params['time_taken'],
+                    'game_name': params.get('game_name'),
+                    'enb_detected': params.get('enb_detected', False),
+                },
             )
-            success_dialog.show()
-
-            if params.get('enb_detected'):
-                try:
-                    from ..dialogs.enb_proton_dialog import ENBProtonDialog
-                    enb_dialog = ENBProtonDialog(modlist_name=params['modlist_name'], parent=self)
-                    enb_dialog.exec()
-                except Exception as e:
-                    logger.warning("Failed to show ENB dialog: %s", e)
 
     def show_manual_steps_dialog(self, extra_warning=""):
         modlist_name = self.shortcut_combo.currentText().split('(')[0].strip() or "your modlist"

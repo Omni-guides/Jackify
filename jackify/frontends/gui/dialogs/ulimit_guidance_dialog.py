@@ -389,11 +389,13 @@ class UlimitGuidanceDialog(QDialog):
         """Apply dialog styling"""
         self.setStyleSheet("""
             QDialog {
-                background-color: #f5f5f5;
+                background-color: #232323;
+                color: #e0e0e0;
             }
             QGroupBox {
                 font-weight: bold;
-                border: 2px solid #cccccc;
+                color: #e0e0e0;
+                border: 2px solid #3a3a3a;
                 border-radius: 5px;
                 margin-top: 1ex;
                 padding-top: 10px;
@@ -404,13 +406,14 @@ class UlimitGuidanceDialog(QDialog):
                 padding: 0 5px 0 5px;
             }
             QTextEdit {
-                background-color: #ffffff;
-                border: 1px solid #cccccc;
+                background-color: #2a2a2a;
+                color: #e0e0e0;
+                border: 1px solid #3a3a3a;
                 border-radius: 3px;
                 padding: 5px;
             }
             QPushButton {
-                background-color: #007acc;
+                background-color: #4a5568;
                 color: white;
                 border: none;
                 padding: 8px 16px;
@@ -418,14 +421,14 @@ class UlimitGuidanceDialog(QDialog):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #005a9e;
+                background-color: #5a6578;
             }
             QPushButton:pressed {
-                background-color: #004175;
+                background-color: #3fd0ea;
             }
             QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
+                background-color: #333;
+                color: #666;
             }
         """)
     

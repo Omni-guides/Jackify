@@ -2,6 +2,8 @@
 TTW installer backend: install_ttw_backend, start_ttw_installation, cleanup, stream output, integrate.
 """
 
+import os
+import signal
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
@@ -144,7 +146,8 @@ class TTWInstallerBackendMixin:
             exe_dir = str(self.ttw_installer_executable_path.parent)
             process = subprocess.Popen(
                 cmd, cwd=exe_dir, env=env,
-                stdout=output_fh, stderr=subprocess.STDOUT, bufsize=1
+                stdout=output_fh, stderr=subprocess.STDOUT, bufsize=1,
+                start_new_session=True,
             )
             self.logger.info("TTW_Linux_Installer process started (PID: %s), output to %s", process.pid, output_file)
             process._output_fh = output_fh
@@ -155,7 +158,7 @@ class TTWInstallerBackendMixin:
 
     @staticmethod
     def cleanup_ttw_process(process):
-        """Clean up after TTW installation process."""
+        """Terminate the TTW process group, then clean up file handles."""
         if process:
             if hasattr(process, '_output_fh'):
                 try:
@@ -164,13 +167,18 @@ class TTWInstallerBackendMixin:
                     pass
             if process.poll() is None:
                 try:
-                    process.terminate()
+                    pgid = os.getpgid(process.pid)
+                    os.killpg(pgid, signal.SIGTERM)
                     process.wait(timeout=5)
                 except Exception:
                     try:
-                        process.kill()
+                        pgid = os.getpgid(process.pid)
+                        os.killpg(pgid, signal.SIGKILL)
                     except Exception:
-                        pass
+                        try:
+                            process.kill()
+                        except Exception:
+                            pass
         from jackify.shared.paths import cleanup_stale_tmp
         cleanup_stale_tmp()
 

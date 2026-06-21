@@ -22,11 +22,64 @@ logger = logging.getLogger(__name__)
 class ModlistOperationsConfigurationCLIMixin:
     """Mixin providing CLI configuration phase methods."""
 
+    def _clf3_fetch_wabbajack(self, engine_path: str, machine_name: str, engine_dir: str) -> "str | None":
+        """
+        Resolve a gallery machine name to a local .wabbajack file for CLF3.
+
+        Looks up the CDN download URL from the metadata cache, then runs
+        `clf3 fetch` to download the file.  Returns the local path on success,
+        or None (with an error printed) on failure.
+        """
+        from jackify.shared.paths import get_jackify_data_dir, get_jackify_downloads_dir
+        import json as _json
+
+        list_id = machine_name.split('/')[-1] if '/' in machine_name else machine_name
+        local_path = str(get_jackify_downloads_dir() / f"{list_id}.wabbajack")
+
+        if os.path.isfile(local_path):
+            self.logger.info("CLF3: using cached wabbajack file at %s", local_path)
+            return local_path
+
+        download_url = None
+        cache_file = get_jackify_data_dir() / "modlist-cache" / "metadata" / "modlist_metadata.json"
+        if cache_file.is_file():
+            try:
+                data = _json.loads(cache_file.read_text(encoding="utf-8"))
+                for entry in data.get("modlists", []):
+                    if entry.get("namespacedName") == machine_name or entry.get("machineURL") == list_id:
+                        download_url = (entry.get("links") or {}).get("download")
+                        break
+            except Exception as e:
+                self.logger.warning("CLF3: could not read metadata cache: %s", e)
+
+        if not download_url:
+            print(
+                f"{COLOR_ERROR}CLF3 requires a download URL for '{machine_name}' but none was found in the "
+                f"gallery cache. Refresh the modlist gallery or use a local .wabbajack file.{COLOR_RESET}"
+            )
+            return None
+
+        print(f"{COLOR_INFO}Downloading modlist file via CLF3...{COLOR_RESET}")
+        from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
+        fetch_cmd = [engine_path, "fetch", download_url, "--output", local_path]
+        self.logger.debug("CLF3 fetch command: %s", " ".join(fetch_cmd))
+        fetch_env = get_clean_subprocess_env({})
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        fetch_result = subprocess.run(
+            fetch_cmd, capture_output=True, text=True, env=fetch_env, cwd=engine_dir
+        )
+        if fetch_result.returncode != 0:
+            err = fetch_result.stderr.strip() or fetch_result.stdout.strip() or "unknown error"
+            print(f"{COLOR_ERROR}Failed to download modlist file:\n{err}{COLOR_RESET}")
+            return None
+
+        print(f"{COLOR_INFO}Modlist file ready.{COLOR_RESET}")
+        return local_path
+
     def configuration_phase(self):
         """
-        Run the configuration phase: execute the Linux-native Jackify Install Engine.
+        Run the configuration phase: execute the active install engine.
         """
-        from .modlist_operations import get_jackify_engine_path
 
         print(f"\n{COLOR_PROMPT}--- Configuration Phase: Installing Modlist ---{COLOR_RESET}")
         start_time = time.time()
@@ -92,11 +145,20 @@ class ModlistOperationsConfigurationCLIMixin:
             api_key = current_api_key or self.context.get('nexus_api_key')
             oauth_info = current_oauth_info or self.context.get('nexus_oauth_info')
 
-            engine_path = get_jackify_engine_path()
-            engine_dir = os.path.dirname(engine_path)
-            if not os.path.isfile(engine_path) or not os.access(engine_path, os.X_OK):
-                print(f"{COLOR_ERROR}Jackify Install Engine not found or not executable at: {engine_path}{COLOR_RESET}")
+            from jackify.backend.services.engine_invoker import (
+                get_active_engine_id, get_engine_path, build_install_command,
+                resolve_game_dir, resolve_game_location, is_clf3_active,
+            )
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            config_handler = ConfigHandler()
+
+            engine_id = get_active_engine_id()
+            engine_path = get_engine_path(engine_id)
+            if not engine_path or not os.path.isfile(engine_path) or not os.access(engine_path, os.X_OK):
+                print(f"{COLOR_ERROR}Install engine not found or not executable: {engine_id} ({engine_path or 'path unknown'}){COLOR_RESET}")
                 return
+            engine_dir = os.path.dirname(engine_path)
+            clf3_mode = is_clf3_active()
 
             if os.environ.get('JACKIFY_GUI_MODE') == '1':
                 if not self.context.get('modlist_source'):
@@ -105,60 +167,79 @@ class ModlistOperationsConfigurationCLIMixin:
                     self.logger.error("modlist_value is missing in context for GUI workflow!")
                     return
 
-            cmd = [engine_path, 'install', '--show-file-progress']
-            modlist_value = self.context.get('modlist_value')
-            if modlist_value and modlist_value.endswith('.wabbajack') and os.path.isfile(modlist_value):
-                cmd += ['-w', modlist_value]
-            elif modlist_value:
-                cmd += ['-m', modlist_value]
-            elif self.context.get('machineid'):
-                cmd += ['-m', self.context['machineid']]
-            cmd += ['-o', install_dir_str, '-d', download_dir_str]
-
-            from jackify.backend.handlers.config_handler import ConfigHandler
-            config_handler = ConfigHandler()
+            modlist_value = self.context.get('modlist_value') or self.context.get('machineid', '')
             debug_mode = config_handler.get('debug_mode', False)
-            if debug_mode:
-                cmd.append('--debug')
+
+            game_dir = None
+            if clf3_mode:
+                game_type = self.context.get('game_type')
+                location = resolve_game_location(game_type)
+                if location:
+                    game_dir, game_store = location
+                    if game_store != 'steam':
+                        store_label = {'gog': 'GOG', 'epic': 'Epic Games'}.get(game_store, game_store)
+                        print(
+                            f"[WARN] Game detected from {store_label}, not Steam. "
+                            "Most Wabbajack modlists require the Steam version. "
+                            "If the install fails with hash errors, a store version mismatch is likely the cause."
+                        )
+                else:
+                    self.logger.warning("CLF3: could not resolve game directory for game_type=%s", game_type)
+
+                if not (modlist_value.endswith('.wabbajack') and os.path.isfile(modlist_value)):
+                    modlist_value = self._clf3_fetch_wabbajack(
+                        engine_path, modlist_value, engine_dir
+                    )
+                    if modlist_value is None:
+                        return
+
+            cmd = build_install_command(
+                engine_id=engine_id,
+                engine_path=engine_path,
+                wabbajack=modlist_value,
+                install_dir=install_dir_str,
+                downloads_dir=download_dir_str,
+                game_dir=game_dir,
+                install_mode='file' if (modlist_value.endswith('.wabbajack') and os.path.isfile(modlist_value)) else 'online',
+                debug=debug_mode,
+            )
+            if debug_mode and not clf3_mode:
                 self.logger.info("Adding --debug flag to jackify-engine")
-            writeback_path = str(auth_service.get_token_writeback_path())
+            writeback_path = str(auth_service.get_token_writeback_path()) if not clf3_mode else None
             original_env_values = {
                 'NEXUS_API_KEY': os.environ.get('NEXUS_API_KEY'),
+                'NEXUS_OAUTH_TOKEN': os.environ.get('NEXUS_OAUTH_TOKEN'),
                 'NEXUS_OAUTH_INFO': os.environ.get('NEXUS_OAUTH_INFO'),
                 'JACKIFY_TOKEN_WRITEBACK': os.environ.get('JACKIFY_TOKEN_WRITEBACK'),
                 'DOTNET_SYSTEM_GLOBALIZATION_INVARIANT': os.environ.get('DOTNET_SYSTEM_GLOBALIZATION_INVARIANT')
             }
 
             try:
-                os.environ['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
-                if oauth_info:
-                    os.environ['NEXUS_OAUTH_INFO'] = oauth_info
-                    from jackify.backend.services.nexus_oauth_service import NexusOAuthService
-                    os.environ['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
-                    self.logger.debug(f"Set NEXUS_OAUTH_INFO and NEXUS_OAUTH_CLIENT_ID={NexusOAuthService.CLIENT_ID} for engine (supports auto-refresh)")
+                if clf3_mode:
+                    if api_key:
+                        os.environ['NEXUS_OAUTH_TOKEN'] = api_key
+                else:
+                    if writeback_path:
+                        os.environ['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
                     if api_key:
                         os.environ['NEXUS_API_KEY'] = api_key
-                elif api_key:
-                    os.environ['NEXUS_API_KEY'] = api_key
-                    self.logger.debug(f"Set NEXUS_API_KEY for engine (no auto-refresh)")
-                else:
-                    if 'NEXUS_API_KEY' in os.environ:
-                        del os.environ['NEXUS_API_KEY']
-                    if 'NEXUS_OAUTH_INFO' in os.environ:
-                        del os.environ['NEXUS_OAUTH_INFO']
-                    if 'NEXUS_OAUTH_CLIENT_ID' in os.environ:
-                        del os.environ['NEXUS_OAUTH_CLIENT_ID']
-                    self.logger.debug(f"No Nexus auth available, cleared inherited env vars")
+                    if oauth_info:
+                        os.environ['NEXUS_OAUTH_INFO'] = oauth_info
+                        from jackify.backend.services.nexus_oauth_service import NexusOAuthService
+                        os.environ['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
+                        self.logger.debug("Set NEXUS_OAUTH_INFO and NEXUS_OAUTH_CLIENT_ID for engine")
+                    elif not api_key:
+                        for key in ('NEXUS_API_KEY', 'NEXUS_OAUTH_INFO', 'NEXUS_OAUTH_CLIENT_ID'):
+                            os.environ.pop(key, None)
+                        self.logger.debug("No Nexus auth available, cleared inherited env vars")
+                    os.environ['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = "1"
 
-                os.environ['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = "1"
-                self.logger.debug(f"Temporarily set os.environ['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = '1' for engine call.")
-
-                self.logger.info("Environment prepared for jackify-engine install process by modifying os.environ.")
+                self.logger.info("Environment prepared for %s install process.", engine_id)
                 self.logger.debug(f"NEXUS_API_KEY in os.environ (pre-call): {'[SET]' if os.environ.get('NEXUS_API_KEY') else '[NOT SET]'}")
-                self.logger.debug(f"NEXUS_OAUTH_INFO in os.environ (pre-call): {'[SET]' if os.environ.get('NEXUS_OAUTH_INFO') else '[NOT SET]'}")
 
                 pretty_cmd = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in cmd])
-                print(f"{COLOR_INFO}Launching Jackify Install Engine with command:{COLOR_RESET} {pretty_cmd}")
+                engine_label = "CLF3" if clf3_mode else "Jackify Install Engine"
+                print(f"{COLOR_INFO}Launching {engine_label} with command:{COLOR_RESET} {pretty_cmd}")
 
                 from jackify.backend.handlers.subprocess_utils import increase_file_descriptor_limit
                 success, old_limit, new_limit, message = increase_file_descriptor_limit()
@@ -169,16 +250,80 @@ class ModlistOperationsConfigurationCLIMixin:
 
                 from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
                 clean_env = get_clean_subprocess_env()
-                self._current_process = subprocess.Popen(
-                    cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=False,
-                    env=clean_env,
-                    cwd=engine_dir,
-                )
-                proc = self._current_process
+
+                if clf3_mode:
+                    import threading as _threading
+                    from jackify.backend.handlers.progress_parser_clf3 import CLF3ProgressStateManager
+                    clf3_parser = CLF3ProgressStateManager()
+                    self._current_process = subprocess.Popen(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=False,
+                        env=clean_env,
+                        cwd=engine_dir,
+                    )
+                    proc = self._current_process
+
+                    def _drain_stderr():
+                        for _ in proc.stderr:
+                            pass
+
+                    stderr_thread = _threading.Thread(target=_drain_stderr, daemon=True)
+                    stderr_thread.start()
+
+                    _inline_active = False
+                    _last_phase = ''
+                    for raw in proc.stdout:
+                        line = raw.decode('utf-8', errors='replace').rstrip('\r\n')
+                        if not line.strip():
+                            continue
+                        if line.strip().startswith('{'):
+                            prev_phase = clf3_parser.get_state().phase_name
+                            changed = clf3_parser.process_line(line)
+                            if changed:
+                                state = clf3_parser.get_state()
+                                new_phase = state.phase_name or ''
+                                if new_phase != _last_phase:
+                                    if _inline_active:
+                                        print()
+                                        _inline_active = False
+                                    _last_phase = new_phase
+                                    print(f"\n=== {new_phase} ===")
+                                msg = state.message
+                                if state.phase_name == "Queuing" and state.phase_max_steps:
+                                    msg = f"Queuing archives: {state.phase_step}/{state.phase_max_steps}"
+                                if msg:
+                                    print(f"\r{msg}\033[K", end='', flush=True)
+                                    _inline_active = True
+                        else:
+                            if _inline_active:
+                                print()
+                                _inline_active = False
+                            print(line)
+
+                    if _inline_active:
+                        print()
+                    stderr_thread.join(timeout=2)
+                    proc.wait()
+                    self._current_process = None
+                    if proc.returncode != 0:
+                        print(f"{COLOR_ERROR}CLF3 exited with code {proc.returncode}.{COLOR_RESET}")
+                        self.logger.error("CLF3 exited with code %d.", proc.returncode)
+                        return
+                    self.logger.info("CLF3 completed successfully.")
+
+                if not clf3_mode:
+                    self._current_process = subprocess.Popen(
+                        cmd,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=False,
+                        env=clean_env,
+                        cwd=engine_dir,
+                    )
+                    proc = self._current_process
 
                 def _write_stdin(payload: str) -> bool:
                     if not proc.stdin or proc.poll() is not None:
@@ -282,12 +427,14 @@ class ModlistOperationsConfigurationCLIMixin:
 
                 proc.wait()
                 self._current_process = None
-                auth_service.apply_token_writeback(writeback_path)
-                if proc.returncode != 0:
-                    print(f"{COLOR_ERROR}Jackify Install Engine exited with code {proc.returncode}.{COLOR_RESET}")
-                    self.logger.error(f"Engine exited with code {proc.returncode}.")
-                    return
-                self.logger.info(f"Engine completed with code {proc.returncode}.")
+                if writeback_path:
+                    auth_service.apply_token_writeback(writeback_path)
+                if not clf3_mode:
+                    if proc.returncode != 0:
+                        print(f"{COLOR_ERROR}Jackify Install Engine exited with code {proc.returncode}.{COLOR_RESET}")
+                        self.logger.error(f"Engine exited with code {proc.returncode}.")
+                        return
+                    self.logger.info(f"Engine completed with code {proc.returncode}.")
             except Exception as e:
                 error_message = str(e)
                 print(f"{COLOR_ERROR}Error running Jackify Install Engine: {error_message}{COLOR_RESET}\n")
@@ -360,6 +507,28 @@ class ModlistOperationsConfigurationCLIMixin:
         elapsed = int(time.time() - start_time)
         print(f"\nElapsed time: {elapsed//3600:02d}:{(elapsed%3600)//60:02d}:{elapsed%60:02d} (hh:mm:ss)\n")
         print(f"{COLOR_INFO}Your modlist has been installed to: {install_dir_str}{COLOR_RESET}\n")
+
+        try:
+            from jackify.backend.utils.modlist_meta import write_modlist_meta
+            _meta_game_type = self.context.get('detected_game') or self.context.get('special_game_type')
+            write_modlist_meta(
+                install_dir_str,
+                self.context.get('modlist_name', ''),
+                _meta_game_type,
+                install_mode=self.context.get('install_mode', 'online'),
+            )
+        except Exception as _meta_err:
+            self.logger.debug("Modlist meta write skipped: %s", _meta_err)
+
+        try:
+            from jackify.backend.handlers.path_handler import PathHandler
+            _ini_path = Path(install_dir_str) / "ModOrganizer.ini"
+            _modlist_sdcard = install_dir_str.startswith('/run/media/')
+            PathHandler().set_download_directory(_ini_path, download_dir_str, _modlist_sdcard)
+            self.logger.info("Set download_directory in ModOrganizer.ini: %s", download_dir_str)
+        except Exception as _ini_err:
+            self.logger.warning("Could not set download_directory in ModOrganizer.ini: %s", _ini_err)
+
         if self.context.get('machineid') != 'Tuxborn/Tuxborn':
             print(f"{COLOR_WARNING}Only Skyrim, Fallout 4, Fallout New Vegas, Oblivion, Starfield, and Oblivion Remastered modlists are compatible with Jackify's post-install configuration. Any modlist can be downloaded/installed, but only these games are supported for automated configuration.{COLOR_RESET}")
 
@@ -500,8 +669,11 @@ class ModlistOperationsConfigurationCLIMixin:
                                 _is_steamdeck = True
                 except Exception:
                     _is_steamdeck = False
+                from jackify.backend.services.nxm_downloader import resolve_mo2_download_dir
+                download_dir = resolve_mo2_download_dir(Path(install_dir_str))
                 result = prefix_service.run_working_workflow(
-                    shortcut_name, install_dir_str, mo2_exe_path, progress_callback, steamdeck=_is_steamdeck
+                    shortcut_name, install_dir_str, mo2_exe_path, progress_callback,
+                    steamdeck=_is_steamdeck, download_dir=download_dir,
                 )
 
                 if isinstance(result, tuple) and len(result) == 4:
@@ -642,7 +814,7 @@ class ModlistOperationsConfigurationCLIMixin:
             modlist_context = ModlistContext(
                 name=shortcut_name,
                 install_dir=Path(install_dir_str),
-                download_dir=Path(install_dir_str) / "downloads",
+                download_dir=Path(download_dir_str),
                 game_type=self.context.get('detected_game', 'Unknown'),
                 nexus_api_key='',
                 modlist_value=self.context.get('modlist_value', ''),
@@ -669,6 +841,21 @@ class ModlistOperationsConfigurationCLIMixin:
             if configuration_success:
                 self.logger.info("Post-installation configuration completed successfully")
                 print(f"{COLOR_INFO}Core configuration complete. Checking post-install automation...{COLOR_RESET}")
+
+                if getattr(modlist_context, 'enb_detected', False):
+                    print(f"\n{COLOR_WARNING}ENB Detected{COLOR_RESET}")
+                    from jackify.backend.data.modlist_proton_requirements import get_proton_requirement
+                    _proton_req = get_proton_requirement(shortcut_name)
+                    if _proton_req:
+                        print(f"{COLOR_WARNING}This modlist requires {_proton_req['required']} for ENB compatibility.{COLOR_RESET}")
+                        print(f"{COLOR_INFO}{_proton_req['note']}{COLOR_RESET}")
+                    else:
+                        print(f"{COLOR_INFO}If you plan on using ENB as part of this modlist, you will need one of the following Proton versions:{COLOR_RESET}")
+                        print(f"{COLOR_INFO}  (In order of recommendation){COLOR_RESET}")
+                        print(f"{COLOR_INFO}  - Proton-CachyOS{COLOR_RESET}")
+                        print(f"{COLOR_INFO}  - GE-Proton{COLOR_RESET}")
+                        print(f"{COLOR_INFO}  - Proton 9 (Valve){COLOR_RESET}")
+                        print(f"{COLOR_WARNING}  Valve Proton 10 has known ENB compatibility issues.{COLOR_RESET}")
                 try:
                     # Ensure CLI install flow gets the same VNV automation behavior as GUI.
                     from jackify.backend.services.vnv_integration_helper import (
@@ -747,7 +934,83 @@ class ModlistOperationsConfigurationCLIMixin:
                 except Exception as ttw_err:
                     self.logger.error("TTW post-install prompt failed: %s", ttw_err, exc_info=True)
                     print(f"{COLOR_WARNING}TTW integration prompt failed. Check logs for details.{COLOR_RESET}")
-                print(f"{COLOR_SUCCESS}Configuration completed successfully!{COLOR_RESET}")
+                try:
+                    from jackify.backend.handlers.modlist_fixup_handler import (
+                        check_jcontainers_needs_fix,
+                        apply_jcontainers_fix,
+                    )
+                    _jc_game_type = detected_game or self.context.get('detected_game', '')
+                    needs_fix = check_jcontainers_needs_fix(Path(install_dir_str), _jc_game_type)
+                    if needs_fix:
+                        print(f"\n{COLOR_WARNING}JContainers Compatibility Fix{COLOR_RESET}")
+                        print(f"{COLOR_INFO}The mod JContainers has been detected. The Nexusmods version is known to cause crashes on Linux/Proton.{COLOR_RESET}")
+                        print(f"{COLOR_INFO}A fixed version is available from the mod's GitHub page. The original DLL will be backed up first.{COLOR_RESET}")
+                        try:
+                            user_input = input(f"{COLOR_PROMPT}Apply JContainers fix now? (Y/n): {COLOR_RESET}").strip().lower()
+                        except (EOFError, KeyboardInterrupt):
+                            user_input = "n"
+                        if user_input in ("", "y", "yes"):
+                            apply_jcontainers_fix(Path(install_dir_str), _jc_game_type)
+                            print(f"{COLOR_INFO}JContainers fix applied.{COLOR_RESET}")
+                        else:
+                            print(f"{COLOR_INFO}JContainers fix skipped.{COLOR_RESET}")
+                except Exception as jc_err:
+                    self.logger.warning("JContainers fix check failed (non-fatal): %s", jc_err)
+                try:
+                    from jackify.backend.services.install_verifier_service import (
+                        run_install_verification, resolve_pfx_for_appid, _load_verifier as _lv_final,
+                    )
+                    from jackify.frontends.cli.ui.indeterminate_status import CliIndeterminateStatus
+                    import threading
+                    _pfx = resolve_pfx_for_appid(str(app_id)) if app_id else None
+                    if _pfx and _pfx.is_dir():
+                        _vmod_final = _lv_final()
+                        _norm_gt = _vmod_final.detect_game_type(Path(install_dir_str))
+                        _verif_result = [None]
+                        _spinner = CliIndeterminateStatus()
+                        _spinner.set("Running install verification...")
+                        def _verif_worker():
+                            _verif_result[0] = run_install_verification(
+                                _pfx,
+                                Path(install_dir_str),
+                                _norm_gt,
+                                str(app_id) if app_id else "",
+                                shortcut_name,
+                            )
+                        _t = threading.Thread(target=_verif_worker, daemon=True)
+                        _t.start()
+                        _t.join()
+                        _spinner.stop()
+                        r = _verif_result[0]
+                        if r is not None:
+                            n_pass = len(r.passes) if hasattr(r, 'passes') else 0
+                            n_warn = len(r.warnings) if hasattr(r, 'warnings') else 0
+                            n_fail = len(r.failures) if hasattr(r, 'failures') else 0
+                            _total = n_pass + n_warn + n_fail
+                            print(f"\n--- Install Verification ---")
+                            print(f"  {n_pass} passed, {n_warn} warnings, {n_fail} failed (of {_total} checks)")
+                            for msg in (r.failures if hasattr(r, 'failures') else []):
+                                print(f"{COLOR_ERROR}  [FAIL] {msg}{COLOR_RESET}")
+                            for msg in (r.warnings if hasattr(r, 'warnings') else []):
+                                print(f"{COLOR_WARNING}  [WARN] {msg}{COLOR_RESET}")
+                            if not n_fail and not n_warn:
+                                print(f"{COLOR_SUCCESS}  All checks passed.{COLOR_RESET}")
+                            print()
+                except Exception as verif_err:
+                    print(f"{COLOR_WARNING}[WARN] Install verifier failed: {verif_err}{COLOR_RESET}")
+                    self.logger.warning("Install verification failed: %s", verif_err, exc_info=True)
+                from jackify.shared.paths import get_jackify_logs_dir
+                print("")
+                print("")
+                print("=" * 35)
+                print("= Configuration phase complete =")
+                print("=" * 35)
+                print("")
+                print("Modlist Install and Configuration complete!")
+                print(f"  You should now be able to Launch '{shortcut_name}' through Steam")
+                print("  Congratulations and enjoy the game!")
+                print("")
+                print(f"Detailed log available at: {get_jackify_logs_dir()}/Configure_New_Modlist_workflow.log")
             else:
                 print(f"{COLOR_WARNING}Configuration had some issues but completed.{COLOR_RESET}")
                 self.logger.warning("Post-installation configuration had issues")

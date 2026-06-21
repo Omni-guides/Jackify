@@ -116,10 +116,13 @@ class InstallTTWScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWUISetupMixin, T
     def _open_url_safe(self, url):
         """Safely open URL via subprocess to avoid Qt library clashes inside the AppImage runtime"""
         import subprocess
+        import os
+        _strip = {"LD_LIBRARY_PATH", "LD_PRELOAD", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "PYTHONPATH", "PYTHONHOME"}
+        clean_env = {k: v for k, v in os.environ.items() if k not in _strip}
         try:
-            subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(['xdg-open', url], env=clean_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         except Exception as e:
-            print(f"Warning: Could not open URL {url}: {e}")
+            logger.warning(f"Could not open URL {url}: {e}")
 
     def _load_saved_parent_directories(self):
         """No-op: do not pre-populate install/download directories from saved values."""
@@ -136,16 +139,16 @@ class InstallTTWScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWUISetupMixin, T
             if saved_install_parent:
                 suggested_install_dir = os.path.join(saved_install_parent, modlist_name)
                 self.install_dir_edit.setText(suggested_install_dir)
-                logger.debug(f"DEBUG: Updated install directory suggestion: {suggested_install_dir}")
+                logger.debug(f"Updated install directory suggestion: {suggested_install_dir}")
             
             # Update download directory suggestion
             saved_download_parent = self.config_handler.get_default_download_parent_dir()
             if saved_download_parent:
                 suggested_download_dir = os.path.join(saved_download_parent, "Downloads")
-                logger.debug(f"DEBUG: Updated download directory suggestion: {suggested_download_dir}")
+                logger.debug(f"Updated download directory suggestion: {suggested_download_dir}")
                 
         except Exception as e:
-            logger.debug(f"DEBUG: Error updating directory suggestions: {e}")
+            logger.debug(f"Error updating directory suggestions: {e}")
     
     def _save_parent_directories(self, install_dir, downloads_dir):
         """Removed automatic saving - user should set defaults in settings"""
@@ -341,14 +344,25 @@ class InstallTTWScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWUISetupMixin, T
                     font-size: 13px;
                 """)
 
-            # Park all threads first (disconnects signals), then send cooperative cancel.
-            self._park_all_threads()
+            # Send process-group kill first so the subprocess tree dies before we
+            # disconnect signals or wait on the thread.
             if hasattr(self, 'install_thread') and self.install_thread:
                 try:
                     self.install_thread.cancel()
                 except Exception:
                     pass
-            
+
+            # Park threads (disconnects signals so no callbacks fire on the dying widget).
+            self._park_all_threads()
+
+            # Wait up to 5 s for the thread to exit after the kill signal.
+            if hasattr(self, 'install_thread') and self.install_thread:
+                try:
+                    self.install_thread.wait(5000)
+                except Exception:
+                    pass
+                self.install_thread = None
+
             # Cleanup any remaining processes
             self.cleanup_processes()
             

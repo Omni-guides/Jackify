@@ -1,4 +1,5 @@
 """Nexus Premium status detection service."""
+import hashlib
 import time
 import logging
 from typing import Tuple, Optional
@@ -70,7 +71,8 @@ class NexusPremiumService:
 
     def _cache_key(self, token: str, is_oauth: bool = False) -> str:
         suffix = "oauth" if is_oauth else "apikey"
-        return f"nexus_premium_cache_{token[:8]}_{suffix}"
+        token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()[:12]
+        return f"nexus_premium_cache_{token_hash}_{suffix}"
 
     def _read_cache(self, token: str, is_oauth: bool = False) -> Optional[Tuple[bool, Optional[str]]]:
         try:

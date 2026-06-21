@@ -48,13 +48,11 @@ class ModlistConfigurationMixin:
         else:
             return True
 
-    def _execute_configuration_steps(self, status_callback=None, manual_steps_completed=False, skip_manual_for_existing=False):
+    def _execute_configuration_steps(self, status_callback=None):
         """
         Runs the actual configuration steps for the selected modlist.
         Args:
             status_callback (callable, optional): A function to call with status updates during configuration.
-            manual_steps_completed (bool): If True, skip the manual steps prompt (used for new modlist flow).
-            skip_manual_for_existing (bool): If True, always skip manual steps (for existing modlists that are already configured).
         """
         try:
             # Store status_callback for Configuration Summary
@@ -88,64 +86,6 @@ class ModlistConfigurationMixin:
             return False # Abort on failure
         self.logger.info("Step 1: Setting Protontricks permissions... Done")
 
-        # Step 2: Prompt user for manual steps and wait for compatdata
-        skip_manual_prompt = skip_manual_for_existing  # Existing modlists skip manual steps
-        if not manual_steps_completed and not skip_manual_for_existing:
-            # Check if Proton Experimental is already set and compatdata exists
-            proton_ok = False
-            compatdata_ok = False
-            
-            # Check Proton version
-            self.logger.debug(f"[MANUAL STEPS DEBUG] Checking Proton version for AppID {self.appid}")
-            if self._detect_proton_version():
-                self.logger.debug(f"[MANUAL STEPS DEBUG] Detected Proton version: {self.proton_ver}")
-                if self.proton_ver and 'experimental' in self.proton_ver.lower():
-                    proton_ok = True
-                    self.logger.debug("[MANUAL STEPS DEBUG] Proton Experimental detected - proton_ok = True")
-            else:
-                self.logger.debug("[MANUAL STEPS DEBUG] Could not detect Proton version")
-                
-            # Check compatdata/prefix
-            prefix_path_str = self.path_handler.find_compat_data(str(self.appid))
-            self.logger.debug(f"[MANUAL STEPS DEBUG] Compatdata path search result: {prefix_path_str}")
-
-            if prefix_path_str and os.path.isdir(prefix_path_str):
-                compatdata_ok = True
-                self.logger.debug("[MANUAL STEPS DEBUG] Compatdata directory exists - compatdata_ok = True")
-            else:
-                self.logger.debug("[MANUAL STEPS DEBUG] Compatdata directory does not exist")
-                
-            self.logger.debug(f"[MANUAL STEPS DEBUG] proton_ok: {proton_ok}, compatdata_ok: {compatdata_ok}")
-            
-            if proton_ok and compatdata_ok:
-                self.logger.info("Proton Experimental and compatdata already set for this AppID; skipping manual steps prompt.")
-                skip_manual_prompt = True
-            else:
-                self.logger.debug("[MANUAL STEPS DEBUG] Manual steps will be required")
-                
-        self.logger.debug(f"[MANUAL STEPS DEBUG] manual_steps_completed: {manual_steps_completed}, skip_manual_prompt: {skip_manual_prompt}")
-        
-        if not manual_steps_completed and not skip_manual_prompt:
-            # Check if we're in GUI mode - if so, don't show CLI prompts, just fail and let GUI callbacks handle it
-            gui_mode = os.environ.get('JACKIFY_GUI_MODE') == '1'
-            
-            if gui_mode:
-                # In GUI mode: don't show CLI prompts, just fail so GUI can show dialog and retry
-                self.logger.info("GUI mode detected: skipping CLI manual steps prompt, will fail configuration to trigger GUI callback")
-                if status_callback:
-                    status_callback("Manual Steam/Proton setup required - this will be handled by GUI dialog")
-                # Return False to trigger manual steps callback in GUI
-                return False
-            else:
-                # CLI mode: show the traditional CLI prompt
-                if status_callback:
-                    status_callback("Please perform the manual steps in Steam (set Proton, launch shortcut, then close MO2)...")
-                self.logger.info("Prompting user to perform manual Steam/Proton steps and launch shortcut.")
-                print("\n───────────────────────────────────────────────────────────────────")
-                print(f"{COLOR_INFO}Manual Steps Required:{COLOR_RESET} Please follow the on-screen instructions to set Proton Experimental and launch the shortcut from Steam.")
-                print("───────────────────────────────────────────────────────────────────")
-                input(f"{COLOR_PROMPT}Once you have completed ALL the steps above, press Enter to continue...{COLOR_RESET}")
-                self.logger.info("User confirmed completion of manual steps.")
         # Step 3: Apply targeted registry tweaks (replaces wholesale curated reg file overwrite)
         if status_callback:
             status_callback(f"{self._get_progress_timestamp()} Applying modlist registry configuration")
@@ -162,7 +102,31 @@ class ModlistConfigurationMixin:
         
         # Use canonical logic for all modlists/games
         components = self.get_modlist_wine_components(self.game_name, self.game_var_full)
-        
+
+        # NSF detection: dotnet48 required for Skyrim SE modlists with NetScriptFramework
+        if 'skyrim' in (self.game_var_full or '').lower() and self.modlist_dir:
+            nsf_markers = [
+                Path(self.modlist_dir) / 'mods' / 'NetScriptFramework' / 'DLLPlugins' / 'NetScriptFramework.Runtime.dll',
+                Path(self.modlist_dir) / 'mods' / 'NetScriptFramework' / 'Plugins' / 'CustomSkills.dll',
+                Path(self.modlist_dir) / 'mods' / 'NetScriptFramework',
+            ]
+            if any(m.exists() for m in nsf_markers):
+                self._nsf_detected = True
+                if 'dotnet48' not in components:
+                    self.logger.info("NetScriptFramework detected, adding dotnet48 to component list")
+                    components.insert(0, 'dotnet48')
+
+        # Developer/testing override: JACKIFY_SKIP_WINE_COMPONENTS=comp1,comp2 drops those
+        # components from this run, for iterating without re-installing slow verbs (e.g.
+        # dotnetdesktop6). Unset in normal use, so it has no effect on real installs.
+        _skip_env = os.environ.get('JACKIFY_SKIP_WINE_COMPONENTS', '').strip()
+        if _skip_env:
+            _skip_set = {c.strip() for c in _skip_env.split(',') if c.strip()}
+            _removed = [c for c in components if c in _skip_set]
+            if _removed:
+                components = [c for c in components if c not in _skip_set]
+                self.logger.warning("JACKIFY_SKIP_WINE_COMPONENTS active - skipping %s (testing override)", _removed)
+
         # All modlists now use their own AppID for wine components
         target_appid = self.appid
         
@@ -414,7 +378,8 @@ class ModlistConfigurationMixin:
                 modlist_ini_path=modlist_ini_path_obj,
                 modlist_dir_path=modlist_dir_path_obj,
                 modlist_sdcard=self.modlist_sdcard,
-                steam_libraries=steam_libraries
+                steam_libraries=steam_libraries,
+                compat_data_path=getattr(self, 'compat_data_path', None)
             ):
                 self.logger.error("Failed to update binary and working directory paths in ModOrganizer.ini. Configuration aborted.")
                 self.logger.error("Failed to update binary and working directory paths in ModOrganizer.ini.")
@@ -447,7 +412,7 @@ class ModlistConfigurationMixin:
                 self.logger.debug("No existing download_directory value found in ModOrganizer.ini; skipping normalisation")
 
         # Step 8.5: Align /home vs /var/home basis for Z: paths to match modlist install directory.
-        # This is intentionally separate from broad binary-path rewriting so it still runs when
+        # Kept separate from broad binary-path rewriting so it still runs when
         # engine-installed workflows skip edit_binary_working_paths.
         if not self.path_handler.align_home_path_basis(
             modlist_ini_path=modlist_ini_path_obj,
@@ -625,12 +590,21 @@ class ModlistConfigurationMixin:
                 wine_bin = self._find_wine_binary_for_registry()
                 if compatdata_path and wine_bin:
                     from jackify.backend.services.tool_config_service import apply_tool_config
+                    # NSF/CSF modlists need the global *mscoree=native that winetricks dotnet48
+                    # set: the per-exe scoping this function applies starves NSF's CLR hosting
+                    # (verified directly). So preserve the global override for them.
+                    # dotnet9 SDK install also flips the prefix to win11; NSF/CSF was only
+                    # verified working on win10 + global-native, so we keep that state and skip
+                    # the dotnet9/win11 step. Whether Synthesis runs under global-native on an NSF
+                    # prefix is untested - revisit if a modlist needs live Synthesis.
+                    _nsf = getattr(self, '_nsf_detected', False)
                     apply_tool_config(
                         compatdata_path,
                         wine_bin,
                         log=lambda msg: status_callback(f"{self._get_progress_timestamp()} {msg}") if status_callback else None,
-                        install_dotnet9_sdk=True,
+                        install_dotnet9_sdk=not _nsf,
                         install_fxc2_d3dcompiler=True,
+                        preserve_global_mscoree=_nsf,
                     )
                     self.logger.info("Step 15: Tool compatibility settings applied")
                 else:

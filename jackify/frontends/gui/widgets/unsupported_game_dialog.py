@@ -48,7 +48,7 @@ class UnsupportedGameDialog(QDialog):
         icon_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_label.setFixedSize(32, 32)
-        icon_label.setStyleSheet("color: #e67e22;")
+        icon_label.setStyleSheet("color: #f0c040;")
         title_layout.addWidget(icon_label)
         title_label = QLabel("<b>VR Platform Notice</b>" if self.vr_warning else "<b>Game Support Notice</b>")
         title_label.setFont(QFont("Arial", 11, QFont.Weight.Bold))
@@ -73,7 +73,7 @@ class UnsupportedGameDialog(QDialog):
         message_text.setStyleSheet("""
             QTextEdit {
                 background-color: #23272e;
-                color: #f8f9fa;
+                color: #e0e0e0;
                 border: 1px solid #444;
                 border-radius: 6px;
                 padding: 12px;
@@ -191,10 +191,10 @@ class UnsupportedGameDialog(QDialog):
         self.setStyleSheet("""
             QDialog {
                 background-color: #23272e;
-                color: #f8f9fa;
+                color: #e0e0e0;
             }
             QLabel {
-                color: #f8f9fa;
+                color: #e0e0e0;
             }
         """)
     

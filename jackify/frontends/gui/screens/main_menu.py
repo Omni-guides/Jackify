@@ -8,11 +8,18 @@ import os
 from ..shared_theme import JACKIFY_COLOR_BLUE, LOGO_PATH, DISCLAIMER_TEXT
 from ..utils import set_responsive_minimum
 
+_TOOLS_HUB_ACTION = "third_party_tools"
+_UPDATE_COLOUR = "#f0c040"
+_NORMAL_DESC_COLOUR = "#999"
+
 class MainMenu(QWidget):
     def __init__(self, stacked_widget=None, dev_mode=False):
         super().__init__()
         self.stacked_widget = stacked_widget
         self.dev_mode = dev_mode
+        self._tools_hub_btn: QPushButton = None
+        self._tools_hub_desc: QLabel = None
+        self._tools_hub_desc_original: str = ""
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         layout.setContentsMargins(30, 30, 30, 30)
@@ -63,35 +70,17 @@ class MainMenu(QWidget):
         button_height = 40
         MENU_ITEMS = [
             ("Modlist Tasks", "modlist_tasks", "Manage your modlists with native Linux tools"),
-            ("Additional Tasks", "additional_tasks", "Additional Tasks & Tools, such as TTW Installation"),
-            # ("Third Party Tools", "third_party_tools", "Install and manage Sulfur's Linux-native modding tools"),  # v0.7
+            ("Additional Tasks", "additional_tasks", "Verifier, diagnostics, Nexus OAuth, and more"),
+            ("Tools Hub", "third_party_tools", "Install and manage additional engines and modding tools"),
             ("Exit Jackify", "exit_jackify", "Close the application"),
         ]
         
         for label, action_id, description in MENU_ITEMS:
-            # Main button
             btn = QPushButton(label)
-            btn.setFixedSize(button_width, button_height)  # Use variable height
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: #4a5568;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 13px;
-                    font-weight: bold;
-                    text-align: center;
-                }}
-                QPushButton:hover {{
-                    background-color: #5a6578;
-                }}
-                QPushButton:pressed {{
-                    background-color: {JACKIFY_COLOR_BLUE};
-                }}
-            """)
+            btn.setFixedSize(button_width, button_height)
+            btn.setStyleSheet(self._btn_style())
             btn.clicked.connect(lambda checked, a=action_id: self.menu_action(a))
 
-            # Button container with proper alignment
             btn_container = QWidget()
             btn_layout = QVBoxLayout()
             btn_layout.setContentsMargins(0, 0, 0, 0)
@@ -99,16 +88,20 @@ class MainMenu(QWidget):
             btn_layout.setAlignment(Qt.AlignHCenter)
             btn_layout.addWidget(btn)
 
-            # Description label with proper alignment
             desc_label = QLabel(description)
             desc_label.setAlignment(Qt.AlignHCenter)
-            desc_label.setStyleSheet("color: #999; font-size: 11px;")
+            desc_label.setStyleSheet(f"color: {_NORMAL_DESC_COLOUR}; font-size: 11px;")
             desc_label.setWordWrap(True)
             desc_label.setFixedWidth(button_width)
             btn_layout.addWidget(desc_label)
 
             btn_container.setLayout(btn_layout)
             layout.addWidget(btn_container)
+
+            if action_id == _TOOLS_HUB_ACTION:
+                self._tools_hub_btn = btn
+                self._tools_hub_desc = desc_label
+                self._tools_hub_desc_original = description
 
         # Disclaimer
         layout.addSpacing(12)
@@ -134,6 +127,34 @@ class MainMenu(QWidget):
                 # DO NOT resize - let window stay at current size
         except Exception:
             pass
+
+    def _btn_style(self, highlight: bool = False) -> str:
+        border = f"1px solid {_UPDATE_COLOUR}" if highlight else "none"
+        return f"""
+            QPushButton {{
+                background-color: #4a5568;
+                color: white;
+                border: {border};
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: bold;
+                text-align: center;
+            }}
+            QPushButton:hover {{ background-color: #5a6578; }}
+            QPushButton:pressed {{ background-color: {JACKIFY_COLOR_BLUE}; }}
+        """
+
+    def notify_tool_updates(self, has_updates: bool) -> None:
+        if not self._tools_hub_btn or not self._tools_hub_desc:
+            return
+        if has_updates:
+            self._tools_hub_btn.setStyleSheet(self._btn_style(highlight=True))
+            self._tools_hub_desc.setText("Updates available")
+            self._tools_hub_desc.setStyleSheet(f"color: {_UPDATE_COLOUR}; font-size: 11px; font-weight: bold;")
+        else:
+            self._tools_hub_btn.setStyleSheet(self._btn_style(highlight=False))
+            self._tools_hub_desc.setText(self._tools_hub_desc_original)
+            self._tools_hub_desc.setStyleSheet(f"color: {_NORMAL_DESC_COLOUR}; font-size: 11px;")
 
     def menu_action(self, action_id):
         if action_id == "exit_jackify":

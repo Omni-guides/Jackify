@@ -98,13 +98,7 @@ class ConfigEncryptionMixin:
             else:
                 self.settings["nexus_api_key"] = None
                 logger.debug("API key cleared")
-            result = self.save_config()
-            if result:
-                try:
-                    os.chmod(self.config_file, 0o600)
-                except Exception as e:
-                    logger.warning("Could not set restrictive permissions on config: %s", e)
-            return result
+            return self.save_config()
         except Exception as e:
             logger.error("Error saving API key: %s", e)
             return False

@@ -280,8 +280,11 @@ class ModlistMenuHandler:
                     print(f"{COLOR_INFO}{timestamp} {message}{COLOR_RESET}")
                 
                 while True:
+                    from jackify.backend.services.nxm_downloader import resolve_mo2_download_dir
+                    download_dir = resolve_mo2_download_dir(Path(install_dir))
                     result = prefix_service.run_working_workflow(
-                        modlist_name, install_dir, mo2_path, progress_callback, steamdeck=self.steamdeck
+                        modlist_name, install_dir, mo2_path, progress_callback,
+                        steamdeck=self.steamdeck, download_dir=download_dir,
                     )
 
                     if isinstance(result, tuple) and len(result) == 4:
@@ -303,7 +306,6 @@ class ModlistMenuHandler:
                                         "name": modlist_name,
                                         "appid": str(existing_appid),
                                         "path": mo2_dir,
-                                        "manual_steps_completed": True,
                                         "resolution": None
                                     }
                                     return self.run_modlist_configuration_phase(context)
@@ -335,7 +337,6 @@ class ModlistMenuHandler:
                                 "name": modlist_name,
                                 "appid": str(appid_int),
                                 "path": mo2_dir,
-                                "manual_steps_completed": True,
                                 "resolution": None
                             }
                             self.logger.debug(f"[DEBUG] New Modlist Context (automated workflow): {context}")
@@ -534,9 +535,7 @@ class ModlistMenuHandler:
             else:
                 status_line = f"\r{COLOR_INFO}{msg}{COLOR_RESET}"
                 print(status_line, end="", flush=True)
-        manual_steps_completed = context.get("manual_steps_completed", False)
-        skip_manual_for_existing = context.get("modlist_source") == "existing"  # Existing modlists skip manual steps
-        if not self.modlist_handler._execute_configuration_steps(status_callback=update_status, manual_steps_completed=manual_steps_completed, skip_manual_for_existing=skip_manual_for_existing):
+        if not self.modlist_handler._execute_configuration_steps(status_callback=update_status):
             if status_line:
                 print()
             self.logger.error(f"Core configuration steps failed for {context.get('name')}")
@@ -555,7 +554,6 @@ class ModlistMenuHandler:
         if not gui_mode:
             try:
                 from ..handlers.enb_handler import ENBHandler
-                from pathlib import Path
 
                 enb_handler = ENBHandler()
                 install_dir = Path(context.get('path', ''))
@@ -587,8 +585,6 @@ class ModlistMenuHandler:
                 create_vnv_cli_progress_callback,
                 ensure_vnv_cli_manual_downloads,
             )
-            from pathlib import Path
-
             modlist_name = context.get('name', '')
             modlist_path = Path(context.get('path', ''))
 
@@ -660,37 +656,57 @@ class ModlistMenuHandler:
         completion_title = "Modlist Configuration complete!" if is_existing_flow else "Modlist Install and Configuration complete!"
         completion_log_file = "Configure_Existing_Modlist_workflow.log" if is_existing_flow else "Configure_New_Modlist_workflow.log"
 
-        print("")
-        print("")
-        print("")  # Extra blank line before completion
-        print("=" * 35)
-        print("= Configuration phase complete =")
-        print("=" * 35)
-        print("")
-        print(completion_title)
-        print(f"• You should now be able to Launch '{context.get('name')}' through Steam")
-        print("• Congratulations and enjoy the game!")
-        print("")
+        if not context.get('suppress_completion_banner'):
+            print("")
+            print("")
+            print("")
+            print("=" * 35)
+            print("= Configuration phase complete =")
+            print("=" * 35)
+            print("")
+            print(completion_title)
+            print(f"• You should now be able to Launch '{context.get('name')}' through Steam")
+            print("• Congratulations and enjoy the game!")
+            print("")
         
-        # Show ENB-specific warning if ENB was detected (replaces generic note)
-        if enb_detected:
-            print(f"{COLOR_WARNING}ENB DETECTED{COLOR_RESET}")
-            print("")
-            print("If you plan on using ENB as part of this modlist, you will need to use")
-            print("one of the following Proton versions, otherwise you will have issues:")
-            print("")
-            print("  (in order of recommendation)")
-            print(f"  {COLOR_SUCCESS}• Proton-CachyOS{COLOR_RESET}")
-            print(f"  {COLOR_INFO}• GE-Proton 10-14 or lower{COLOR_RESET}")
-            print(f"  {COLOR_WARNING}• Proton 9 from Valve{COLOR_RESET}")
-            print("")
-            print(f"{COLOR_WARNING}Note: Valve's Proton 10 has known ENB compatibility issues.{COLOR_RESET}")
-            print("")
-        else:
-            # No ENB detected - no warning needed
-            pass
-        from jackify.shared.paths import get_jackify_logs_dir
-        print(f"Detailed log available at: {get_jackify_logs_dir()}/{completion_log_file}")
+        if not context.get('suppress_completion_banner'):
+            if enb_detected:
+                print(f"{COLOR_WARNING}ENB DETECTED{COLOR_RESET}")
+                print("")
+                print("If you plan on using ENB as part of this modlist, you will need to use")
+                print("one of the following Proton versions, otherwise you will have issues:")
+                print("")
+                print("  (in order of recommendation)")
+                print(f"  {COLOR_SUCCESS}• Proton-CachyOS{COLOR_RESET}")
+                print(f"  {COLOR_INFO}• GE-Proton{COLOR_RESET}")
+                print(f"  {COLOR_WARNING}• Proton 9 from Valve{COLOR_RESET}")
+                print("")
+                print(f"{COLOR_WARNING}Note: Valve's Proton 10 has known ENB compatibility issues.{COLOR_RESET}")
+                print("")
+            from jackify.shared.paths import get_jackify_logs_dir
+            print(f"Detailed log available at: {get_jackify_logs_dir()}/{completion_log_file}")
+
+        try:
+            install_path = context.get('path')
+            shortcut_name = context.get('name')
+            mo2_exe = context.get('mo2_exe_path') or (
+                os.path.join(install_path, 'ModOrganizer.exe') if install_path else None
+            )
+            if install_path and shortcut_name and mo2_exe:
+                ini_path = Path(install_path) / 'ModOrganizer.ini'
+                dl_str = self.path_handler.get_download_directory_linux_path(ini_path)
+                if dl_str:
+                    mounts_result = self.shortcut_handler.ensure_mounts_in_steam_compat(
+                        shortcut_name, mo2_exe, dl_str
+                    )
+                    if mounts_result in ("updated", "steam_running"):
+                        context['steam_restart_needed'] = True
+                        context['mounts_app_name'] = shortcut_name
+                        context['mounts_exe_path'] = mo2_exe
+                        context['mounts_dl_path'] = dl_str
+        except Exception as e:
+            self.logger.error("Could not update STEAM_COMPAT_MOUNTS: %s", e, exc_info=True)
+
         # Only wait for input in CLI mode, not GUI mode
         if not gui_mode:
             input(f"{COLOR_PROMPT}Press Enter to return to the menu...{COLOR_RESET}")

@@ -24,36 +24,12 @@ class NonFocusMessageBox(QMessageBox):
         self._setup_no_focus_attributes(critical, safety_level)
     
     def _setup_no_focus_attributes(self, critical, safety_level):
-        """Configure the message box to not steal focus"""
-        # Set modality based on criticality and safety level
         if critical or safety_level == "high":
             self.setWindowModality(Qt.ApplicationModal)
-        elif safety_level == "medium":
-            self.setWindowModality(Qt.NonModal)
         else:
             self.setWindowModality(Qt.NonModal)
-        
-        # Prevent focus stealing
+
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        self.setWindowFlags(
-            self.windowFlags() | 
-            Qt.WindowStaysOnTopHint |
-            Qt.WindowDoesNotAcceptFocus
-        )
-        
-        # Set focus policy to prevent taking focus
-        self.setFocusPolicy(Qt.NoFocus)
-        
-        # Make sure child widgets don't steal focus either
-        for child in self.findChildren(QWidget):
-            child.setFocusPolicy(Qt.NoFocus)
-    
-    def showEvent(self, event):
-        """Override to ensure no focus stealing on show"""
-        super().showEvent(event)
-        # Ensure we don't steal focus
-        self.activateWindow()
-        self.raise_()
 
 
 class SafeMessageBox(NonFocusMessageBox):

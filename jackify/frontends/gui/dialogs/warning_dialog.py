@@ -49,7 +49,7 @@ class WarningDialog(QDialog):
             "QFrame#warningCard { "
             "  background: #2d2323; "
             "  border-radius: 12px; "
-            "  border: 2px solid #e67e22; "
+            "  border: 2px solid #f0c040; "
             "}"
         )
 
@@ -61,7 +61,7 @@ class WarningDialog(QDialog):
             "QLabel { "
             "  font-size: 36px; "
             "  font-weight: bold; "
-            "  color: #e67e22; "
+            "  color: #f0c040; "
             "  margin-bottom: 4px; "
             "}"
         )
@@ -74,7 +74,7 @@ class WarningDialog(QDialog):
             "QLabel { "
             "  font-size: 20px; "
             "  font-weight: 600; "
-            "  color: #e67e22; "
+            "  color: #f0c040; "
             "  margin-bottom: 2px; "
             "}"
         )
@@ -106,7 +106,7 @@ class WarningDialog(QDialog):
         self.confirm_label.setStyleSheet(
             "QLabel { "
             "  font-size: 13px; "
-            "  color: #e67e22; "
+            "  color: #f0c040; "
             "  margin-bottom: 2px; "
             "}"
         )
@@ -118,11 +118,11 @@ class WarningDialog(QDialog):
         self._default_lineedit_style = (
             "QLineEdit { "
             "  font-size: 15px; "
-            "  border: 1px solid #e67e22; "
+            "  border: 1px solid #f0c040; "
             "  border-radius: 6px; "
             "  padding: 6px; "
             "  background: #23272e; "
-            "  color: #e67e22; "
+            "  color: #e0e0e0; "
             "}"
         )
         self.confirm_edit.setStyleSheet(self._default_lineedit_style)
@@ -140,7 +140,7 @@ class WarningDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #95a5a6; "
+            "  background-color: #4a5568; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 4px; "
@@ -148,10 +148,10 @@ class WarningDialog(QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #7f8c8d; "
+            "  background-color: #5a6578; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #6c7b7d; "
+            "  background-color: #3fd0ea; "
             "}"
         )
         button_layout.addWidget(cancel_btn)
@@ -161,7 +161,7 @@ class WarningDialog(QDialog):
         confirm_btn.clicked.connect(self._on_confirm)
         confirm_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #e67e22; "
+            "  background-color: #8b2020; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 4px; "
@@ -169,10 +169,10 @@ class WarningDialog(QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #d35400; "
+            "  background-color: #a02828; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #b34700; "
+            "  background-color: #7a1a1a; "
             "}"
         )
         button_layout.addWidget(confirm_btn)
@@ -200,7 +200,7 @@ class WarningDialog(QDialog):
             self.confirm_label.setStyleSheet(
                 "QLabel { "
                 "  font-size: 13px; "
-                "  color: #e67e22; "
+                "  color: #f0c040; "
                 "  margin-bottom: 2px; "
                 "}"
             )
@@ -231,7 +231,7 @@ class WarningDialog(QDialog):
             self.confirm_label.setStyleSheet(
                 "QLabel { "
                 "  font-size: 13px; "
-                "  color: #c0392b; "  # Red for error
+                "  color: #e05050; "
                 "  margin-bottom: 2px; "
                 "  font-weight: bold; "
                 "}"
@@ -242,10 +242,10 @@ class WarningDialog(QDialog):
             self.confirm_edit.setStyleSheet(
                 "QLineEdit { "
                 "  font-size: 15px; "
-                "  border: 2px solid #c0392b; "  # Red border for error
+                "  border: 2px solid #8b2020; "
                 "  border-radius: 6px; "
                 "  padding: 6px; "
-                "  background: #3b2323; "  # Darker red background
-                "  color: #e67e22; "
+                "  background: #3b2323; "
+                "  color: #e0e0e0; "
                 "}"
             ) 

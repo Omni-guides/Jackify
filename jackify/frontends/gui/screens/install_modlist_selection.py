@@ -153,13 +153,13 @@ class ModlistSelectionMixin:
             if hasattr(self, 'current_game_type'):
                 game_filter = game_type_to_human_friendly.get(self.current_game_type)
 
-            dlg = ModlistGalleryDialog(game_filter=game_filter, parent=self)
+            self._gallery_dlg = ModlistGalleryDialog(game_filter=game_filter, parent=self)
             if cursor_overridden:
                 QApplication.restoreOverrideCursor()
                 cursor_overridden = False
 
-            if dlg.exec() == QDialog.Accepted and dlg.selected_metadata:
-                metadata = dlg.selected_metadata
+            if self._gallery_dlg.exec() == QDialog.Accepted and self._gallery_dlg.selected_metadata:
+                metadata = self._gallery_dlg.selected_metadata
                 self.modlist_btn.setText(metadata.title)
                 self.selected_modlist_info = {
                     'machine_url': metadata.namespacedName,
@@ -170,6 +170,7 @@ class ModlistSelectionMixin:
                     'nsfw': metadata.nsfw,
                     'force_down': metadata.forceDown,
                     'readme_url': metadata.links.readme if metadata.links else None,
+                    'download_url': metadata.links.download if metadata.links else None,
                 }
                 self.modlist_name_edit.setText(metadata.title)
 

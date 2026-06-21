@@ -110,21 +110,14 @@ class ProtonOperationsMixin:
             with open(config_path, 'r') as f:
                 config_data = vdf.load(f)
             
-            # Navigate to the correct location in the VDF structure
-            if 'Software' not in config_data:
-                config_data['Software'] = {}
-            if 'Valve' not in config_data['Software']:
-                config_data['Software']['Valve'] = {}
-            if 'Steam' not in config_data['Software']['Valve']:
-                config_data['Software']['Valve']['Steam'] = {}
-            
-            # Get or create CompatToolMapping
-            if 'CompatToolMapping' not in config_data['Software']['Valve']['Steam']:
-                config_data['Software']['Valve']['Steam']['CompatToolMapping'] = {}
+            # config.vdf root key is "InstallConfigStore"
+            ics = config_data.setdefault('InstallConfigStore', {})
+            sw = ics.setdefault('Software', {})
+            valve = sw.setdefault('Valve', {})
+            steam = valve.setdefault('Steam', {})
+            ctm = steam.setdefault('CompatToolMapping', {})
 
-            # Set the Proton version for this AppID using Steam's expected format
-            # Steam requires a dict with 'name', 'config', and 'priority' keys
-            config_data['Software']['Valve']['Steam']['CompatToolMapping'][str(appid)] = {
+            ctm[str(appid)] = {
                 'name': proton_version,
                 'config': '',
                 'priority': '250'
@@ -148,7 +141,7 @@ class ProtonOperationsMixin:
             # Verify it was set correctly
             with open(config_path, 'r') as f:
                 verify_data = vdf.load(f)
-            compat_mapping = verify_data.get('Software', {}).get('Valve', {}).get('Steam', {}).get('CompatToolMapping', {}).get(str(appid))
+            compat_mapping = verify_data.get('InstallConfigStore', {}).get('Software', {}).get('Valve', {}).get('Steam', {}).get('CompatToolMapping', {}).get(str(appid))
             logger.debug(f"[DEBUG] Verification: AppID {appid} -> {compat_mapping}")
             
             return True

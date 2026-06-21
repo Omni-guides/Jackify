@@ -86,7 +86,7 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             self.api_show_btn.setText("\U0001F441")
         if checked:
             self.api_key_edit.setEchoMode(QLineEdit.Normal)
-            self.api_show_btn.setStyleSheet("QToolButton { color: #4fc3f7; }")
+            self.api_show_btn.setStyleSheet("QToolButton { color: #3fd0ea; }")
         else:
             self.api_key_edit.setEchoMode(QLineEdit.Password)
             self.api_show_btn.setStyleSheet("")
@@ -122,8 +122,8 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
         self.config_handler.clear_api_key()
         MessageService.information(self, "API Key Cleared", "Nexus API Key has been cleared.", safety_level="low")
 
-    def _on_api_key_changed(self, text):
-        api_key = text.strip()
+    def _on_api_key_changed(self):
+        api_key = self.api_key_edit.text().strip()
         self.config_handler.save_api_key(api_key)
 
 
@@ -314,6 +314,9 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             # Save auto tool compat preference
             self.config_handler.set('auto_tool_compat', self.auto_tool_compat_checkbox.isChecked())
             self.config_handler.set('force_github_updates', self.force_github_updates_checkbox.isChecked())
+            if getattr(self, 'clf3_default_checkbox', None):
+                from jackify.backend.services.tool_registry import set_active_engine_id
+                set_active_engine_id("clf3" if self.clf3_default_checkbox.isChecked() else "jackify-engine")
 
             # Save component installation method preference
             if self.winetricks_radio.isChecked():

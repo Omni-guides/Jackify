@@ -384,31 +384,7 @@ class FileSystemHandler(FilesystemDownloadMixin, FilesystemOwnershipMixin, Files
             logger.error(f"Failed to add backupPath entry to {modlist_ini}: {e}")
             return False # Backup succeeded, but adding entry failed
 
-    def blank_downloads_dir(self, modlist_ini: Path) -> bool:
-        """
-        Blank or reset the MO2 Downloads Directory
-        Returns True on success, False on failure
-        """
-        try:
-            self.logger.info("Editing download_directory...")
-            
-            # Read the file
-            with open(modlist_ini, 'r') as f:
-                content = f.read()
-            
-            # Replace the download_directory line
-            modified_content = re.sub(r'download_directory[^\n]*', 'download_directory =', content)
-            
-            # Write back to the file
-            with open(modlist_ini, 'w') as f:
-                f.write(modified_content)
-            
-            self.logger.debug("Download directory cleared successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error blanking downloads directory: {e}")
-            return False
+
 
     def copy_file(self, src: Path, dst: Path, overwrite: bool = False) -> bool:
         """

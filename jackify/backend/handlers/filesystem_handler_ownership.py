@@ -38,6 +38,11 @@ class FilesystemOwnershipMixin:
         Verify and fix ownership/permissions for modlist directory.
         Returns (success, error_message).
         """
+        from jackify.backend.handlers.validation_handler import ValidationHandler
+        if ValidationHandler().is_dangerous_directory(path):
+            logger.error("Refusing to modify permissions on dangerous path: %s", path)
+            return False, f"Refusing to modify permissions on '{path}': system or user root directory."
+
         if not path.exists():
             logger.error("Path does not exist: %s", path)
             return False, f"Path does not exist: {path}"

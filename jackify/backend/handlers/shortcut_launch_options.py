@@ -11,6 +11,128 @@ logger = logging.getLogger(__name__)
 class ShortcutLaunchOptionsMixin:
     """Mixin providing launch options and icon methods."""
 
+    def get_shortcut_launch_options(self, app_name: str, exe_path: str) -> 'Optional[str]':
+        """Return current LaunchOptions for a shortcut, or None if the shortcut is not found."""
+        shortcuts_file = self.path_handler._find_shortcuts_vdf()
+        if not shortcuts_file or not os.path.exists(shortcuts_file):
+            return None
+        try:
+            with open(shortcuts_file, 'rb') as f:
+                data = vdf.binary_loads(f.read())
+        except Exception as e:
+            self.logger.debug(f"Could not read shortcuts.vdf: {e}")
+            return None
+
+        def _norm(p: str) -> str:
+            try:
+                return os.path.normpath(os.path.abspath(p.strip().strip('"'))).lower()
+            except Exception:
+                return p.strip().strip('"').lower()
+
+        exe_norm = _norm(exe_path)
+        for shortcut_data in data.get('shortcuts', {}).values():
+            if (shortcut_data.get('AppName', '').strip() == app_name and
+                    _norm(shortcut_data.get('Exe', '')) == exe_norm):
+                return shortcut_data.get('LaunchOptions', '')
+        return None
+
+    def ensure_mounts_in_steam_compat(self, app_name: str, exe_path: str, *paths: str) -> str:
+        """Add mountpoints of any supplied paths to STEAM_COMPAT_MOUNTS if not already present.
+
+        Reads existing launch options and appends only what is missing — never overwrites
+        unrelated options. Adds the top-level directory of each path so Proton's container
+        can bind-mount the subtree into the prefix.
+
+        When Steam is running, the write is deferred: returns "steam_running" so the caller
+        can stop Steam first, call apply_pending_mounts_update(), then restart Steam.
+
+        Returns:
+            "unchanged"     — mounts already correct, no action needed
+            "updated"       — Steam was not running; write succeeded
+            "steam_running" — changes needed but deferred; call apply_pending_mounts_update()
+                              after stopping Steam
+            "failed"        — shortcut not found or write error
+        """
+        import re
+        from pathlib import Path as _Path
+
+        def _is_covered(path: str, mounts: list) -> bool:
+            """Return True if path is already reachable via an existing mount entry.
+
+            A path is covered if an existing mount entry is equal to it or is a
+            parent of it. Root '/' is excluded as a catch-all.
+            """
+            p = _Path(path)
+            for mount in mounts:
+                if mount == '/':
+                    continue
+                try:
+                    p.relative_to(mount)
+                    return True
+                except ValueError:
+                    pass
+            return False
+
+        current = self.get_shortcut_launch_options(app_name, exe_path)
+        if current is None:
+            self.logger.warning(f"Shortcut '{app_name}' not found in shortcuts.vdf; cannot update STEAM_COMPAT_MOUNTS")
+            return "failed"
+
+        compat_re = re.compile(r'STEAM_COMPAT_MOUNTS="([^"]*)"')
+        m = compat_re.search(current)
+        existing = [p for p in m.group(1).split(':') if p] if m else []
+
+        mounts_to_add = []
+        for p in paths:
+            if not p:
+                continue
+            if not _is_covered(p, existing) and p not in mounts_to_add:
+                mounts_to_add.append(p)
+
+        if not mounts_to_add:
+            self.logger.debug(f"STEAM_COMPAT_MOUNTS for '{app_name}' already covers required paths")
+            return "unchanged"
+
+        if m:
+            updated_val = ':'.join(existing + mounts_to_add)
+            updated = compat_re.sub(f'STEAM_COMPAT_MOUNTS="{updated_val}"', current)
+        else:
+            val = ':'.join(mounts_to_add)
+            prefix = f'STEAM_COMPAT_MOUNTS="{val}"'
+            updated = f'{prefix} {current}' if current.strip() else f'{prefix} %command%'
+
+        self.logger.info(f"STEAM_COMPAT_MOUNTS update needed for '{app_name}': adding {mounts_to_add}")
+
+        try:
+            from jackify.backend.services.steam_restart_service import get_steam_processes
+            steam_running = bool(get_steam_processes())
+        except Exception:
+            steam_running = False
+
+        if steam_running:
+            # Defer the write — Steam holds shortcuts.vdf in memory and would clobber it.
+            # Store the pending options so the GUI can stop Steam, apply, then restart.
+            self._pending_mounts_app_name = app_name
+            self._pending_mounts_exe_path = exe_path
+            self._pending_mounts_options = updated
+            return "steam_running"
+
+        success = self.update_shortcut_launch_options(app_name, exe_path, updated)
+        return "updated" if success else "failed"
+
+    def apply_pending_mounts_update(self) -> bool:
+        """Write a deferred STEAM_COMPAT_MOUNTS update. Call only after Steam has stopped."""
+        app_name = getattr(self, '_pending_mounts_app_name', None)
+        exe_path = getattr(self, '_pending_mounts_exe_path', None)
+        options = getattr(self, '_pending_mounts_options', None)
+        if not (app_name and exe_path and options):
+            self.logger.warning("apply_pending_mounts_update called with no pending update")
+            return False
+        self._pending_mounts_app_name = None
+        self._pending_mounts_exe_path = None
+        self._pending_mounts_options = None
+        return self.update_shortcut_launch_options(app_name, exe_path, options)
+
     def update_shortcut_launch_options(self, app_name, exe_path, new_launch_options):
         """
         Updates the LaunchOptions for a specific existing shortcut in shortcuts.vdf by matching AppName and Exe.

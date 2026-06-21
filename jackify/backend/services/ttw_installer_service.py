@@ -24,11 +24,8 @@ def _build_handler() -> TTWInstallerHandler:
 
 def get_ttw_installer_path() -> Optional[Path]:
     """Return the resolved TTW_Linux_Installer executable path, if available."""
-    handler = _build_handler()
-    path = handler.ttw_installer_executable_path
-    if path and path.exists():
-        return path
-    return None
+    from jackify.backend.services.tool_registry import ToolRegistry
+    return ToolRegistry().get_binary_path("ttw_installer")
 
 
 def ensure_ttw_installer_available(
@@ -47,13 +44,17 @@ def ensure_ttw_installer_available(
     if progress_callback:
         progress_callback("TTW_Linux_Installer not found, installing...")
 
+    from jackify.backend.services.tool_registry import TOOLS_BASE_DIR
+    install_dir = TOOLS_BASE_DIR / "ttw_installer"
+    install_dir.mkdir(parents=True, exist_ok=True)
+
     handler = _build_handler()
-    success, message = handler.install_ttw_installer()
+    success, message = handler.install_ttw_installer(install_dir=install_dir)
     if not success:
         logger.error("Failed to install TTW_Linux_Installer: %s", message)
         return None, message
 
-    path = handler.ttw_installer_executable_path
+    path = get_ttw_installer_path()
     if path and path.exists():
         if progress_callback:
             progress_callback("TTW_Linux_Installer installed successfully")

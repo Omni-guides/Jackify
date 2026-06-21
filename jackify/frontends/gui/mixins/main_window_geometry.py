@@ -135,10 +135,10 @@ class MainWindowGeometryMixin:
                 self.showMaximized()
 
     def _on_child_resize_request(self, mode: str):
-        logger.debug(f"DEBUG: _on_child_resize_request called with mode='{mode}', current_size={self.size()}")
+        logger.debug(f"_on_child_resize_request called with mode='{mode}', current_size={self.size()}")
         try:
             if self.system_info and self.system_info.is_steamdeck:
-                logger.debug("DEBUG: Steam Deck detected, ignoring resize request")
+                logger.debug("Steam Deck detected, ignoring resize request")
                 try:
                     if hasattr(self, 'install_ttw_screen') and self.install_ttw_screen.show_details_checkbox:
                         self.install_ttw_screen.show_details_checkbox.setVisible(False)
@@ -183,7 +183,7 @@ class MainWindowGeometryMixin:
             before = self.size()
             self._programmatic_resize = True
             self.resize(self.size().width(), target_height)
-            logger.debug(f"DEBUG: Animated fallback resize from {before} to {self.size()}")
+            logger.debug(f"Animated fallback resize from {before} to {self.size()}")
             QTimer.singleShot(100, lambda: setattr(self, '_programmatic_resize', False))
             return
         start_rect = self.geometry()

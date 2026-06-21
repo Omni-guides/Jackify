@@ -8,8 +8,6 @@ DEBUG_BORDERS = False  # Enable debug borders to visualize widget boundaries
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), 'assets')
 LOGO_PATH = os.path.join(ASSETS_DIR, 'jackify_logo.png')
 DISCLAIMER_TEXT = (
-    "Disclaimer: Jackify is currently in an alpha state. This software is provided as-is, "
-    "without any warranty or guarantee of stability. By using Jackify, you acknowledge that you do so at your own risk. "
-    "The developers are not responsible for any data loss, system issues, or other problems that may arise from its use. "
-    "Please back up your data and use caution."
-) 
+    "Jackify is provided as-is. Back up your modlist and game data before making changes. "
+    "The developers are not responsible for data loss or other issues arising from its use."
+)

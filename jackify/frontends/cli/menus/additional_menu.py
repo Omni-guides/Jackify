@@ -29,33 +29,37 @@ class AdditionalMenuHandler:
             self._clear_screen()
             print_jackify_banner()
             print_section_header("Additional Tasks & Tools")
-            print(f"{COLOR_INFO}Nexus Authentication, TTW Install & more{COLOR_RESET}\n")
+            print(f"{COLOR_INFO}Modlist tools, diagnostics, and more{COLOR_RESET}\n")
 
-            print(f"{COLOR_SELECTION}1.{COLOR_RESET} Nexus Mods Authorization")
-            print(f"   {COLOR_ACTION}→ Authorize with Nexus using OAuth or manage API key{COLOR_RESET}")
-            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Tale of Two Wastelands (TTW) Installation")
-            print(f"   {COLOR_ACTION}→ Install TTW using TTW_Linux_Installer{COLOR_RESET}")
-            print(f"{COLOR_SELECTION}3.{COLOR_RESET} Install Wabbajack Application")
-            print(f"   {COLOR_ACTION}→ Downloads and configures the Wabbajack app itself (via Proton){COLOR_RESET}")
-            print(f"{COLOR_SELECTION}4.{COLOR_RESET} Setup Mod Organizer 2")
-            print(f"   {COLOR_ACTION}→ Download and configure a standalone MO2 instance{COLOR_RESET}")
-            print(f"{COLOR_SELECTION}5.{COLOR_RESET} Configure Tool Compatibility")
+            print(f"{COLOR_SELECTION}1.{COLOR_RESET} Run Install Verifier")
+            print(f"   {COLOR_ACTION}→ Check an installed modlist for common configuration problems{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Configure Tool Compatibility")
             print(f"   {COLOR_ACTION}→ Apply Wine registry settings for xEdit, Synthesis, Pandora, Nemesis{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}3.{COLOR_RESET} Setup Mod Organizer 2")
+            print(f"   {COLOR_ACTION}→ Download and configure a standalone MO2 instance{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}4.{COLOR_RESET} Install Wabbajack Application")
+            print(f"   {COLOR_ACTION}→ Download the Wabbajack app under Proton — not needed for standard modlist installs{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}5.{COLOR_RESET} Create Diagnostic Bundle")
+            print(f"   {COLOR_ACTION}→ Package logs and system info for support{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}6.{COLOR_RESET} Nexus Mods Authorization")
+            print(f"   {COLOR_ACTION}→ Authorise with Nexus using OAuth or manage API key{COLOR_RESET}")
             print(f"{COLOR_SELECTION}0.{COLOR_RESET} Return to Main Menu")
-            selection = input(f"\n{COLOR_PROMPT}Enter your selection (0-5): {COLOR_RESET}").strip()
+            selection = input(f"\n{COLOR_PROMPT}Enter your selection (0-6): {COLOR_RESET}").strip()
 
             if selection.lower() == 'q':  # Allow 'q' to re-display menu
                 continue
             if selection == "1":
-                self._execute_nexus_authorization(cli_instance)
+                self._execute_run_verifier()
             elif selection == "2":
-                self._execute_ttw_install(cli_instance)
-            elif selection == "3":
-                self._execute_install_wabbajack(cli_instance)
-            elif selection == "4":
-                self._execute_setup_mo2(cli_instance)
-            elif selection == "5":
                 self._execute_configure_tool_compat(cli_instance)
+            elif selection == "3":
+                self._execute_setup_mo2(cli_instance)
+            elif selection == "4":
+                self._execute_install_wabbajack(cli_instance)
+            elif selection == "5":
+                self._execute_diagnostic_bundle()
+            elif selection == "6":
+                self._execute_nexus_authorization(cli_instance)
             elif selection == "0":
                 break
             else:
@@ -271,17 +275,17 @@ class AdditionalMenuHandler:
 
             if authenticated:
                 if method == 'oauth':
-                    print(f"\n{COLOR_SUCCESS}Status: Authorized via OAuth{COLOR_RESET}")
+                    print(f"\n{COLOR_SUCCESS}Status: Authorised via OAuth{COLOR_RESET}")
                     if username:
                         print(f"{COLOR_INFO}Logged in as: {username}{COLOR_RESET}")
                 elif method == 'api_key':
                     print(f"\n{COLOR_WARNING}Status: Using API Key (Legacy){COLOR_RESET}")
                     print(f"{COLOR_INFO}Consider switching to OAuth for better security{COLOR_RESET}")
             else:
-                print(f"\n{COLOR_WARNING}Status: Not Authorized{COLOR_RESET}")
+                print(f"\n{COLOR_WARNING}Status: Not Authorised{COLOR_RESET}")
                 print(f"{COLOR_INFO}You need to authorize to download mods from Nexus{COLOR_RESET}")
 
-            print(f"\n{COLOR_SELECTION}1.{COLOR_RESET} Authorize with Nexus (OAuth)")
+            print(f"\n{COLOR_SELECTION}1.{COLOR_RESET} Authorise with Nexus (OAuth)")
             print(f"   {COLOR_ACTION}→ Opens browser for secure authorization{COLOR_RESET}")
 
             if method == 'oauth':
@@ -320,7 +324,7 @@ class AdditionalMenuHandler:
                     # Get username
                     _, _, username = auth_service.get_auth_status()
                     if username:
-                        print(f"{COLOR_INFO}Authorized as: {username}{COLOR_RESET}")
+                        print(f"{COLOR_INFO}Authorised as: {username}{COLOR_RESET}")
                 else:
                     print(f"\n{COLOR_ERROR}OAuth authorization failed.{COLOR_RESET}")
                     print(f"{COLOR_INFO}You can try again or use API key as fallback.{COLOR_RESET}")
@@ -474,3 +478,122 @@ class AdditionalMenuHandler:
             print(f"\n{COLOR_ERROR}Tool compatibility configuration failed. Check logs for details.{COLOR_RESET}")
 
         input("\nPress Enter to return to menu...")
+
+    def _execute_diagnostic_bundle(self) -> None:
+        from jackify.backend.services.diagnostic_service import build_bundle
+        from jackify.shared.colors import COLOR_ERROR, COLOR_SUCCESS
+
+        self._clear_screen()
+        print_jackify_banner()
+        print_section_header("Create Diagnostic Bundle")
+        print(f"{COLOR_INFO}Collecting logs, system info, and prefix records...{COLOR_RESET}\n")
+
+        try:
+            bundle_path = build_bundle()
+        except Exception as exc:
+            print(f"{COLOR_ERROR}Failed to create bundle: {exc}{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        print(f"{COLOR_SUCCESS}Bundle created:{COLOR_RESET} {bundle_path}")
+        print(f"\n{COLOR_INFO}Attach this file when reporting an issue.{COLOR_RESET}")
+
+        input("\nPress Enter to return to menu...")
+
+    def _execute_run_verifier(self) -> None:
+        from jackify.backend.services.install_verifier_service import (
+            _load_verifier, run_install_verification, resolve_pfx_for_appid,
+        )
+        from jackify.shared.colors import COLOR_ERROR, COLOR_SUCCESS, COLOR_WARNING
+        import threading
+
+        self._clear_screen()
+        print_jackify_banner()
+        print_section_header("Run Install Verifier")
+        print(f"{COLOR_INFO}Discovering configured modlists...{COLOR_RESET}")
+
+        try:
+            vmod = _load_verifier()
+            modlists = vmod.discover_installed_modlists()
+        except Exception as e:
+            print(f"{COLOR_ERROR}Failed to discover modlists: {e}{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        if not modlists:
+            print(f"{COLOR_WARNING}No configured modlists found.{COLOR_RESET}")
+            print(f"{COLOR_INFO}Install and configure a modlist first.{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        print()
+        for i, m in enumerate(modlists, 1):
+            print(f"{COLOR_SELECTION}{i}.{COLOR_RESET} {m.get('name', 'Unknown')}")
+        print(f"{COLOR_SELECTION}0.{COLOR_RESET} Cancel")
+
+        selection = input(f"\n{COLOR_PROMPT}Select modlist (0-{len(modlists)}): {COLOR_RESET}").strip()
+
+        if selection == "0" or not selection:
+            return
+
+        try:
+            idx = int(selection) - 1
+            if idx < 0 or idx >= len(modlists):
+                raise ValueError()
+        except ValueError:
+            print(f"{COLOR_ERROR}Invalid selection.{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        chosen = modlists[idx]
+        appid = chosen.get("appid", "")
+        modlist_dir = chosen.get("modlist_dir")
+        game_type = chosen.get("game_type", "unknown")
+        name = chosen.get("name", "Unknown")
+
+        pfx = resolve_pfx_for_appid(appid) if appid else None
+        if not pfx or not pfx.is_dir():
+            print(f"{COLOR_WARNING}No Wine prefix found for {name}. Cannot run verifier.{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        print(f"\n{COLOR_INFO}Running install verification for: {name}{COLOR_RESET}")
+        print(f"{COLOR_INFO}This may take a moment...{COLOR_RESET}\n")
+
+        try:
+            result_holder = [None]
+            def _worker():
+                result_holder[0] = run_install_verification(pfx, modlist_dir, game_type, appid, name)
+            t = threading.Thread(target=_worker, daemon=True)
+            t.start()
+            t.join()
+            r = result_holder[0]
+            if r is None:
+                print(f"{COLOR_WARNING}Verifier returned no results.{COLOR_RESET}")
+            else:
+                passes = r.passes if hasattr(r, 'passes') else []
+                warnings = r.warnings if hasattr(r, 'warnings') else []
+                failures = r.failures if hasattr(r, 'failures') else []
+                total = len(passes) + len(warnings) + len(failures)
+                print(f"--- Install Verification: {name} ---")
+                print(f"  {len(passes)} passed, {len(warnings)} warnings, {len(failures)} failed (of {total} checks)\n")
+                for msg in failures:
+                    print(f"{COLOR_ERROR}  [FAIL] {msg}{COLOR_RESET}")
+                for msg in warnings:
+                    print(f"{COLOR_WARNING}  [WARN] {msg}{COLOR_RESET}")
+                if not failures and not warnings:
+                    print(f"{COLOR_SUCCESS}  All checks passed.{COLOR_RESET}")
+                if passes:
+                    show_all = input(f"\n{COLOR_PROMPT}Show all {len(passes)} passed checks? (y/N): {COLOR_RESET}").strip().lower()
+                    if show_all in ('y', 'yes'):
+                        print()
+                        for msg in passes:
+                            print(f"{COLOR_DISABLED}  [OK]  {msg}{COLOR_RESET}")
+        except Exception as e:
+            print(f"{COLOR_ERROR}Verifier error: {e}{COLOR_RESET}")
+
+        input("\nPress Enter to return to menu...")
+
+    def _execute_tools_hub(self, cli_instance) -> None:
+        from jackify.frontends.cli.menus.tools_hub_menu import ToolsHubMenuHandler
+        ToolsHubMenuHandler().show_tools_hub_menu(cli_instance)

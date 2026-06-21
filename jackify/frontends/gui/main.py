@@ -56,7 +56,13 @@ if '--env-diagnostic' in sys.argv:
         env_data['ld_library_path_suspicious'] = suspicious
     
     # Try to find jackify-engine from bundled context
+    meipass = getattr(sys, '_MEIPASS', None)
+    appdir = os.environ.get('APPDIR')
     engine_paths = []
+    if appdir:
+        appdir_engine = Path(appdir) / 'opt' / 'jackify' / 'engine' / 'jackify-engine'
+        if appdir_engine.exists():
+            engine_paths.append(str(appdir_engine))
     if meipass:
         meipass_path = Path(meipass)
         potential_engine = meipass_path / "jackify" / "engine" / "jackify-engine"
@@ -86,11 +92,22 @@ from jackify import __version__ as jackify_version
 logger = logging.getLogger(__name__)
 
 if '--help' in sys.argv or '-h' in sys.argv:
-    print("""Jackify - Native Linux Modlist Manager\n\nUsage:\n  jackify [--cli] [--debug] [--version] [--help]\n\nOptions:\n  --cli         Launch CLI frontend\n  --debug       Enable debug logging\n  --version     Show version and exit\n  --help, -h    Show this help message and exit\n\nIf no options are given, the GUI will launch by default.\n""")
+    print("""Jackify - Native Linux Modlist Manager\n\nUsage:\n  jackify [--cli] [--debug] [--version] [--help]\n  jackify --list-installed [APPID]\n\nOptions:\n  --cli                 Launch CLI frontend\n  --debug               Enable debug logging\n  --version             Show version and exit\n  --help, -h            Show this help message and exit\n  --list-installed      List installed Wine components for a modlist prefix.\n                        Provide APPID to target a specific prefix, or omit to\n                        select from configured modlists interactively.\n\nIf no options are given, the GUI will launch by default.\n""")
     sys.exit(0)
 
 if '-v' in sys.argv or '--version' in sys.argv or '-V' in sys.argv:
     print(f"Jackify version {jackify_version}")
+    sys.exit(0)
+
+if '--list-installed' in sys.argv:
+    _li_idx = sys.argv.index('--list-installed')
+    _li_appid = (
+        sys.argv[_li_idx + 1]
+        if _li_idx + 1 < len(sys.argv) and not sys.argv[_li_idx + 1].startswith('-')
+        else None
+    )
+    from jackify.frontends.cli.commands.list_installed import ListInstalledCommand
+    ListInstalledCommand().run(appid=_li_appid)
     sys.exit(0)
 
 from jackify import __version__
@@ -124,20 +141,6 @@ from jackify.frontends.gui.widgets.feature_placeholder import FeaturePlaceholder
 
 ENABLE_WINDOW_HEIGHT_ANIMATION = False
 
-# Constants for styling and disclaimer
-DISCLAIMER_TEXT = (
-    "Disclaimer: Jackify is currently in an alpha state. This software is provided as-is, "
-    "without any warranty or guarantee of stability. By using Jackify, you acknowledge that you do so at your own risk. "
-    "The developers are not responsible for any data loss, system issues, or other problems that may arise from its use. "
-    "Please back up your data and use caution."
-)
-
-MENU_ITEMS = [
-    ("Modlist Tasks", "modlist_tasks"),
-    ("Hoolamike Tasks", "hoolamike_tasks"),
-    ("Additional Tasks", "additional_tasks"),
-    ("Exit Jackify", "exit_jackify"),
-]
 
 class JackifyMainWindow(
     MainWindowGeometryMixin,
@@ -210,7 +213,7 @@ def resource_path(relative_path):
     jackify_dir = os.path.dirname(os.path.dirname(current_dir))
     return os.path.join(jackify_dir, relative_path)
 
-def main():
+def main(initial_nxm_url: str = ""):
     """Main entry point for the GUI application"""
     # CRITICAL: Enable faulthandler for segfault debugging
     # Print Python stack traces on segfault
@@ -245,19 +248,41 @@ def main():
     # Command-line --debug always takes precedence
     if '--debug' in sys.argv or '-d' in sys.argv:
         debug_mode = True
-        # Temporarily save CLI debug flag to config so engine can see it
         config_handler.set('debug_mode', True)
+        os.environ.setdefault('QT_LOGGING_RULES', '*.debug=true')
+        os.environ.setdefault('QT_DEBUG_PLUGINS', '1')
     import logging
 
     # Initialize root logger: jackify.log (INFO, always) + jackify-debug.log (DEBUG, debug mode only)
     from jackify.shared.logging import LoggingHandler
     root_logger = LoggingHandler().setup_application_logging(debug_mode)
 
+    _unhandled_exception_shown = False
+
     def _unhandled_exception(exc_type, exc_value, exc_tb):
+        nonlocal _unhandled_exception_shown
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_tb)
             return
         logging.getLogger().critical("Unhandled exception", exc_info=(exc_type, exc_value, exc_tb))
+        if not _unhandled_exception_shown:
+            _unhandled_exception_shown = True
+            try:
+                from jackify.shared.paths import get_jackify_logs_dir
+                log_dir = get_jackify_logs_dir()
+            except Exception:
+                log_dir = "the Jackify log directory"
+
+            def _show_dialog():
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.critical(
+                    None,
+                    "Unexpected Error",
+                    f"Jackify encountered an unexpected error. The current operation may not have completed.\n\n"
+                    f"{exc_value}\n\n"
+                    f"Details were written to:\n{log_dir}",
+                )
+            QTimer.singleShot(0, _show_dialog)
 
     sys.excepthook = _unhandled_exception
 
@@ -277,7 +302,7 @@ def main():
     dev_mode = '--dev' in sys.argv
 
     # Launch GUI application
-    app = QApplication(sys.argv)
+    app = QApplication.instance() or QApplication(sys.argv)
     # CRITICAL: Set application name before desktop file name to ensure proper window title/icon on PopOS/Ubuntu
     app.setApplicationName("Jackify")
     app.setApplicationDisplayName("Jackify")
@@ -363,6 +388,11 @@ def main():
     
     # Start background update check after window is shown
     window._check_for_updates_on_startup()
+    window._check_tool_updates_on_startup()
+
+    if initial_nxm_url:
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(500, lambda: window._on_nxm_url_received(initial_nxm_url))
     
     # Ensure cleanup on exit
     import atexit

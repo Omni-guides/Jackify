@@ -104,6 +104,14 @@ class OverallProgressIndicator(QWidget):
         # Update status text
         display_text = progress.display_text
         from jackify.shared.progress_models import InstallationPhase, FileProgress
+        # CLF3 Status events populate progress.message with detail not captured by display_text.
+        # Use the message directly when display_text is just the bare phase label.
+        if (
+            progress.message
+            and progress.message not in ("Processing...", "")
+            and display_text in (progress.phase_name, progress.phase.value.title() if progress.phase else "", "Processing...", "")
+        ):
+            display_text = progress.message
         if not display_text or display_text == "Processing...":
             if progress.phase == InstallationPhase.UNKNOWN:
                 # Don't overwrite the banner with "Unknown" for unrecognized section headers;

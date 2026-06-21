@@ -355,6 +355,34 @@ def manual_steps_incomplete() -> ConfigError:
 
 def cc_content_missing(filename: str = "") -> InstallError:
     detail = f"Missing file: {filename}" if filename else ""
+    is_curios = "curios" in filename.lower()
+
+    if is_curios:
+        suggestion = (
+            "You likely have the Steam-delivered version of Rare Curios, which has a different file hash "
+            "to the in-game version. The modlist requires the in-game version."
+        )
+        solutions = [
+            f"Delete both Curios files ({filename.rsplit('.', 1)[0]}.bsa and .esl) from your Skyrim/Data folder.",
+            "Launch Skyrim SE from Steam and go to Creations from the main menu.",
+            "Select Category, then Creation Club. Find 'Rare Curios' and download it.",
+            "Do NOT alt-tab while downloading - the download will stop if the game loses focus.",
+            "Do NOT run Steam 'Verify Integrity' after - it will replace the file with the wrong version again.",
+            "Rerun the Jackify installation.",
+        ]
+    else:
+        suggestion = (
+            "Even if the file exists on disk, it may be the Steam-delivered version with a different hash. "
+            "Modlists require the in-game Creations version."
+        )
+        solutions = [
+            "Launch Skyrim SE/AE, go to Creations from the main menu, and select 'Download All'. "
+            "Wait for all downloads to complete, then retry the install.",
+            "Do not use 'Verify files' in Steam - it delivers a different version of the files that will fail the same check.",
+            "If a specific file is still flagged, find it in the Creations menu by name and re-download it individually.",
+            "Skyrim AE via Steam Family Sharing does not transfer DLC content - you must own AE directly.",
+        ]
+
     return InstallError(
         title="Anniversary Edition Content Missing",
         message=(
@@ -362,31 +390,35 @@ def cc_content_missing(filename: str = "") -> InstallError:
             "in your game installation."
             + (f" ({filename})" if filename else "")
         ),
-        suggestion="Open Vanilla Skyrim and allow it to download the required Anniversary Edition content.",
-        solutions=[
-            "Open Vanilla Skyrim SE/AE and let it run until all Creation Club content has downloaded.",
-            "From the Skyrim main menu, go into Creations and select 'Download All'.",
-            "If specific files are still missing, search for and download them individually from the Creations menu.",
-            "If problems persist, uninstall and reinstall Skyrim, then launch once to trigger the AE download.",
-            "Note: Skyrim AE via Steam Family Sharing does not transfer DLC content - you must own AE directly.",
-        ],
+        suggestion=suggestion,
+        solutions=solutions,
         technical=format_technical_context(detail=detail) if detail else None,
     )
 
 
-def creation_kit_missing() -> InstallError:
+def creation_kit_missing(game_type: str = None) -> InstallError:
+    if game_type and "fallout4" in game_type.lower():
+        ck_name = "Fallout 4 Creation Kit"
+        steam_search = "Fallout 4: Creation Kit"
+        scripts_note = []
+    else:
+        ck_name = "Skyrim Special Edition Creation Kit"
+        steam_search = "Skyrim Special Edition: Creation Kit"
+        scripts_note = [
+            "When asked whether to unzip Scripts.zip, select NO - unzipping will cause the CK to crash.",
+        ]
     return InstallError(
         title="Creation Kit Files Missing",
         message=(
-            "This modlist requires the Skyrim Special Edition Creation Kit, "
+            f"This modlist requires the {ck_name}, "
             "but its files were not found in your game installation."
         ),
         suggestion="Install the Creation Kit from Steam and open it once to register its files.",
         solutions=[
-            "In Steam, search for 'Skyrim Special Edition: Creation Kit' and install it.",
+            f"In Steam, search for '{steam_search}' and install it.",
             "Right-click it in Steam > Properties > Compatibility and set a Proton version.",
             "Click Play to launch the Creation Kit.",
-            "When asked whether to unzip Scripts.zip, select NO - unzipping will cause the CK to crash.",
+            *scripts_note,
             "Once the Creation Kit opens successfully, close it.",
             "Re-run the modlist install in Jackify - the required files will now be in place.",
         ],

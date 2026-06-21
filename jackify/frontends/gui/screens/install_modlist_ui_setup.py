@@ -104,7 +104,7 @@ class InstallModlistUISetupMixin:
         header_layout = QVBoxLayout()
         header_layout.setSpacing(1)  # Reduce spacing between title and description
         # Title (no logo)
-        title = QLabel("<b>Install a Modlist (Automated)</b>")
+        title = QLabel("<b>Install a Modlist</b>")
         title.setStyleSheet(f"font-size: 20px; color: {JACKIFY_COLOR_BLUE}; margin: 0px; padding: 0px;")
         title.setAlignment(Qt.AlignHCenter)
         title.setMaximumHeight(30)  # Force compact height
@@ -252,6 +252,7 @@ class InstallModlistUISetupMixin:
         # Update nexus status on init
         self._update_nexus_status()
 
+
         # --- Resolution Dropdown ---
         resolution_label = QLabel("Resolution:")
         self.resolution_combo = QComboBox()
@@ -293,7 +294,7 @@ class InstallModlistUISetupMixin:
             combo_items = [self.resolution_combo.itemText(i) for i in range(self.resolution_combo.count())]
             resolution_index = self.resolution_service.get_resolution_index(saved_resolution, combo_items)
             self.resolution_combo.setCurrentIndex(resolution_index)
-            logger.debug(f"DEBUG: Loaded saved resolution: {saved_resolution} (index: {resolution_index})")
+            logger.debug(f"Loaded saved resolution: {saved_resolution} (index: {resolution_index})")
         elif is_steam_deck:
             # Set default to 1280x800 (Steam Deck)
             combo_items = [self.resolution_combo.itemText(i) for i in range(self.resolution_combo.count())]
@@ -304,23 +305,44 @@ class InstallModlistUISetupMixin:
         # Otherwise, default is 'Leave unchanged' (index 0)
         form_grid.addWidget(resolution_label, 5, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
         
-        # Horizontal layout for resolution dropdown and auto-restart checkbox
+        # Horizontal layout for resolution dropdown and right-side checkboxes
         resolution_and_restart_layout = QHBoxLayout()
         resolution_and_restart_layout.setSpacing(12)
-        
-        # Resolution dropdown (made smaller)
-        self.resolution_combo.setMaximumWidth(280)  # Constrain width but keep aesthetically pleasing
+
+        self.resolution_combo.setMaximumWidth(280)
         resolution_and_restart_layout.addWidget(self.resolution_combo)
-        
-        # Add stretch to push checkbox to the right
+
         resolution_and_restart_layout.addStretch()
-        
-        # Auto-accept Steam restart checkbox (right-aligned)
+
+        right_checks_layout = QVBoxLayout()
+        right_checks_layout.setSpacing(4)
+        right_checks_layout.setContentsMargins(0, 0, 0, 0)
+
         self.auto_restart_checkbox = QCheckBox("Auto-accept Steam restart")
-        self.auto_restart_checkbox.setChecked(False)  # Always default to unchecked per session
+        self.auto_restart_checkbox.setChecked(False)
         self.auto_restart_checkbox.setToolTip("When checked, Steam restart dialog will be automatically accepted, allowing unattended installation")
-        resolution_and_restart_layout.addWidget(self.auto_restart_checkbox)
-        
+        right_checks_layout.addWidget(self.auto_restart_checkbox)
+
+        engine_row = QHBoxLayout()
+        engine_row.setSpacing(4)
+        engine_row.setContentsMargins(0, 0, 0, 0)
+        self.engine_checkbox = QCheckBox("Use Experimental Engine")
+        self.engine_checkbox.setToolTip("Use CLF3 (SulfurNitride) as the install engine instead of jackify-engine")
+        self.engine_checkbox.toggled.connect(self._on_engine_checkbox_toggled)
+        engine_row.addWidget(self.engine_checkbox)
+        engine_whats_this = QLabel('<a href="https://github.com/Omni-guides/Jackify/wiki/Install-Engines" style="color: #6fa8dc; font-size: 11px;">(what\'s this?)</a>')
+        engine_whats_this.setOpenExternalLinks(False)
+        engine_whats_this.linkActivated.connect(self._open_url_safe)
+        engine_row.addWidget(engine_whats_this)
+        engine_row.addStretch()
+        engine_row_widget = QWidget()
+        engine_row_widget.setLayout(engine_row)
+        self._engine_row_widget = engine_row_widget
+        right_checks_layout.addWidget(engine_row_widget)
+        self._init_engine_checkbox()
+
+        resolution_and_restart_layout.addLayout(right_checks_layout)
+
         form_grid.addLayout(resolution_and_restart_layout, 5, 1)
         form_section_widget = QWidget()
         form_section_widget.setLayout(form_grid)
@@ -514,3 +536,13 @@ class InstallModlistUISetupMixin:
         
         # Now collect all actionable controls after UI is fully built
         self._collect_actionable_controls()
+
+    def _init_engine_checkbox(self) -> None:
+        from jackify.backend.services.tool_registry import get_active_engine_id
+        self._engine_row_widget.setVisible(True)
+        self.engine_checkbox.blockSignals(True)
+        self.engine_checkbox.setChecked(get_active_engine_id() == "clf3")
+        self.engine_checkbox.blockSignals(False)
+
+    def _on_engine_checkbox_toggled(self, checked: bool) -> None:
+        pass  # state is read at install time; persistent default lives in Settings

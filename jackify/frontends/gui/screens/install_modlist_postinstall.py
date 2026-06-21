@@ -1,4 +1,5 @@
 """Post-install UI feedback management for InstallModlistScreen (Mixin)."""
+import logging
 import re
 import time
 from typing import Optional
@@ -6,6 +7,8 @@ from typing import Optional
 from PySide6.QtCore import QTimer
 
 from jackify.shared.progress_models import InstallationProgress, InstallationPhase, FileProgress, OperationType
+
+logger = logging.getLogger(__name__)
 
 
 class PostInstallFeedbackMixin:
@@ -181,6 +184,21 @@ class PostInstallFeedbackMixin:
                 ],
             },
             {
+                'id': 'final_config',
+                'label': "Performing final tasks",
+                'keywords': [
+                    "digicert",
+                    "certificate",
+                    "windows version",
+                    "windows 11",
+                    "mscoree",
+                    "tool compat",
+                    "nemesis setup",
+                    "applying tool",
+                    "symlink",
+                ],
+            },
+            {
                 'id': 'config_finalize',
                 'label': "Finalising Jackify configuration",
                 'keywords': [
@@ -200,15 +218,54 @@ class PostInstallFeedbackMixin:
         self._post_install_last_label = "Preparing Steam integration"
         total = max(1, self._post_install_total_steps)
         self._update_post_install_ui(self._post_install_last_label, 0, total)
+        self.cancel_btn.setVisible(False)
+        self.cancel_install_btn.setVisible(True)
 
     def _handle_post_install_progress(self, message: str):
         """Translate backend progress messages into collapsed-mode feedback."""
         if not self._post_install_active or not message:
+            if not self._post_install_active and message:
+                logger.debug("[PULSE] _handle_post_install_progress skipped - post_install_active=False, msg=%r", message[:60])
             return
 
         text = message.strip()
         if not text:
             return
+
+        if any(kw in text.lower() for kw in ['wine', 'vcrun', 'dotnet', 'winetricks', 'component']):
+            logger.debug("[PULSE] progress msg (wine-related): %r, step=%s, timer_active=%s",
+                text[:80], getattr(self, '_post_install_current_step', 'N/A'),
+                bool(getattr(self, '_component_install_timer', None) and
+                     getattr(self._component_install_timer, 'isActive', lambda: False)()))
+
+        if text.startswith("[NATIVE_DL] "):
+            parts = text.split(None, 3)
+            if len(parts) == 4:
+                _, component, pct_str, speed_str = parts
+                try:
+                    if not hasattr(self, '_native_component_progress'):
+                        self._native_component_progress = {}
+                    self._native_component_progress[component] = (float(pct_str), float(speed_str))
+                except ValueError:
+                    pass
+            return
+        if text.startswith("[NATIVE_INSTALL] "):
+            component = text[17:].strip()
+            if hasattr(self, '_native_component_progress'):
+                self._native_component_progress.pop(component, None)
+            done = getattr(self, '_native_done_components', 0)
+            self._current_native_component = component
+            self._native_done_components = done + 1
+            if hasattr(self, '_component_install_list') and self._component_install_list:
+                total = len(self._component_install_list)
+                remaining = max(0, total - (done + 1))
+                suffix = f" ({remaining} remaining)" if remaining > 0 else ""
+                self.file_progress_list.update_files(
+                    [FileProgress(filename=f"Wine component: {component}{suffix}", operation=OperationType.UNKNOWN, percent=0.0)],
+                    current_phase=None,
+                )
+            return
+
         normalized = text.lower()
         total = max(1, self._post_install_total_steps)
         matched = False
@@ -239,15 +296,19 @@ class PostInstallFeedbackMixin:
                     # Must remove summary widget so pulser items display immediately
                     # (otherwise the 0.5s hold blocks update_files from adding items).
                     if step['id'] == 'wine_components':
+                        logger.debug("[PULSE] wine_components step matched, msg=%r", text[:80])
                         self.file_progress_list.clear_summary()
                         self.progress_indicator.set_status(
                             "Installing Wine components...",
                             int((self._post_install_current_step / total) * 100)
                         )
-                        if not hasattr(self, '_component_install_timer') or not self._component_install_timer:
+                        timer_active = hasattr(self, '_component_install_timer') and self._component_install_timer and self._component_install_timer.isActive()
+                        logger.debug("[PULSE] timer_active=%s", timer_active)
+                        if not timer_active:
                             self._start_component_install_pulse()
                         # Always check for component list updates (may come in later messages)
                         comp_list = self._parse_wine_components_message(text)
+                        logger.debug("[PULSE] comp_list=%s", comp_list)
                         if comp_list:
                             self._start_component_install_pulse_with_components(comp_list)
                         break
@@ -364,16 +425,11 @@ class PostInstallFeedbackMixin:
 
     def _update_post_install_ui(self, label: str, step: int, total: int, detail: Optional[str] = None):
         """Update progress indicator + activity summary for post-install steps."""
-        # Use the label as the primary display, but include step info in Activity window
         display_label = label
         if detail:
-            # Remove timestamp prefix from detail messages
             clean_detail = self._strip_timestamp_prefix(detail.strip())
             if clean_detail:
-                # Filter out winetricks/protontricks internal messages (perl, wine paths, etc.)
-                # These are implementation details, not user-facing status
                 if any(keyword in clean_detail.lower() for keyword in ['perl:', 'wine:', '/usr/bin/', 'winetricks:', 'protontricks:']):
-                    # Use original label, ignore internal tool messages
                     pass
                 elif clean_detail.lower().startswith(label.lower()):
                     display_label = clean_detail
@@ -383,23 +439,24 @@ class PostInstallFeedbackMixin:
         step_clamped = max(0, min(step, total))
         overall_percent = (step_clamped / total) * 100.0
 
-        # CRITICAL: Ensure both displays use the SAME step counter
-        # Progress banner uses phase_step/phase_max_steps from progress_state
         progress_state = InstallationProgress(
             phase=InstallationPhase.FINALIZE,
-            phase_name=display_label,  # This will show in progress banner
-            phase_step=step_clamped,    # This creates [step/total] in display_text
+            phase_name=display_label,
+            phase_step=step_clamped,
             phase_max_steps=total,
             overall_percent=overall_percent
         )
         self.progress_indicator.update_progress(progress_state)
 
-        # Activity window uses summary_info with the SAME step counter
+        # When the component pulse timer is active, it owns the Activity window.
+        # Writing a summary widget here would block the heartbeat's file items via the 0.5s hold.
+        if getattr(self, '_component_install_timer', None) and self._component_install_timer.isActive():
+            return
+
         summary_info = {
-            'current_step': step_clamped,  # Must match phase_step above
-            'max_steps': total,            # Must match phase_max_steps above
+            'current_step': step_clamped,
+            'max_steps': total,
         }
-        # Use the same label for consistency
         self.file_progress_list.update_files([], current_phase=display_label, summary_info=summary_info)
 
     def _end_post_install_feedback(self, success: bool):
@@ -414,6 +471,8 @@ class PostInstallFeedbackMixin:
         self._update_post_install_ui(label, final_step, total)
         self._post_install_active = False
         self._post_install_last_label = label
+        self.cancel_btn.setVisible(True)
+        self.cancel_install_btn.setVisible(False)
 
     def _parse_wine_components_message(self, text: str):
         """Extract list of wine component names from backend status message, or None."""
@@ -429,40 +488,60 @@ class PostInstallFeedbackMixin:
 
     def _start_component_install_pulse(self):
         """Start pulsing Activity item for Wine component installation."""
+        logger.debug("[PULSE] _start_component_install_pulse called, post_install_active=%s", getattr(self, '_post_install_active', 'N/A'))
         self.file_progress_list.update_or_add_item("__wine_components__", "Installing Wine components...", 0.0)
         if not getattr(self, '_component_install_timer', None):
             self._component_install_timer = QTimer(self)
             self._component_install_timer.timeout.connect(self._component_install_heartbeat)
         self._component_install_timer.start(100)
         self._component_install_start_time = time.time()
+        logger.debug("[PULSE] component install timer started")
 
     def _start_component_install_pulse_with_components(self, components: list):
-        """Replace single item with one Activity entry per component, each with pulsing progress."""
+        """Show queued count; heartbeat switches to per-component display as each starts."""
+        logger.debug("[PULSE] _start_component_install_pulse_with_components called, components=%s", components)
         self._component_install_list = components
-        progresses = [
-            FileProgress(
-                filename=f"Wine component: {comp}",
-                operation=OperationType.UNKNOWN,
-                percent=0.0,
-            )
-            for comp in components
-        ]
-        self.file_progress_list.update_files(progresses, current_phase=None)
+        self._native_total_components = len(components)
+        self._native_done_components = 0
+        self._current_native_component = None
+        self.file_progress_list.update_or_add_item(
+            "__wine_components__",
+            f"Wine components: {len(components)} queued",
+            0.0,
+        )
 
     def _component_install_heartbeat(self):
-        """Heartbeat to keep component install item(s) pulsing."""
+        """Heartbeat to keep component install item pulsing."""
         if not hasattr(self, '_component_install_start_time') or not self._component_install_start_time:
+            logger.debug("[PULSE] heartbeat fired but no start_time, skipping")
             return
+        current = getattr(self, '_current_native_component', None)
         if hasattr(self, '_component_install_list') and self._component_install_list:
-            progresses = [
-                FileProgress(
-                    filename=f"Wine component: {comp}",
-                    operation=OperationType.UNKNOWN,
-                    percent=0.0,
+            total = len(self._component_install_list)
+            done = getattr(self, '_native_done_components', 0)
+            dl_state = getattr(self, '_native_component_progress', {})
+            if current:
+                if current in dl_state:
+                    pct, speed = dl_state[current]
+                    label = f"Wine component: {current} | {pct:.0f}% ({speed:.1f} MB/s)"
+                    op = OperationType.DOWNLOAD
+                    pct_val = pct
+                else:
+                    remaining = max(0, total - done)
+                    suffix = f" ({remaining} remaining)" if remaining > 0 else ""
+                    label = f"Wine component: {current}{suffix}"
+                    op = OperationType.UNKNOWN
+                    pct_val = 0.0
+                self.file_progress_list.update_files(
+                    [FileProgress(filename=label, operation=op, percent=pct_val)],
+                    current_phase=None,
                 )
-                for comp in self._component_install_list
-            ]
-            self.file_progress_list.update_files(progresses, current_phase=None)
+            else:
+                self.file_progress_list.update_or_add_item(
+                    "__wine_components__",
+                    f"Wine components: {total} queued",
+                    0.0,
+                )
         else:
             self.file_progress_list.update_or_add_item("__wine_components__", "Installing Wine components...", 0.0)
 
@@ -473,6 +552,8 @@ class PostInstallFeedbackMixin:
             self._component_install_timer = None
         if hasattr(self, '_component_install_list'):
             del self._component_install_list
+        if hasattr(self, '_native_component_progress'):
+            del self._native_component_progress
 
     def _start_bsa_decompress_pulse(self):
         """Keep the Activity window alive during long BSA decompression runs."""

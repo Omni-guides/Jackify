@@ -18,7 +18,7 @@ class ConfigureNewModlistUISetupMixin:
 
     def __init__(self, stacked_widget=None, main_menu_index=0, dev_mode=False, system_info=None):
         super().__init__()
-        logger.debug("DEBUG: ConfigureNewModlistScreen __init__ called")
+        logger.debug("ConfigureNewModlistScreen __init__ called")
         self.stacked_widget = stacked_widget
         self.main_menu_index = main_menu_index
         self.dev_mode = dev_mode
@@ -178,7 +178,7 @@ class ConfigureNewModlistUISetupMixin:
             combo_items = [self.resolution_combo.itemText(i) for i in range(self.resolution_combo.count())]
             resolution_index = self.resolution_service.get_resolution_index(saved_resolution, combo_items)
             self.resolution_combo.setCurrentIndex(resolution_index)
-            logger.debug(f"DEBUG: Loaded saved resolution: {saved_resolution} (index: {resolution_index})")
+            logger.debug(f"Loaded saved resolution: {saved_resolution} (index: {resolution_index})")
         elif is_steam_deck:
             # Set default to 1280x800 (Steam Deck)
             combo_items = [self.resolution_combo.itemText(i) for i in range(self.resolution_combo.count())]

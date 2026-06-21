@@ -10,7 +10,6 @@ from .path_handler_mo2 import (
     PathHandlerMO2Mixin,
     TARGET_EXECUTABLES_LOWER,
     STOCK_GAME_FOLDERS,
-    SDCARD_PREFIX,
 )
 from .path_handler_dxvk import PathHandlerDXVKMixin
 from .path_handler_steam import PathHandlerSteamMixin
@@ -20,7 +19,6 @@ __all__ = [
     'PathHandler',
     'TARGET_EXECUTABLES_LOWER',
     'STOCK_GAME_FOLDERS',
-    'SDCARD_PREFIX',
 ]
 
 

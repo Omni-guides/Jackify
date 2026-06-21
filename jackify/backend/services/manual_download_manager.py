@@ -119,6 +119,7 @@ class ManualDownloadManager(ManualDownloadManagerApiMixin, ManualDownloadManager
         self._startup_precheck_pending = 0
         self._run_id = f"mdl-{int(time.time())}-{id(self) % 10000}"
         self._last_progress_log_completed = -1
+        self._last_browser_open: dict[str, float] = {}  # file_name -> monotonic timestamp
 
         additional = [modlist_download_dir] if modlist_download_dir != watch_directory else []
         config = WatcherConfig(watch_directory=watch_directory, additional_dirs=additional)

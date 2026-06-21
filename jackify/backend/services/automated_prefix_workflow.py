@@ -133,6 +133,17 @@ class WorkflowMixin:
         """
         logger.info("Starting proven working automated prefix creation workflow")
 
+        if download_dir is None:
+            try:
+                from jackify.backend.handlers.path_handler import PathHandler
+                ini_path = Path(modlist_install_dir) / 'ModOrganizer.ini'
+                dl_str = PathHandler().get_download_directory_linux_path(ini_path)
+                if dl_str:
+                    download_dir = Path(dl_str)
+                    logger.debug(f"Resolved download_dir from ini: {download_dir}")
+            except Exception as e:
+                logger.debug(f"Could not resolve download_dir from ini: {e}")
+
         try:
             conflict_result = self.handle_existing_shortcut_conflict(
                 shortcut_name,

@@ -10,6 +10,10 @@ from pathlib import Path
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1].startswith('nxm://'):
+        handle_nxm_url(sys.argv[1])
+        return
+
     # Check if launched with jackify:// protocol URL (OAuth callback)
     if len(sys.argv) > 1 and sys.argv[1].startswith('jackify://'):
         handle_protocol_url(sys.argv[1])
@@ -18,6 +22,42 @@ def main():
     # Normal GUI launch
     from jackify.frontends.gui.main import main as gui_main
     gui_main()
+
+
+def handle_nxm_url(url: str) -> None:
+    """Handle an nxm:// launch: hand off to running instance or open the app."""
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication(sys.argv)
+
+    from jackify.backend.services.nxm_ipc import send_to_running_instance
+    if send_to_running_instance(url):
+        return
+
+    # No running instance - check for installed modlists before launching
+    try:
+        from jackify.tools.verify_install import discover_installed_modlists
+        modlists = discover_installed_modlists()
+    except Exception:
+        modlists = []
+
+    if not modlists:
+        from jackify.frontends.gui.dialogs.nxm_download_dialog import show_no_modlists_error
+        show_no_modlists_error()
+        return
+
+    from jackify.backend.services.nxm_url import parse_nxm_url
+    from jackify.backend.services import nxm_session
+    from jackify.frontends.gui.dialogs.nxm_download_dialog import NxmDownloadDialog
+
+    nxm = parse_nxm_url(url)
+    auto_start = nxm_session.detect_active_mo2_modlist(modlists)
+    if auto_start is None:
+        remembered = nxm_session.get_remembered_modlist()
+        auto_start = next((m for m in modlists if m["name"] == remembered), None) if remembered else None
+
+    dlg = NxmDownloadDialog(nxm, modlists, auto_start_modlist=auto_start)
+    dlg.show()
+    app.exec()
 
 
 def handle_protocol_url(url: str):

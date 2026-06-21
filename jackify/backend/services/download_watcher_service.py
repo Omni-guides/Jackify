@@ -3,13 +3,12 @@ Watches a directory for newly downloaded files and matches them against a
 list of pending manual download items by lax filename comparison.
 """
 
-import os
 import re
 import time
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -29,6 +28,11 @@ class DownloadWatcherService:
     Caller sets pending_items (list of dicts with at least 'file_name') and
     registers an on_candidate callback that receives (Path, dict) when a
     potential match is detected (after debounce, before hash validation).
+
+    Detection strategy: every scan checks every non-temp file against pending
+    items. Files currently being debounced are skipped to avoid duplicate
+    threads. When debounce completes (pass or fail), the path is cleared from
+    the in-flight set so the next scan can re-detect it if still pending.
     """
 
     def __init__(self, config: WatcherConfig, on_candidate: Callable[[Path, dict], None]):
@@ -38,8 +42,8 @@ class DownloadWatcherService:
         self._pending_exact: list[tuple[str, dict]] = []
         self._stop_event = Event()
         self._thread: Optional[Thread] = None
-        # Track known files so we only react to new/changed ones
-        self._known: dict[Path, float] = {}
+        self._debouncing: set[Path] = set()
+        self._debouncing_lock = Lock()
 
     def set_pending_items(self, items: list[dict]) -> None:
         """Replace the pending items list. Thread-safe for simple list swap."""
@@ -77,17 +81,11 @@ class DownloadWatcherService:
                 for path in entries:
                     if not path.is_file():
                         continue
-                    # Skip browser temp files
                     if path.suffix in ('.part', '.crdownload', '.tmp'):
                         continue
-                    try:
-                        mtime = path.stat().st_mtime
-                    except OSError:
-                        continue
-                    prev_mtime = self._known.get(path)
-                    if prev_mtime == mtime:
-                        continue
-                    self._known[path] = mtime
+                    with self._debouncing_lock:
+                        if path in self._debouncing:
+                            continue
                     self._check_candidate(path)
             except OSError as e:
                 logger.debug(f"Watcher scan error on {watch_dir}: {e}")
@@ -100,15 +98,14 @@ class DownloadWatcherService:
                 logger.debug(f"Candidate exact match: {path.name}")
                 self._debounce_and_emit(path, item)
                 return
-        # Some modlist metadata stores filenames with a leading dot that browsers
-        # strip when saving the download. Match against the stripped expected name.
+        # Leading-dot normalisation: browsers strip a leading dot from filenames.
         for expected_name, item in self._pending_exact:
             if expected_name.lstrip('.') == candidate_name:
                 logger.debug(f"Candidate dot-normalized match: {path.name} -> {expected_name}")
                 self._debounce_and_emit(path, item)
                 return
-        # Some modlist metadata stores filenames with a leading numeric prefix
-        # (e.g. "1_filename.zip") that is absent from the browser-saved file.
+        # Numeric-prefix normalisation: engine metadata may include a leading
+        # numeric prefix (e.g. "1_filename.zip") absent from the downloaded file.
         for expected_name, item in self._pending_exact:
             stripped = re.sub(r'^\d+_', '', expected_name)
             if stripped != expected_name and stripped == candidate_name:
@@ -117,29 +114,63 @@ class DownloadWatcherService:
                 return
 
     def _debounce_and_emit(self, path: Path, item: dict) -> None:
+        with self._debouncing_lock:
+            self._debouncing.add(path)
+
+        expected_size = 0
+        try:
+            expected_size = int(item.get('expected_size', 0) or 0)
+        except (TypeError, ValueError):
+            expected_size = 0
+
         def _wait_and_emit():
-            prev_size = -1
-            stable_count = 0
-            needed = max(1, int(self._config.debounce_seconds / 0.5))
-            for _ in range(needed * 4):  # max ~2× debounce time
-                if self._stop_event.is_set():
-                    return
-                time.sleep(0.5)
-                try:
-                    size = path.stat().st_size
-                except OSError:
-                    return
-                if size == prev_size:
-                    stable_count += 1
-                    if stable_count >= needed:
-                        break
-                else:
-                    stable_count = 0
-                prev_size = size
-            if path.exists():
-                self._on_candidate(path, item)
+            became_stable = False
+            try:
+                prev_size = -1
+                stable_count = 0
+                needed = max(1, int(self._config.debounce_seconds / 0.5))
+                for _ in range(needed * 4):
+                    if self._stop_event.is_set():
+                        return
+                    time.sleep(0.5)
+                    try:
+                        size = path.stat().st_size
+                    except OSError:
+                        return
+                    # A slow/in-progress download can hold a constant size for the
+                    # debounce window (initial throttle, network stall) and look
+                    # stable while still incomplete. Validating it prematurely fails
+                    # the hash, reverts the item to pending, and triggers a duplicate
+                    # browser tab. Hold off until the file reaches its known size.
+                    if expected_size > 0 and size != expected_size:
+                        stable_count = 0
+                        prev_size = size
+                        continue
+                    if size == prev_size:
+                        stable_count += 1
+                        if stable_count >= needed:
+                            became_stable = True
+                            break
+                    else:
+                        stable_count = 0
+                    prev_size = size
+                # Only validate if the file stopped growing. If still downloading,
+                # release the debounce lock so the next scan can retry once it finishes.
+                if became_stable and path.exists():
+                    self._on_candidate(path, item)
+                    # Path stays in _debouncing until release_path() is called by the
+                    # manager after validation completes, preventing repeated re-fires.
+            finally:
+                if not became_stable:
+                    with self._debouncing_lock:
+                        self._debouncing.discard(path)
 
         Thread(target=_wait_and_emit, daemon=True, name=f'Debounce-{path.name[:20]}').start()
+
+    def release_path(self, path: Path) -> None:
+        """Allow the watcher to re-detect a path after validation completes."""
+        with self._debouncing_lock:
+            self._debouncing.discard(path)
 
     def _watch_loop(self) -> None:
         while not self._stop_event.is_set():

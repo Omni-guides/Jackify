@@ -8,11 +8,13 @@ standalone operation for existing prefixes.
 Based on research into NaK's registry configuration (external reference only).
 """
 
+import json
 import logging
 import os
 import subprocess
 import tempfile
 import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -91,11 +93,11 @@ def _build_reg_content() -> str:
     return "\r\n".join(lines)
 
 
-# .NET 9 SDK - direct installer, not available via winetricks.
-# Synthesis runs on .NET 9; the SDK (not just runtime) is required for patcher compilation.
+# .NET 9 SDK - ZIP distribution, extracted directly to avoid running an EXE under Wine.
+# Synthesis requires the SDK (not just runtime) for patcher compilation.
 # Versions match Fluorine's confirmed-working prefix configuration.
-_DOTNET9_SDK_URL = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.310/dotnet-sdk-9.0.310-win-x64.exe"
-_DOTNET9_SDK_FILENAME = "dotnet-sdk-9.0.310-win-x64.exe"
+_DOTNET9_SDK_URL = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.310/dotnet-sdk-9.0.310-win-x64.zip"
+_DOTNET9_SDK_FILENAME = "dotnet-sdk-9.0.310-win-x64.zip"
 
 # .NET Desktop Runtime 10 - provides NETCore.App + WindowsDesktop.App 10.0.2.
 # Covers Synthesis patchers targeting .NET 10 runtime.
@@ -122,42 +124,29 @@ def _install_dotnet9_sdk(
     log: Callable[[str], None],
 ) -> bool:
     """
-    Download and install the .NET 9 SDK into the Wine prefix.
-    Cached to avoid re-downloading on subsequent runs.
+    Download and extract the .NET 9 SDK ZIP into the Wine prefix.
+    Uses the standalone ZIP distribution to avoid running an EXE under Wine.
+    Synthesis requires the full SDK (Roslyn compiler) for patcher compilation.
     """
     try:
         from jackify.shared.paths import get_jackify_data_dir
         cache_dir = get_jackify_data_dir() / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        installer = cache_dir / _DOTNET9_SDK_FILENAME
+        sdk_zip = cache_dir / _DOTNET9_SDK_FILENAME
 
-        if not installer.exists():
+        if not sdk_zip.exists():
             log(f"Downloading .NET 9 SDK ({_DOTNET9_SDK_FILENAME})...")
-            urllib.request.urlretrieve(_DOTNET9_SDK_URL, installer)
+            urllib.request.urlretrieve(_DOTNET9_SDK_URL, sdk_zip)
             log(".NET 9 SDK downloaded")
         else:
-            log(".NET 9 SDK installer already cached, skipping download")
+            log(".NET 9 SDK already cached, skipping download")
 
-        log("Installing .NET 9 SDK (this may take a few minutes)...")
-        env = os.environ.copy()
-        env["WINEPREFIX"] = str(prefix_path)
-        env["WINEDEBUG"] = "-all"
-        env["WINEDLLOVERRIDES"] = "mshtml=d;winemenubuilder.exe=d"
-        env["DISPLAY"] = env.get("DISPLAY", ":0")
-
-        result = subprocess.run(
-            [wine_bin, str(installer), "/install", "/quiet", "/norestart"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-
-        if result.returncode not in (0, 3010):  # 3010 = success, reboot required
-            log(f".NET 9 SDK installer exited with code {result.returncode}")
-            return False
-
-        log(".NET 9 SDK installed successfully")
+        dest = prefix_path / "drive_c" / "Program Files" / "dotnet"
+        dest.mkdir(parents=True, exist_ok=True)
+        log("Extracting .NET 9 SDK...")
+        with zipfile.ZipFile(sdk_zip) as zf:
+            zf.extractall(dest)
+        log(".NET 9 SDK extracted successfully")
         return True
 
     except Exception as e:
@@ -362,6 +351,7 @@ def apply_tool_config(
     log: Optional[Callable[[str], None]] = None,
     install_dotnet9_sdk: bool = False,
     install_fxc2_d3dcompiler: bool = False,
+    preserve_global_mscoree: bool = False,
 ) -> bool:
     """
     Apply tool compatibility settings to the Wine prefix.
@@ -399,20 +389,25 @@ def apply_tool_config(
     # Remove legacy global *mscoree=native from DllOverrides if present.
     # Old installs wrote this globally, which breaks .NET 9/10 bootstrap (Synthesis).
     # The targeted AppDefaults\SkyrimSE.exe entry written below replaces it.
-    try:
-        env_clean = os.environ.copy()
-        env_clean["WINEPREFIX"] = str(prefix_path)
-        env_clean["WINEDEBUG"] = "-all"
-        env_clean["DISPLAY"] = env_clean.get("DISPLAY", ":0")
-        subprocess.run(
-            [wine_bin, "reg", "delete",
-             "HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides",
-             "/v", "*mscoree", "/f"],
-            env=env_clean, capture_output=True, text=True, timeout=15,
-        )
-        _log("Removed legacy global *mscoree override (if present)")
-    except Exception as e:
-        _log(f"Note: could not remove legacy mscoree entry (non-fatal): {e}")
+    # NSF/CSF modlists are the exception: NetScriptFramework's mixed-mode runtime needs the
+    # global override to host the CLR (the per-exe entry alone is insufficient), so it is kept.
+    if preserve_global_mscoree:
+        _log("Preserving global *mscoree=native (NSF/CSF modlist)")
+    else:
+        try:
+            env_clean = os.environ.copy()
+            env_clean["WINEPREFIX"] = str(prefix_path)
+            env_clean["WINEDEBUG"] = "-all"
+            env_clean["DISPLAY"] = env_clean.get("DISPLAY", ":0")
+            subprocess.run(
+                [wine_bin, "reg", "delete",
+                 "HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides",
+                 "/v", "*mscoree", "/f"],
+                env=env_clean, capture_output=True, text=True, timeout=15,
+            )
+            _log("Removed legacy global *mscoree override (if present)")
+        except Exception as e:
+            _log(f"Note: could not remove legacy mscoree entry (non-fatal): {e}")
 
     reg_content = _build_reg_content()
 

@@ -69,7 +69,7 @@ class ModlistInstallCLITTWMixin:
             print(f"\n{COLOR_PROMPT}═══════════════════════════════════════════════════════════════{COLOR_RESET}")
             print(f"{COLOR_INFO}TTW Integration Available{COLOR_RESET}")
             print(f"{COLOR_PROMPT}═══════════════════════════════════════════════════════════════{COLOR_RESET}")
-            print(f"\nThis modlist ({modlist_name}) supports Tale of Two Wastelands (TTW).")
+            print(f"\nThis modlist ({modlist_name}) requires Tale of Two Wastelands (TTW).")
             print(f"TTW combines Fallout 3 and New Vegas into a single game.")
             print(f"\nWould you like to install TTW now?")
 

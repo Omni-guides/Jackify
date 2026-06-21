@@ -51,7 +51,7 @@ class TTWLifecycleMixin:
     def showEvent(self, event):
         """Called when the widget becomes visible"""
         super().showEvent(event)
-        logger.debug(f"DEBUG: TTW showEvent - integration_mode={self._integration_mode}")
+        logger.debug(f"TTW showEvent - integration_mode={self._integration_mode}")
         
         # Check TTW_Linux_Installer status asynchronously (non-blocking) after screen opens
         from PySide6.QtCore import QTimer
@@ -73,7 +73,7 @@ class TTWLifecycleMixin:
                         is_steamdeck = True
 
                 if is_steamdeck:
-                    logger.debug("DEBUG: Steam Deck detected, keeping expanded")
+                    logger.debug("Steam Deck detected, keeping expanded")
                     # Force expanded state and hide checkbox
                     if self.show_details_checkbox.isVisible():
                         self.show_details_checkbox.setVisible(False)
@@ -84,27 +84,27 @@ class TTWLifecycleMixin:
                     self.console.setMaximumHeight(16777215)  # Remove height limit
                     return
             except Exception as e:
-                logger.debug(f"DEBUG: Steam Deck check exception: {e}")
+                logger.debug(f"Steam Deck check exception: {e}")
                 pass
-            logger.debug(f"DEBUG: Checkbox checked={self.show_details_checkbox.isChecked()}")
+            logger.debug(f"Checkbox checked={self.show_details_checkbox.isChecked()}")
             if self.show_details_checkbox.isChecked():
                 self.show_details_checkbox.blockSignals(True)
                 self.show_details_checkbox.setChecked(False)
                 self.show_details_checkbox.blockSignals(False)
             
-            logger.debug("DEBUG: Calling _toggle_console_visibility(Unchecked)")
+            logger.debug("Calling _toggle_console_visibility(Unchecked)")
             self._toggle_console_visibility(_Qt.Unchecked)
             # Force the window to compact height to eliminate bottom whitespace
             main_window = self.window()
-            logger.debug(f"DEBUG: main_window={main_window}, size={main_window.size() if main_window else None}")
+            logger.debug(f"main_window={main_window}, size={main_window.size() if main_window else None}")
             if main_window:
                 # Save original geometry once
                 if self._saved_geometry is None:
                     self._saved_geometry = main_window.geometry()
-                    logger.debug(f"DEBUG: Saved geometry: {self._saved_geometry}")
+                    logger.debug(f"Saved geometry: {self._saved_geometry}")
                 if self._saved_min_size is None:
                     self._saved_min_size = main_window.minimumSize()
-                    logger.debug(f"DEBUG: Saved min size: {self._saved_min_size}")
+                    logger.debug(f"Saved min size: {self._saved_min_size}")
 
                 # Fixed compact size - same as menu screens
                 from PySide6.QtCore import QSize
@@ -120,14 +120,14 @@ class TTWLifecycleMixin:
                 # Notify parent to ensure compact
                 try:
                     self.resize_request.emit('collapse')
-                    logger.debug("DEBUG: Emitted resize_request collapse signal")
+                    logger.debug("Emitted resize_request collapse signal")
                 except Exception as e:
-                    logger.debug(f"DEBUG: Exception emitting signal: {e}")
+                    logger.debug(f"Exception emitting signal: {e}")
                     pass
         except Exception as e:
-            logger.debug(f"DEBUG: showEvent exception: {e}")
+            logger.debug(f"showEvent exception: {e}")
             import traceback
-            logger.debug(f"DEBUG: {traceback.format_exc()}")
+            logger.debug(f"{traceback.format_exc()}")
             pass
 
     def hideEvent(self, event):
@@ -141,8 +141,8 @@ class TTWLifecycleMixin:
                 # Important when console is expanded
                 main_window.setMaximumSize(QSize(16777215, 16777215))
                 main_window.setMinimumSize(QSize(0, 0))
-                logger.debug("DEBUG: Install TTW hideEvent - cleared window size constraints")
+                logger.debug("Install TTW hideEvent - cleared window size constraints")
         except Exception as e:
-            logger.debug(f"DEBUG: hideEvent exception: {e}")
+            logger.debug(f"hideEvent exception: {e}")
             pass
 

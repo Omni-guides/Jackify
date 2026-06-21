@@ -10,7 +10,7 @@
 
 # Jackify
 
-Jackify is a Linux application for installing and configuring Wabbajack modlists on Linux and Steam Deck. It provides a complete end-to-end workflow — downloading, installing, Steam shortcut creation, Proton prefix setup, and post-install configuration — through both a GUI and a full-featured CLI.
+Jackify is a Linux application for installing and configuring Wabbajack modlists on Linux and Steam Deck. It provides a complete end-to-end workflow (downloading, installing, Steam shortcut creation, Proton prefix setup, and post-install configuration) through both a GUI and a full-featured CLI.
 
 ## Features
 
@@ -28,17 +28,17 @@ Jackify is a Linux application for installing and configuring Wabbajack modlists
 - **Best Effort Support**: Support is provided on a best-effort basis through community channels
 - **Data Safety**: Always back up your important data before using Jackify
 - **System Compatibility**: Functionality on your specific system is not guaranteed
-- **A successful installation does not guarantee a working modlist**: Linux introduces hardware, driver, and system-specific variables that cannot be accounted for. If your modlist installs successfully but does not run correctly, seek help in [#unofficial-linux-help](https://discord.gg/wabbajack) on the Wabbajack Discord — do not contact the modlist author unless they explicitly support Linux
+- **A successful installation does not guarantee a working modlist**: Linux introduces hardware, driver, and system-specific variables that cannot be accounted for. If your modlist installs successfully but does not run correctly, seek help in [#unofficial-linux-help](https://discord.gg/wabbajack) on the Wabbajack Discord. Do not contact the modlist author unless they explicitly support Linux.
 - **Not all modlists can be fully automated**: Some modlists (e.g. Fallout New Vegas lists) require manual steps that Jackify cannot automate (or I have not automated yet). Always check the Install Guide of the Modlist itself to see what could be needed.
 - **Most Modlists are not officially supported on Linux**: Jackify makes a best effort to get modlists running, but compatibility is not guaranteed and will vary between modlists, hardware, and system configuration
 
 ## Requirements
 
 - Linux system (most modern distributions will work)
-- Steam installed and configured — **the Snap version of Steam is not supported**
-- **Protontricks** — required for modlist configuration
+- Steam installed and configured (**the Snap version of Steam is not supported**)
+- **Protontricks** (required for modlist configuration)
   - See [Installing Additional Tools](https://github.com/Omni-guides/Jackify/wiki/Installing-Additional-Tools#installing-protontricks)
-- **GE-Proton 10-14** — While other Proton versions may work, GE-Proton 10-14 is highly recommended for ENB compatibility
+- **GE-Proton 10-14**: While other Proton versions may work, GE-Proton 10-14 is highly recommended for ENB compatibility
   - See [Installing Additional Tools](https://github.com/Omni-guides/Jackify/wiki/Installing-Additional-Tools#installing-ge-proton)
 - **Nexus Mods account** (Premium required for fully automated downloads; Non-Premium supported with manual browser steps)
   - See the [User Guide](https://github.com/Omni-guides/Jackify/wiki/User-Guide) for full details on the options available
@@ -77,7 +77,7 @@ For a full step-by-step guide with screenshots, see the [User Guide](https://git
 - Oblivion
 - Starfield
 - Enderal
-- Other games (Cyberpunk 2077, Baldur's Gate 3, and more — download and install support only for now - full automatioin coming in the future)
+- Other games (Cyberpunk 2077, Baldur's Gate 3, and more): download and install support only for now; full automation coming in the future
 
 ## Architecture
 
@@ -106,7 +106,7 @@ The original bash scripts and step-by-step manual installation guides are preser
 
 ## License
 
-This project is licensed under the GPLv3 License — see the LICENSE file for details.
+This project is licensed under the GPLv3 License. See the LICENSE file for details.
 
 ## Support
 

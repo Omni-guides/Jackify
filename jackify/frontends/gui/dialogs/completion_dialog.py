@@ -112,8 +112,8 @@ class NextStepsDialog(QDialog):
         content_text.setReadOnly(True)
         content_text.setStyleSheet(
             "QTextEdit { "
-            "  background-color: #f8f9fa; "
-            "  border: 1px solid #dee2e6; "
+            "  background-color: #2a2a2a; "
+            "  border: 1px solid #3a3a3a; "
             "  border-radius: 6px; "
             "  padding: 12px; "
             "  font-family: 'Segoe UI', Arial, sans-serif; "
@@ -139,7 +139,7 @@ class NextStepsDialog(QDialog):
         return_btn.clicked.connect(self.accept)  # This will close dialog and return to menu
         return_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #3498db; "
+            "  background-color: #1a5fa8; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 4px; "
@@ -147,10 +147,10 @@ class NextStepsDialog(QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #2980b9; "
+            "  background-color: #2470b0; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #21618c; "
+            "  background-color: #3fd0ea; "
             "}"
         )
         button_layout.addWidget(return_btn)
@@ -163,7 +163,7 @@ class NextStepsDialog(QDialog):
         exit_btn.clicked.connect(self.reject)  # This will close dialog and potentially exit app
         exit_btn.setStyleSheet(
             "QPushButton { "
-            "  background-color: #95a5a6; "
+            "  background-color: #4a5568; "
             "  color: white; "
             "  border: none; "
             "  border-radius: 4px; "
@@ -171,10 +171,10 @@ class NextStepsDialog(QDialog):
             "  padding: 8px 16px; "
             "} "
             "QPushButton:hover { "
-            "  background-color: #7f8c8d; "
+            "  background-color: #5a6578; "
             "} "
             "QPushButton:pressed { "
-            "  background-color: #6c7b7d; "
+            "  background-color: #3fd0ea; "
             "}"
         )
         button_layout.addWidget(exit_btn)
@@ -194,15 +194,12 @@ class NextStepsDialog(QDialog):
         completion_title = "Modlist Configuration complete!" if is_existing else "Modlist Install and Configuration complete!"
         completion_log = "Configure_Existing_Modlist_workflow.log" if is_existing else "Configure_New_Modlist_workflow.log"
 
-        completion_text = f"""✓ Configuration completed successfully!
+        completion_text = f"""Configuration completed successfully!
 
 {completion_title}
 
-  • You should now be able to Launch '{self.modlist_name}' through Steam.
-  • Congratulations and enjoy the game!
-
-NOTE: If you experience ENB issues, consider using GE-Proton 10-14 instead of
-Valve's Proton 10 (known ENB compatibility issues in Valve's Proton 10).
+  - You should now be able to Launch '{self.modlist_name}' through Steam.
+  - Congratulations and enjoy the game!
 
 Detailed log available at: {get_jackify_logs_dir()}/{completion_log}"""
 

@@ -1,11 +1,10 @@
 """Wine/Proton operation methods for ModlistHandler (Mixin)."""
 from pathlib import Path
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional
 import os
 import logging
 import subprocess
 import shutil
-import time
 import vdf
 import json
 import configparser
@@ -64,11 +63,11 @@ class ModlistWineOpsMixin:
             with open(str(config_vdf_path), 'r') as f:
                 config_data = vdf.load(f, mapper=vdf.VDFDict)
 
-            # Navigate the structure: Software -> Valve -> Steam -> CompatToolMapping -> appid_to_check -> Name
+            steam_config_section = config_data.get('InstallConfigStore', {}).get('Software', {}).get('Valve', {}).get('Steam', {})
             compat_mapping = steam_config_section.get('CompatToolMapping', {})
             app_mapping = compat_mapping.get(appid_to_check, {})
-            proton_tool_name = app_mapping.get('name') # CORRECTED: Use lowercase 'name'
-            self.proton_ver = proton_tool_name # Store detected version
+            proton_tool_name = app_mapping.get('name')
+            self.proton_ver = proton_tool_name
             
             if proton_tool_name:
                 self.logger.info(f"Proton tool name from config.vdf: {proton_tool_name}")
@@ -156,18 +155,18 @@ class ModlistWineOpsMixin:
             self.logger.error(f"Steam userdata directory not found at {userdata_base}")
             return
 
+        images = [
+            ("grid-hero.png", f"{appid}_hero.png"),
+            ("grid-logo.png", f"{appid}_logo.png"),
+            ("grid-tall.png", f"{appid}p.png"),
+            ("grid-wide.png", f"{appid}.png"),
+        ]
+
         for user_dir in userdata_base.iterdir():
             if not user_dir.is_dir() or user_dir.name == "0":
                 continue
             grid_dir = user_dir / "config/grid"
             grid_dir.mkdir(parents=True, exist_ok=True)
-
-            images = [
-                ("grid-hero.png", f"{appid}_hero.png"),
-                ("grid-logo.png", f"{appid}_logo.png"),
-                ("grid-tall.png", f"{appid}p.png"),
-                ("grid-wide.png", f"{appid}.png"),
-            ]
 
             for src_name, dest_name in images:
                 src_path = steam_icons_dir / src_name
@@ -193,19 +192,17 @@ class ModlistWineOpsMixin:
                     self.logger.error(f"Failed to copy tenfoot image: {e}")
             elif wide_src.exists():
                 try:
-                    from PySide6.QtGui import QImage
-                    img = QImage(str(wide_src))
-                    if not img.isNull():
-                        scaled = img.scaled(600, 350)
-                        scaled.save(str(tenfoot_dest))
-                        self.logger.info(f"Generated tenfoot image from landscape: {tenfoot_dest}")
-                    else:
-                        self.logger.warning(f"Could not load landscape image for tenfoot generation: {wide_src}")
+                    shutil.copyfile(wide_src, tenfoot_dest)
+                    self.logger.info(f"Copied landscape image as tenfoot fallback: {tenfoot_dest}")
                 except Exception as e:
-                    self.logger.warning(f"Could not generate tenfoot image: {e}")
+                    self.logger.warning(f"Could not copy tenfoot image: {e}")
 
-    def _try_steamgriddb_artwork(self, appid: str, game_type: str = None, modlist_dir: str = None):
-        """Fetch default artwork from SteamGridDB when no modlist-provided SteamIcons exist."""
+        missing_sources = [src for src, _ in images if not (steam_icons_dir / src).exists()]
+        if missing_sources:
+            self._try_steamgriddb_artwork(appid, game_type, modlist_dir, skip_existing=True)
+
+    def _try_steamgriddb_artwork(self, appid: str, game_type: str = None, modlist_dir: str = None, skip_existing: bool = False):
+        """Fetch artwork from SteamGridDB. When skip_existing is True, slots already present in grid_dir are not overwritten."""
         if not game_type and modlist_dir:
             from jackify.backend.services.steamgriddb_service import detect_game_type_from_modlist
             game_type = detect_game_type_from_modlist(modlist_dir)
@@ -241,19 +238,23 @@ class ModlistWineOpsMixin:
                 for src_name, dest_name in images:
                     src = tmp_dir / src_name
                     if src.exists():
+                        dest = grid_dir / dest_name
+                        if skip_existing and dest.exists():
+                            continue
                         try:
-                            shutil.copyfile(src, grid_dir / dest_name)
+                            shutil.copyfile(src, dest)
                         except Exception as e:
                             self.logger.warning(f"Failed to copy {src_name}: {e}")
 
                 # Generate tenfoot from landscape
+                tenfoot_dest = grid_dir / f"{appid}_tenfoot.png"
                 wide = tmp_dir / "grid-wide.png"
-                if wide.exists():
+                if wide.exists() and not (skip_existing and tenfoot_dest.exists()):
                     try:
                         from PySide6.QtGui import QImage
                         img = QImage(str(wide))
                         if not img.isNull():
-                            img.scaled(600, 350).save(str(grid_dir / f"{appid}_tenfoot.png"))
+                            img.scaled(600, 350).save(str(tenfoot_dest))
                     except Exception as e:
                         self.logger.debug(f"Could not generate tenfoot: {e}")
 
@@ -271,7 +272,9 @@ class ModlistWineOpsMixin:
         # Determine game type
         game = (game_var_full or modlist_name or "").lower().replace(" ", "")
         # Add game-specific extras
-        if "skyrim" in game or "fallout4" in game or "starfield" in game or "oblivion_remastered" in game or "enderal" in game:
+        if "fallout4vr" in game or "fo4vr" in game:
+            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnetdesktop6", "vcrun2012"]
+        elif "skyrim" in game or "fallout4" in game or "starfield" in game or "oblivion_remastered" in game or "enderal" in game:
             extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnetdesktop6"]
         elif "falloutnewvegas" in game or "fnv" in game or "fallout3" in game or "fo3" in game or "oblivion" in game:
             extras += ["d3dx9_43", "d3dx9"]
@@ -287,10 +290,13 @@ class ModlistWineOpsMixin:
         for key, components in self.MODLIST_WINE_COMPONENTS.items():
             if key in modlist_lower:
                 extras += components
-        # Remove duplicates while preserving order
+        # Remove duplicates while preserving order, then promote Wine EXE installers
+        # (dotnet48, dotnet40) to the front so the long-running installs happen first.
         seen = set()
         full_list = [x for x in default_components + extras if not (x in seen or seen.add(x))]
-        return full_list
+        _slow = [c for c in full_list if c in ('dotnet48', 'dotnet40')]
+        _rest = [c for c in full_list if c not in ('dotnet48', 'dotnet40')]
+        return _slow + _rest
 
     def _re_enforce_windows_10_mode(self):
         """
@@ -498,6 +504,9 @@ class ModlistWineOpsMixin:
                 self.logger.info("Successfully applied OnlyUseLatestCLR=1 registry entry")
             else:
                 self.logger.error(f"Failed to set OnlyUseLatestCLR: returncode={result2.returncode}, stderr={result2.stderr}")
+
+            # NDP v4.8 keys (Release DWORD etc.) are written by the winetricks dotnet48 verb
+            # during component installation; they are not set here.
 
             # Force wineserver to flush registry changes to disk
             if wineserver_binary:

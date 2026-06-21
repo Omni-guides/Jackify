@@ -76,13 +76,13 @@ class MainWindowUIMixin:
         version_label.setStyleSheet("color: #bbb; font-size: 13px;")
         bottom_bar_layout.addWidget(version_label, alignment=Qt.AlignLeft)
         bottom_bar_layout.addStretch(1)
-        kofi_link = QLabel('<a href="#" style="color:#72A5F2; text-decoration:none;">Support on Ko-fi</a>')
-        kofi_link.setStyleSheet("color: #72A5F2; font-size: 13px;")
+        kofi_link = QLabel('<a href="#" style="color:#3fd0ea; text-decoration:none;">Support on Ko-fi</a>')
+        kofi_link.setStyleSheet("color: #3fd0ea; font-size: 13px;")
         kofi_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
         kofi_link.setOpenExternalLinks(False)
         kofi_link.linkActivated.connect(lambda: self._open_url("https://ko-fi.com/omni1"))
         kofi_link.setToolTip("Support Jackify development")
-        bottom_bar_layout.addWidget(kofi_link, alignment=Qt.AlignCenter)
+        bottom_bar_layout.addWidget(kofi_link)
         bottom_bar_layout.addStretch(1)
         settings_btn = QLabel('<a href="#" style="color:#6cf; text-decoration:none;">Settings</a>')
         settings_btn.setStyleSheet("color: #6cf; font-size: 13px; padding-right: 8px;")
@@ -229,9 +229,9 @@ class MainWindowUIMixin:
         return screen
 
     def _make_third_party_tools_screen(self):
-        from jackify.frontends.gui.screens.third_party_tools import ThirdPartyToolsScreen
-        screen = ThirdPartyToolsScreen(
-            stacked_widget=self.stacked_widget, main_menu_index=0,
+        from jackify.frontends.gui.screens.tools_hub import ToolsHubScreen
+        screen = ToolsHubScreen(
+            stacked_widget=self.stacked_widget, main_menu_index=0, ttw_screen_index=5,
         )
         self.third_party_tools_screen = screen
         return screen

@@ -22,7 +22,6 @@ from jackify.backend.handlers.subprocess_utils import ProcessManager
 from jackify.backend.services.api_key_service import APIKeyService
 from jackify.backend.services.resolution_service import ResolutionService
 from jackify.backend.handlers.config_handler import ConfigHandler
-from ..dialogs import SuccessDialog
 from jackify.frontends.gui.services.message_service import MessageService
 import logging
 logger = logging.getLogger(__name__)
@@ -33,12 +32,14 @@ from .configure_existing_modlist_console import ConfigureExistingModlistConsoleM
 from .screen_back_mixin import ScreenBackMixin
 from .install_modlist_ttw import TTWIntegrationMixin
 from .install_modlist_postinstall import PostInstallFeedbackMixin
+from .install_verifier_mixin import InstallVerifierMixin
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 class ConfigureExistingModlistScreen(
     ThreadLifecycleMixin,
     ScreenBackMixin,
     TTWIntegrationMixin,
+    InstallVerifierMixin,
     ConfigureExistingModlistUIMixin,
     ConfigureExistingModlistWorkflowMixin,
     ConfigureExistingModlistShortcutsMixin,
@@ -73,6 +74,7 @@ class ConfigureExistingModlistScreen(
         if getattr(self, '_vnv_controller', None) is not None:
             self._vnv_controller.cleanup()
             self._vnv_controller = None
+        self._kill_prefix_wine_processes(str(getattr(self, '_current_appid', '') or ''))
         self.cleanup_processes()
         self.collapse_show_details_before_leave()
         self.go_back()
@@ -105,6 +107,10 @@ class ConfigureExistingModlistScreen(
 
     def on_configuration_complete(self, success, message, modlist_name, enb_detected=False):
         """Handle configuration completion"""
+        if getattr(self, '_awaiting_steam_restart', False):
+            self._deferred_completion_args = (success, message, modlist_name, enb_detected)
+            return
+
         # Re-enable all controls when workflow completes
         self._enable_controls_after_operation()
 
@@ -137,34 +143,27 @@ class ConfigureExistingModlistScreen(
                     'time_taken': self._calculate_time_taken(),
                     'game_name': getattr(self, '_current_game_name', None),
                     'enb_detected': enb_detected,
+                    'install_dir': install_dir,
+                    'game_type': game_type,
+                    'appid': getattr(self, '_current_appid', '') or '',
                 }
                 return
 
             # Calculate time taken
             time_taken = self._calculate_time_taken()
 
-            # Clear Activity window before showing success dialog
-            self.file_progress_list.clear()
-
-            # Show success dialog with celebration
-            success_dialog = SuccessDialog(
-                modlist_name=modlist_name,
-                workflow_type="configure_existing",
-                time_taken=time_taken,
-                game_name=getattr(self, '_current_game_name', None),
-                parent=self
+            self._run_verifier_then_show_success(
+                install_dir=install_dir,
+                game_type=game_type,
+                appid=getattr(self, '_current_appid', '') or '',
+                success_params={
+                    'modlist_name': modlist_name,
+                    'workflow_type': 'configure_existing',
+                    'time_taken': time_taken,
+                    'game_name': getattr(self, '_current_game_name', None),
+                    'enb_detected': enb_detected,
+                },
             )
-            success_dialog.show()
-
-            # Show ENB Proton dialog if ENB was detected (use stored detection result, no re-detection)
-            if enb_detected:
-                try:
-                    from ..dialogs.enb_proton_dialog import ENBProtonDialog
-                    enb_dialog = ENBProtonDialog(modlist_name=modlist_name, parent=self)
-                    enb_dialog.exec()
-                except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).warning("Failed to show ENB dialog: %s", e)
         else:
             self._safe_append_text(f"Configuration failed: {message}")
             MessageService.show_error(self, configuration_failed(str(message)))
@@ -184,17 +183,19 @@ class ConfigureExistingModlistScreen(
         if not hasattr(self, 'config_thread') or self.config_thread is None:
             return
 
-        try:
-            self.config_thread.progress_update.disconnect()
-            self.config_thread.configuration_complete.disconnect()
-            self.config_thread.error_occurred.disconnect()
-        except (RuntimeError, TypeError):
-            pass
+        for sig_name in ('progress_update', 'configuration_complete', 'error_occurred', 'steam_restart_needed'):
+            try:
+                getattr(self.config_thread, sig_name).disconnect()
+            except (RuntimeError, TypeError, AttributeError):
+                pass
 
         if self.config_thread.isRunning():
             self.config_thread.quit()
-            self.config_thread.wait(5000)
 
+        # wait() ensures the OS thread has fully exited before deleteLater,
+        # preventing "QThread destroyed while still running" if isRunning()
+        # briefly trails the actual thread exit.
+        self.config_thread.wait(3000)
         self.config_thread.deleteLater()
         self.config_thread = None
 
@@ -225,7 +226,7 @@ class ConfigureExistingModlistScreen(
 
     def cleanup(self):
         """Clean up any running threads when the screen is closed"""
-        logger.debug("DEBUG: cleanup called - cleaning up ConfigurationThread")
+        logger.debug("cleanup called - cleaning up ConfigurationThread")
 
         if getattr(self, '_vnv_controller', None) is not None:
             self._vnv_controller.cleanup()
@@ -233,7 +234,7 @@ class ConfigureExistingModlistScreen(
         
         # Clean up config thread if running
         if hasattr(self, 'config_thread') and self.config_thread and self.config_thread.isRunning():
-            logger.debug("DEBUG: Parking ConfigurationThread")
+            logger.debug("Parking ConfigurationThread")
             self.config_thread = self._park_thread(
                 self.config_thread,
                 ["progress_update", "configuration_complete", "error_occurred"],

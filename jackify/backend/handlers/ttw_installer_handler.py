@@ -74,10 +74,9 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
 
     def _check_installation(self):
         """Check if TTW_Linux_Installer is installed at expected location.
-        
+
         Checks for both old format (ttw_linux_gui) and new format (mpi_installer) executables.
         """
-        self._ensure_dirs_exist()
         
         # Check for both old (ttw_linux_gui) and new (mpi_installer) executable names
         exe_names = [TTW_INSTALLER_EXECUTABLE_NAME, "mpi_installer"]
@@ -104,7 +103,6 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
             (success: bool, message: str)
         """
         try:
-            self._ensure_dirs_exist()
             target_dir = Path(install_dir) if install_dir else self.ttw_installer_dir
             target_dir.mkdir(parents=True, exist_ok=True)
 

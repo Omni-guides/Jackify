@@ -31,22 +31,32 @@ class SuccessDialog(QDialog):
     - Return and Exit buttons
     """
     
-    def __init__(self, modlist_name: str, workflow_type: str, time_taken: str, game_name: str = None, parent=None):
+    def __init__(
+        self,
+        modlist_name: str,
+        workflow_type: str,
+        time_taken: str,
+        game_name: str = None,
+        verification_results=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.modlist_name = modlist_name
         self.workflow_type = workflow_type
         self.time_taken = time_taken
         self.game_name = game_name
-        self.setWindowTitle("Success!")
+        self.verification_results = verification_results
+        self.setWindowTitle("Complete" if (verification_results and verification_results.failures) else "Success!")
         self.setWindowModality(Qt.NonModal)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setFixedSize(500, 500)
+        self.setFixedWidth(500)
+        self.setMinimumHeight(400)
         self.setWindowFlag(Qt.WindowDoesNotAcceptFocus, True)
         self.setStyleSheet("QDialog { background: #181818; color: #fff; border-radius: 12px; }" )
         layout = QVBoxLayout(self)
         layout.setSpacing(0)
-        layout.setContentsMargins(30, 20, 30, 20)  # Reduced top/bottom margins to prevent truncation
+        layout.setContentsMargins(20, 20, 20, 20)
 
         # --- Card background for content ---
         card = QFrame(self)
@@ -69,22 +79,36 @@ class SuccessDialog(QDialog):
         )
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
 
-        # Success title (less saturated green)
-        title_label = QLabel("Success!")
+        has_verify_failures = bool(
+            self.verification_results and self.verification_results.failures
+        )
+
+        title_text = "Complete" if has_verify_failures else "Success!"
+        title_color = "#f0c040" if has_verify_failures else "#3fd0ea"
+        title_label = QLabel(title_text)
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet(
-            "QLabel { "
-            "  font-size: 22px; "
-            "  font-weight: 600; "
-            "  color: #2ecc71; "
-            "  margin-bottom: 2px; "
-            "}"
+            f"QLabel {{ "
+            f"  font-size: 22px; "
+            f"  font-weight: 600; "
+            f"  color: {title_color}; "
+            f"  margin-bottom: 2px; "
+            f"}}"
         )
         card_layout.addWidget(title_label)
 
-        # Personalized success message (modlist name in Jackify Blue, but less bold)
+        # Personalized message (modlist name in Jackify Blue, but less bold)
         modlist_name_html = f'<span style="color:#3fb7d6; font-size:17px; font-weight:500;">{self.modlist_name}</span>'
-        if self.workflow_type == "install":
+        if has_verify_failures:
+            suffix_map = {
+                "install": "installed with issues - review verification results.",
+                "update": "updated with issues - review verification results.",
+                "configure_new": "configured with issues - review verification results.",
+                "configure_existing": "configuration updated with issues - review verification results.",
+                "tool_config": "tool compatibility configured with issues - review verification results.",
+            }
+            suffix_text = suffix_map.get(self.workflow_type, "completed with issues - review verification results.")
+        elif self.workflow_type == "install":
             suffix_text = "installed successfully!"
         elif self.workflow_type == "update":
             suffix_text = "updated successfully!"
@@ -95,7 +119,6 @@ class SuccessDialog(QDialog):
         elif self.workflow_type == "tool_config":
             suffix_text = "tool compatibility configured successfully!"
         else:
-            # Fallback for other workflow types
             message_text = self._build_success_message()
             suffix_text = message_text.replace(self.modlist_name, "").strip()
         
@@ -153,12 +176,16 @@ class SuccessDialog(QDialog):
         )
         card_layout.addWidget(next_steps_label)
 
+        # Verification results summary
+        if self.verification_results is not None:
+            self._add_verification_section(card_layout)
+
         # Subtle Ko-Fi support link
-        kofi_label = QLabel('<a href="https://ko-fi.com/omni1" style="color:#72A5F2; text-decoration:none;">Enjoying Jackify? Support development ♥</a>')
+        kofi_label = QLabel('<a href="https://ko-fi.com/omni1" style="color:#3fd0ea; text-decoration:none;">Enjoying Jackify? Support development ♥</a>')
         kofi_label.setAlignment(Qt.AlignCenter)
         kofi_label.setStyleSheet(
             "QLabel { "
-            "  color: #72A5F2; "
+            "  color: #3fd0ea; "
             "  font-size: 11px; "
             "  margin-top: 8px; "
             "  padding: 4px; "
@@ -274,6 +301,94 @@ class SuccessDialog(QDialog):
 
         # ENB Proton warning shown in separate dialog
         return base_message
+
+    def _add_verification_section(self, card_layout):
+        """Add a verification summary section to the card layout."""
+        from PySide6.QtWidgets import QScrollArea
+
+        r = self.verification_results
+        n_pass = len(r.passes)
+        n_warn = len(r.warnings)
+        n_fail = len(r.failures)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #353a40;")
+        card_layout.addWidget(sep)
+
+        if n_fail:
+            summary_text = f"[FAIL] Verification: {n_fail} failure(s), {n_warn} warning(s)"
+            summary_color = "#e05050"
+        elif n_warn:
+            summary_text = f"[WARN] Verification: {n_warn} warning(s) - review before playing"
+            summary_color = "#f0c040"
+        else:
+            summary_text = f"[OK] Verification passed ({n_pass} checks)"
+            summary_color = "#3fd0ea"
+
+        summary_row = QHBoxLayout()
+        summary_row.setContentsMargins(0, 0, 0, 0)
+        summary_row.setSpacing(8)
+
+        summary_lbl = QLabel(summary_text)
+        summary_lbl.setAlignment(Qt.AlignCenter)
+        summary_lbl.setWordWrap(True)
+        summary_lbl.setStyleSheet(
+            f"QLabel {{ font-size: 12px; font-weight: bold; color: {summary_color}; }}"
+        )
+        summary_row.addStretch()
+        summary_row.addWidget(summary_lbl)
+
+        view_btn = QPushButton("View checks")
+        view_btn.setFixedWidth(90)
+        view_btn.setStyleSheet(
+            "QPushButton { font-size: 11px; color: #ccc; background: #3a3a3a; "
+            "border: 1px solid #555; border-radius: 4px; padding: 3px 6px; }"
+            "QPushButton:hover { background: #4a4a4a; color: #fff; }"
+        )
+        view_btn.setCursor(Qt.PointingHandCursor)
+        view_btn.clicked.connect(lambda: self._show_verification_detail())
+        summary_row.addWidget(view_btn)
+        summary_row.addStretch()
+
+        row_widget = QWidget()
+        row_widget.setLayout(summary_row)
+        card_layout.addWidget(row_widget)
+
+        if n_fail or n_warn:
+            detail_widget = QWidget()
+            detail_layout = QVBoxLayout(detail_widget)
+            detail_layout.setContentsMargins(0, 0, 0, 0)
+            detail_layout.setSpacing(2)
+
+            for msg in r.failures:
+                lbl = QLabel(f"[FAIL] {msg}")
+                lbl.setWordWrap(True)
+                lbl.setStyleSheet("color: #e05050; font-size: 11px;")
+                detail_layout.addWidget(lbl)
+            for msg in r.warnings:
+                lbl = QLabel(f"[WARN] {msg}")
+                lbl.setWordWrap(True)
+                lbl.setStyleSheet("color: #f0c040; font-size: 11px;")
+                detail_layout.addWidget(lbl)
+
+            scroll = QScrollArea()
+            scroll.setWidget(detail_widget)
+            scroll.setWidgetResizable(True)
+            scroll.setMaximumHeight(120)
+            scroll.setStyleSheet(
+                "QScrollArea { border: 1px solid #353a40; border-radius: 4px; background: #1a1d23; }"
+            )
+            card_layout.addWidget(scroll)
+
+    def _show_verification_detail(self):
+        """Open the full verification results dialog."""
+        try:
+            from jackify.frontends.gui.dialogs.verification_results_dialog import VerificationResultsDialog
+            dlg = VerificationResultsDialog(self.verification_results, parent=self)
+            dlg.show()
+        except Exception as exc:
+            logger.error("Could not open verification dialog: %s", exc)
 
     def _update_countdown(self):
         if self._countdown > 0:

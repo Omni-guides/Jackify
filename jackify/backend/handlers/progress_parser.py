@@ -179,6 +179,8 @@ class ProgressParser(ProgressParserPhaseMixin, ProgressParserFilesMixin, Progres
         if file_prog:
             result.file_progress = file_prog
             result.has_progress = True
+            if '[FILE_PROGRESS]' in line:
+                result.message = ""
             # Check if file counter was attached (for extraction or install phases)
             if hasattr(file_prog, '_file_counter'):
                 result.file_counter = file_prog._file_counter

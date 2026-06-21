@@ -84,7 +84,7 @@ class TTWUIMixin:
 
             # On Steam Deck, skip window resizing - keep default Steam Deck window size
             if is_steamdeck:
-                logger.debug("DEBUG: Steam Deck detected, skipping window resize in _toggle_console_visibility")
+                logger.debug("Steam Deck detected, skipping window resize in _toggle_console_visibility")
                 return
 
             # Restore main window to normal size (clear any compact constraints)
@@ -137,7 +137,7 @@ class TTWUIMixin:
 
             # On Steam Deck, skip window resizing to keep maximized state
             if is_steamdeck:
-                logger.debug("DEBUG: Steam Deck detected, skipping window resize in collapse branch")
+                logger.debug("Steam Deck detected, skipping window resize in collapse branch")
                 return
 
             # Use fixed compact height for consistency across all workflow screens

@@ -194,7 +194,10 @@ class VNVAutomationController(QObject):
                         logger.warning("VNV non-premium: Nexus API query failed, cannot open download manager")
                         try:
                             import subprocess
-                            subprocess.Popen(['xdg-open', 'https://www.nexusmods.com/newvegas/mods/62552?tab=files'])
+                            import os
+                            _strip = {"LD_LIBRARY_PATH", "LD_PRELOAD", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "PYTHONPATH", "PYTHONHOME"}
+                            clean_env = {k: v for k, v in os.environ.items() if k not in _strip}
+                            subprocess.Popen(['xdg-open', 'https://www.nexusmods.com/newvegas/mods/62552?tab=files'], env=clean_env, start_new_session=True)
                         except Exception:
                             pass
                         from .message_service import MessageService

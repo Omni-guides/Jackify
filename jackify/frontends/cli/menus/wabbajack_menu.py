@@ -31,7 +31,7 @@ class WabbajackMenuHandler:
             # Use print_section_header for consistency
             print_section_header("Modlist and Wabbajack Tasks")
 
-            print(f"{COLOR_SELECTION}1.{COLOR_RESET} Install a Modlist (Automated)")
+            print(f"{COLOR_SELECTION}1.{COLOR_RESET} Install a Modlist")
             print(f"   {COLOR_ACTION}→ Install a modlist in full: Select from a list or provide a .wabbajack file{COLOR_RESET}")
             print(f"{COLOR_SELECTION}2.{COLOR_RESET} Configure New Modlist (Post-Download)")
             print(f"   {COLOR_ACTION}→ Modlist already downloaded? Configure and add to Steam{COLOR_RESET}")

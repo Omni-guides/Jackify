@@ -15,6 +15,51 @@ class ConfigureNewModlistConsoleMixin(FocusReclaimMixin):
 
     def _handle_progress_update(self, text):
         """Handle progress updates - update console, activity window, and progress indicator."""
+        if text.startswith("[NATIVE_DL] "):
+            parts = text.split(None, 3)
+            if len(parts) == 4:
+                _, component, pct_str, speed_str = parts
+                try:
+                    pct, speed = float(pct_str), float(speed_str)
+                    self.file_progress_list.update_or_add_item(
+                        "__native_component__",
+                        f"Wine component: {component} | {pct:.0f}% ({speed:.1f} MB/s)",
+                        pct,
+                    )
+                except ValueError:
+                    pass
+            return
+        if text.startswith("[NATIVE_INSTALL] "):
+            component = text[17:].strip()
+            self._stop_component_install_pulse()
+            done = getattr(self, '_native_done_components', 0)
+            total = getattr(self, '_native_total_components', 0)
+            remaining = max(0, total - done)
+            suffix = f" ({remaining} remaining)" if remaining > 0 else ""
+            self.file_progress_list.update_or_add_item(
+                "__native_component__",
+                f"Wine component: {component}{suffix}",
+                0.0,
+            )
+            self.progress_indicator.set_status(f"Installing {component}...", 80)
+            self._current_native_component = component
+            self._native_done_components = done + 1
+            return
+        if text.startswith("[NATIVE_WAIT] "):
+            parts = text.split(None, 2)
+            if len(parts) >= 3:
+                component, elapsed_s = parts[1], parts[2].strip()
+                done = getattr(self, '_native_done_components', 1)
+                total = getattr(self, '_native_total_components', 0)
+                remaining = max(0, total - done)
+                suffix = f" ({remaining} remaining)" if remaining > 0 else ""
+                self.file_progress_list.update_or_add_item(
+                    "__native_component__",
+                    f"Wine component: {component} | {elapsed_s}s{suffix}",
+                    0.0,
+                )
+                self.progress_indicator.set_status(f"Installing {component}... ({elapsed_s}s)", 80)
+            return
         self._safe_append_text(text)
 
         message_lower = text.lower()
@@ -47,11 +92,17 @@ class ConfigureNewModlistConsoleMixin(FocusReclaimMixin):
             self.file_progress_list.update_or_add_item("__phase__", "Applying registry...", 0.0)
         elif "installing wine components" in message_lower or "wine component" in message_lower:
             self.progress_indicator.set_status("Installing wine components...", 80)
-            if not hasattr(self, '_component_install_timer') or not self._component_install_timer:
-                self._start_component_install_pulse()
             comp_list = self._parse_wine_components_message(text)
             if comp_list:
-                self._start_component_install_pulse_with_components(comp_list)
+                self._native_total_components = len(comp_list)
+                self._native_done_components = 0
+                self.file_progress_list.update_or_add_item(
+                    "__native_component__",
+                    f"Wine components: {len(comp_list)} queued",
+                    0.0,
+                )
+            elif not hasattr(self, '_component_install_timer') or not self._component_install_timer:
+                self._start_component_install_pulse()
         elif "wine components verified" in message_lower or "wine components installed" in message_lower:
             self._stop_component_install_pulse()
             self.progress_indicator.set_status("Wine components installed", 85)

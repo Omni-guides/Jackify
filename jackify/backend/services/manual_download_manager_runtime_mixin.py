@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -84,12 +86,24 @@ class ManualDownloadManagerRuntimeMixin:
             return item
         return None
 
+    _BROWSER_OPEN_COOLDOWN = 30.0  # seconds before the same file's URL may be re-opened
+
     def _open_browser(self, item: DownloadItem) -> tuple[bool, Optional[str]]:
         url = item.nexus_url
         if not url:
             msg = "No URL available for manual download item"
             logger.warning(f"{msg}: {item.file_name}")
             return False, msg
+
+        now = time.monotonic()
+        last = self._last_browser_open.get(item.file_name, 0.0)
+        if now - last < self._BROWSER_OPEN_COOLDOWN:
+            remaining = int(self._BROWSER_OPEN_COOLDOWN - (now - last))
+            logger.warning(
+                f"Suppressed duplicate browser open for {item.file_name} "
+                f"(cooldown: {remaining}s remaining)"
+            )
+            return True, None
 
         # Linux desktop launch fallbacks. xdg-open should cover most environments,
         # but keep alternates for distributions where handlers differ.
@@ -99,6 +113,14 @@ class ManualDownloadManagerRuntimeMixin:
             ['sensible-browser', url],
         )
 
+        # Strip AppImage library path overrides before launching external processes.
+        # Inheriting LD_LIBRARY_PATH causes xdg-open/kde-open to load bundled Qt
+        # libs, which produces symbol version mismatches on distributions that ship
+        # a different Qt version than the one bundled in the AppImage.
+        clean_env = os.environ.copy()
+        for var in ('LD_LIBRARY_PATH', 'LD_PRELOAD'):
+            clean_env.pop(var, None)
+
         launch_errors: list[str] = []
         for cmd in launch_cmds:
             try:
@@ -107,6 +129,7 @@ class ManualDownloadManagerRuntimeMixin:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     start_new_session=True,
+                    env=clean_env,
                 )
             except OSError as e:
                 launch_errors.append(f"{cmd[0]} not available: {e}")
@@ -116,10 +139,12 @@ class ManualDownloadManagerRuntimeMixin:
                 rc = proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 # Launcher still running after handoff window; treat as success.
+                self._last_browser_open[item.file_name] = time.monotonic()
                 logger.debug(f"Opened browser for: {item.file_name} via {cmd[0]}")
                 return True, None
 
             if rc == 0:
+                self._last_browser_open[item.file_name] = time.monotonic()
                 logger.debug(f"Opened browser for: {item.file_name} via {cmd[0]}")
                 return True, None
 
@@ -144,7 +169,7 @@ class ManualDownloadManagerRuntimeMixin:
             item = self._item_by_name(file_name)
             if item is None:
                 reject_reason = "unknown_item"
-            elif item.status in ('complete', 'skipped'):
+            elif item.status in ('complete', 'skipped', 'deferred'):
                 reject_reason = f"terminal_status:{item.status}"
             elif item.status == 'validating':
                 reject_reason = "already_validating"
@@ -224,23 +249,30 @@ class ManualDownloadManagerRuntimeMixin:
                 item_to_notify = item
                 completed_now = True
             else:
-                # Hash mismatch or validation error - revert to pending so the
-                # sliding window can re-open a browser tab and the watcher can
-                # re-validate if the user downloads the correct file.
-                item.status = 'pending'
                 msg = result.error or f"Hash mismatch (got {result.computed_hash})"
-                item.error_message = msg
-                logger.warning(f"Validation failed for {file_name}: {msg}")
-                if had_browser_slot and self._active_tabs > 0:
-                    self._active_tabs -= 1
-                item_to_notify = item
-                validation_failed = True
+                # If the user deferred this item while validation was in-flight,
+                # skip_item already decremented _active_tabs and set status='deferred'.
+                # Preserve the defer; don't double-decrement or re-open a browser tab.
+                if item.status == 'deferred':
+                    item_to_notify = item
+                    validation_failed = True
+                else:
+                    # Revert to pending so the sliding window can re-open a browser tab.
+                    item.status = 'pending'
+                    item.error_message = msg
+                    logger.warning(f"Validation failed for {file_name}: {msg}")
+                    if had_browser_slot and self._active_tabs > 0:
+                        self._active_tabs -= 1
+                    item_to_notify = item
+                    validation_failed = True
             if from_startup_precheck and self._startup_precheck_pending > 0:
                 self._startup_precheck_pending -= 1
                 precheck_ready = self._startup_precheck_pending == 0
 
         if item_to_notify is not None:
             self._notify(item_to_notify)
+        if result.file_path:
+            self._watcher.release_path(result.file_path)
         if completed_now:
             self._diag(
                 "MDL-1021",

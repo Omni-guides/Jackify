@@ -35,24 +35,45 @@ class InstallModlistOutputMixin:
             if not self._token_error_notified:
                 self._token_error_notified = True
                 from jackify.frontends.gui.services.message_service import MessageService
-                MessageService.critical(
-                    self,
-                    "Authentication Error",
-                    (
-                        "Nexus Mods authentication has failed. This may be due to:\n\n"
-                        "• OAuth token expired and refresh failed\n"
-                        "• Nexus Premium required for this modlist\n"
-                        "• Network connectivity issues\n\n"
-                        "Please check the console output (Show Details) for more information.\n"
-                        "You may need to re-authorize in Settings."
-                    ),
-                    safety_level="high"
-                )
-                guidance = (
-                    "\n[Jackify] CRITICAL: Authentication/Token Error Detected!\n"
-                    "[Jackify] This may cause downloads to stop. Check the error message above.\n"
-                    "[Jackify] If OAuth token expired, go to Settings and re-authorize.\n"
-                )
+                engine_id = getattr(self, '_active_session_engine_id', None)
+                if engine_id == 'clf3':
+                    MessageService.critical(
+                        self,
+                        "CLF3 Authentication Error",
+                        (
+                            "CLF3 could not authenticate with Nexus Mods.\n\n"
+                            "The CLF3 binary stores its own Nexus API key, which may have "
+                            "expired or been revoked. Your Jackify OAuth is unaffected.\n\n"
+                            "To fix: generate an API key at nexus.mods.com (account page), "
+                            "then run in a terminal:\n\n"
+                            "  clf3 set-api-key YOUR_KEY\n\n"
+                            "OAuth support for CLF3 will be automatic after the next CLF3 release."
+                        ),
+                        safety_level="high"
+                    )
+                    guidance = (
+                        "\n[Jackify] CLF3 auth failed. CLF3 uses its own saved Nexus API key "
+                        "(not your Jackify OAuth). Run: clf3 set-api-key YOUR_KEY\n"
+                    )
+                else:
+                    MessageService.critical(
+                        self,
+                        "Authentication Error",
+                        (
+                            "Nexus Mods authentication has failed. This may be due to:\n\n"
+                            "• OAuth token expired and refresh failed\n"
+                            "• Nexus Premium required for this modlist\n"
+                            "• Network connectivity issues\n\n"
+                            "Please check the console output (Show Details) for more information.\n"
+                            "You may need to re-authorize in Settings."
+                        ),
+                        safety_level="high"
+                    )
+                    guidance = (
+                        "\n[Jackify] CRITICAL: Authentication/Token Error Detected!\n"
+                        "[Jackify] This may cause downloads to stop. Check the error message above.\n"
+                        "[Jackify] If OAuth token expired, go to Settings and re-authorize.\n"
+                    )
                 self._safe_append_text(guidance)
                 if not self.show_details_checkbox.isChecked():
                     self.show_details_checkbox.setChecked(True)
@@ -219,12 +240,12 @@ class InstallModlistOutputMixin:
             except RuntimeError as e:
                 if "already deleted" in str(e):
                     if getattr(self, 'debug', False):
-                        logger.debug(f"DEBUG: Ignoring widget deletion error: {e}")
+                        logger.debug(f"Ignoring widget deletion error: {e}")
                     return
                 raise
             except Exception as e:
                 if getattr(self, 'debug', False):
-                    logger.debug(f"DEBUG: Error updating file progress list: {e}")
+                    logger.debug(f"Error updating file progress list: {e}")
                 import logging
                 logging.getLogger(__name__).error(f"Error updating file progress list: {e}", exc_info=True)
         else:

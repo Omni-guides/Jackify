@@ -153,12 +153,13 @@ def detect_game_type_from_modlist(modlist_dir: str) -> Optional[str]:
     return None
 
 
-def fetch_artwork(game_type: str, dest_dir: Path) -> int:
+def fetch_artwork(game_type: str, dest_dir: Path, skip_existing: bool = False) -> int:
     """
     Fetch top-voted artwork for game_type from SteamGridDB into dest_dir.
 
     Returns the number of images successfully downloaded.
-    dest_dir must already exist.
+    dest_dir must already exist. When skip_existing is True, slots where the
+    file already exists in dest_dir are skipped.
     """
     steam_appid = GAME_STEAM_APP_IDS.get(game_type)
     if not steam_appid:
@@ -168,12 +169,14 @@ def fetch_artwork(game_type: str, dest_dir: Path) -> int:
     api_key = _get_api_key()
     downloaded = 0
     for endpoint, query, filename in _ARTWORK_SLOTS:
+        dest_path = dest_dir / filename
+        if skip_existing and dest_path.exists():
+            continue
         data = _api_get(f"{endpoint}/steam/{steam_appid}?{query}", api_key)
         if not data or not data.get("success") or not data.get("data"):
             logger.debug(f"No {endpoint} results for {game_type} ({steam_appid})")
             continue
         image_url = data["data"][0]["url"]
-        dest_path = dest_dir / filename
         if _download(image_url, dest_path):
             logger.info(f"Downloaded {filename} for {game_type} from SteamGridDB")
             downloaded += 1

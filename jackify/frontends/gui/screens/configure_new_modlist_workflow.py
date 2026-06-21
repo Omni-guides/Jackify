@@ -95,14 +95,14 @@ class ConfigureNewModlistWorkflowMixin:
         if resolution and resolution != "Leave unchanged":
             success = self.resolution_service.save_resolution(resolution)
             if success:
-                logger.debug(f"DEBUG: Resolution saved successfully: {resolution}")
+                logger.debug(f"Resolution saved successfully: {resolution}")
             else:
-                logger.debug("DEBUG: Failed to save resolution")
+                logger.debug("Failed to save resolution")
         else:
             # Clear saved resolution if "Leave unchanged" is selected
             if self.resolution_service.has_saved_resolution():
                 self.resolution_service.clear_saved_resolution()
-                logger.debug("DEBUG: Saved resolution cleared")
+                logger.debug("Saved resolution cleared")
         
         # Start configuration - automated workflow handles Steam restart internally
         self.configure_modlist()
@@ -134,7 +134,7 @@ class ConfigureNewModlistWorkflowMixin:
         ensure_flatpak_steam_filesystem_access(Path(install_dir))
         from jackify import __version__ as jackify_version
         logger.info("Jackify v%s", jackify_version)
-        logger.info("Initializing automated Steam setup for '%s'...", modlist_name)
+        logger.info("Initialising automated Steam setup for '%s'...", modlist_name)
         logger.info("Starting automated Steam shortcut creation and configuration...")
         
         # Disable the start button to prevent multiple workflows
@@ -162,9 +162,13 @@ class ConfigureNewModlistWorkflowMixin:
                     def progress_callback(message):
                         self.progress_update.emit(message)
 
+                    from jackify.backend.services.nxm_downloader import resolve_mo2_download_dir
+                    download_dir = resolve_mo2_download_dir(Path(self.install_dir))
+
                     result = prefix_service.run_working_workflow(
                         self.modlist_name, self.install_dir, self.mo2_exe_path,
-                        progress_callback, steamdeck=self.steamdeck, auto_restart=self.auto_restart
+                        progress_callback, steamdeck=self.steamdeck, auto_restart=self.auto_restart,
+                        download_dir=download_dir,
                     )
 
                     self.workflow_complete.emit(result)
@@ -304,8 +308,7 @@ class ConfigureNewModlistWorkflowMixin:
                 'modlist_source': None,
                 'resolution': resolution_value,
                 'skip_confirmation': True,
-                'manual_steps_completed': True,  # Mark as completed since automated prefix is done
-                'appid': new_appid,  # Use the NEW AppID from automated prefix creation
+                'appid': new_appid,
                 'game_name': 'Skyrim Special Edition'  # Default for new modlist
             }
             self.context = updated_context  # Ensure context is always set
@@ -364,11 +367,6 @@ class ConfigureNewModlistWorkflowMixin:
                         def completion_callback(success, message, modlist_name, enb_detected=False):
                             self.configuration_complete.emit(success, message, modlist_name, enb_detected)
                             
-                        def manual_steps_callback(modlist_name, retry_count):
-                            # This shouldn't happen since automated prefix creation is complete
-                            self.progress_update.emit(f"Unexpected manual steps callback for {modlist_name}")
-                        
-                        # Call the service method for post-Steam configuration
                         self.progress_update.emit("")
                         self.progress_update.emit("=== Configuration Phase ===")
                         self.progress_update.emit("")
@@ -376,7 +374,6 @@ class ConfigureNewModlistWorkflowMixin:
                         result = modlist_service.configure_modlist_post_steam(
                             context=modlist_context,
                             progress_callback=progress_callback,
-                            manual_steps_callback=manual_steps_callback,
                             completion_callback=completion_callback
                         )
                         
@@ -412,8 +409,7 @@ class ConfigureNewModlistWorkflowMixin:
                 'mo2_exe_path': mo2_exe_path,
                 'resolution': resolution.split()[0] if resolution != "Leave unchanged" else None,
                 'skip_confirmation': True,
-                'manual_steps_completed': True,  # Mark as completed
-                'appid': new_appid,  # Use the NEW AppID from Steam
+                'appid': new_appid,
                 'game_name': 'Skyrim Special Edition'  # Default for new modlist
             }
             logger.debug(f"Updated context with new AppID: {new_appid}")
@@ -472,17 +468,11 @@ class ConfigureNewModlistWorkflowMixin:
                         def completion_callback(success, message, modlist_name, enb_detected=False):
                             self.configuration_complete.emit(success, message, modlist_name, enb_detected)
                             
-                        def manual_steps_callback(modlist_name, retry_count):
-                            # Should not reach here -- manual steps already complete
-                            self.progress_update.emit(f"Unexpected manual steps callback for {modlist_name}")
-                        
-                        # Call the working configuration service method
                         self.progress_update.emit("Starting configuration with backend service...")
-                        
+
                         success = modlist_service.configure_modlist_post_steam(
                             context=modlist_context,
                             progress_callback=progress_callback,
-                            manual_steps_callback=manual_steps_callback,
                             completion_callback=completion_callback
                         )
                         

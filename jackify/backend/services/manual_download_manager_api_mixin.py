@@ -123,8 +123,12 @@ class ManualDownloadManagerApiMixin:
         with self._lock:
             for item in self._items:
                 if item.file_name == file_name and item.status not in ('complete',):
+                    # Only free the browser slot if this item actually held one.
+                    # 'pending' items have no slot; 'validating' items still hold
+                    # the slot counted when they entered 'browser_opened'.
+                    had_slot = item.status in ('browser_opened', 'validating')
                     item.status = 'deferred'
-                    if self._active_tabs > 0:
+                    if had_slot and self._active_tabs > 0:
                         self._active_tabs -= 1
                     item_to_notify = item
                     break
@@ -132,6 +136,11 @@ class ManualDownloadManagerApiMixin:
             self._notify(item_to_notify)
         self._open_next_tabs()
         self._check_all_done()
+
+    def force_rescan(self) -> None:
+        """Re-ingest existing files immediately (Scan Now button)."""
+        self._diag("MDL-1026", "Force rescan requested by user")
+        self._ingest_existing_files()
 
     def set_concurrent_limit(self, limit: int) -> None:
         with self._lock:

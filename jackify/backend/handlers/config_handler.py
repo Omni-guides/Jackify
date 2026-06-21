@@ -220,10 +220,21 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
     
     def save_config(self):
         """Save current configuration to file"""
+        import tempfile
         try:
             self._create_config_dir()
-            with open(self.config_file, 'w') as f:
-                json.dump(self.settings, f, indent=2)
+            fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(self.config_file), prefix='.config_tmp_')
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(self.settings, f, indent=2)
+                os.chmod(tmp_path, 0o600)
+                os.replace(tmp_path, self.config_file)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
             logger.debug("Saved configuration to file")
             return True
         except Exception as e:

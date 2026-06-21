@@ -485,8 +485,11 @@ class ModlistInstallCLIConfigurationMixin:
                 print(f"{COLOR_INFO}{message}{COLOR_RESET}")
 
             try:
+                from jackify.backend.services.nxm_downloader import resolve_mo2_download_dir
+                _download_dir = resolve_mo2_download_dir(Path(install_dir_str))
                 _result = prefix_service.run_working_workflow(
-                    shortcut_name, install_dir_str, mo2_exe_path, _cli_progress, steamdeck=self.steamdeck
+                    shortcut_name, install_dir_str, mo2_exe_path, _cli_progress,
+                    steamdeck=self.steamdeck, download_dir=_download_dir,
                 )
             except Exception as _wf_err:
                 from jackify.shared.errors import JackifyError
@@ -517,7 +520,6 @@ class ModlistInstallCLIConfigurationMixin:
                 'mo2_exe_path': mo2_exe_path,
                 'resolution': self.context.get('resolution'),
                 'skip_confirmation': is_gui_mode,
-                'manual_steps_completed': True
             }
 
             from .menu_handler import ModlistMenuHandler
