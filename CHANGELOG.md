@@ -1,7 +1,7 @@
 # Jackify Changelog
 
 ## v0.7 - Tools Hub, Engine Choice, NXM Link Handling, Native Component Install, NSF/CSF Support
-**Release Date:** TBD
+**Release Date:** 21/06/26
 
 ### Engine Choice and Tools Hub
 - jackify-engine is no longer stored in the Jackify repository. It is fetched from GitHub during the AppImage build and can be updated independently via the Jackify Tools Hub without requiring a new Jackify release.
