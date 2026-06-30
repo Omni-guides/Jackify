@@ -1,0 +1,56 @@
+[
+  {
+    "tool_id": "jackify-engine",
+    "display_name": "jackify-engine",
+    "description": "Native Wabbajack-matched file handler. The proven, stable engine for modlist installs.",
+    "github_repo": "Omni-guides/jackify-engine",
+    "asset_patterns": ["jackify-engine.*linux.*x64.*\\.tar\\.gz", "jackify-engine.*\\.tar\\.gz", "jackify-engine.*\\.zip"],
+    "executable_names": ["jackify-engine"],
+    "tier": 1,
+    "can_uninstall": false,
+    "is_engine": true,
+    "can_launch": false
+  },
+  {
+    "tool_id": "clf3",
+    "display_name": "CLF3",
+    "description": "Rust-based Wabbajack file handler. Faster installs, slightly slower modlist updates than jackify-engine.",
+    "github_repo": "SulfurNitride/CLF3",
+    "asset_patterns": ["clf3.*linux.*x86_64", "clf3.*\\.tar\\.gz", "clf3.*\\.zip"],
+    "executable_names": ["clf3"],
+    "tier": 1,
+    "can_uninstall": true,
+    "is_engine": true,
+    "can_launch": false
+  },
+  {
+    "tool_id": "ttw_installer",
+    "display_name": "TTW Linux Installer",
+    "description": "Automates Tale of Two Wastelands installation on Linux. Required for the TTW workflow.",
+    "github_repo": "SulfurNitride/TTW_Linux_Installer",
+    "asset_patterns": ["universal-mpi-installer.*\\.(zip|tar\\.gz)"],
+    "executable_names": ["mpi_installer", "ttw_linux_gui"],
+    "tier": 1,
+    "can_uninstall": true,
+    "can_launch": true,
+    "pinned_version": "0.0.7",
+    "nexus_mod_id": 1657,
+    "nexus_game_domain": "site",
+    "nexus_file_filter": "mpi"
+  },
+  {
+    "tool_id": "radium",
+    "display_name": "Radium Textures",
+    "description": "Rust alternative to VRAMr for Skyrim and Fallout 4 texture optimisation. Run directly against mod files.",
+    "github_repo": null,
+    "asset_patterns": ["radium.*linux.*x86_64", "radium.*\\.tar\\.gz", "radium.*\\.zip"],
+    "executable_names": ["radium", "radium-textures"],
+    "tier": 2,
+    "can_uninstall": true,
+    "can_launch": true,
+    "nexus_mod_id": 1660,
+    "nexus_game_domain": "site",
+    "nexus_file_filter": null,
+    "hidden": false
+  }
+]
