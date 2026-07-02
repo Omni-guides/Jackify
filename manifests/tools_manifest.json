@@ -3,7 +3,7 @@
     "tool_id": "jackify-engine",
     "display_name": "jackify-engine",
     "description": "Native Wabbajack-matched file handler. The proven, stable engine for modlist installs.",
-    "github_repo": "Omni-guides/jackify-engine",
+    "github_repo": "Omni-guides/dev-jackify-engine",
     "asset_patterns": ["jackify-engine.*linux.*x64.*\\.tar\\.gz", "jackify-engine.*\\.tar\\.gz", "jackify-engine.*\\.zip"],
     "executable_names": ["jackify-engine"],
     "tier": 1,
