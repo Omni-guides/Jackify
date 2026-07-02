@@ -38,7 +38,7 @@ class AdditionalMenuHandler:
             print(f"{COLOR_SELECTION}3.{COLOR_RESET} Setup Mod Organizer 2")
             print(f"   {COLOR_ACTION}→ Download and configure a standalone MO2 instance{COLOR_RESET}")
             print(f"{COLOR_SELECTION}4.{COLOR_RESET} Install Wabbajack Application")
-            print(f"   {COLOR_ACTION}→ Download the Wabbajack app under Proton — not needed for standard modlist installs{COLOR_RESET}")
+            print(f"   {COLOR_ACTION}→ Download the Wabbajack app under Proton - not needed for standard modlist installs{COLOR_RESET}")
             print(f"{COLOR_SELECTION}5.{COLOR_RESET} Create Diagnostic Bundle")
             print(f"   {COLOR_ACTION}→ Package logs and system info for support{COLOR_RESET}")
             print(f"{COLOR_SELECTION}6.{COLOR_RESET} Nexus Mods Authorization")

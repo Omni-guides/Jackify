@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Optional, Dict
 
-from ..handlers.ui_colors import (
+from jackify.shared.colors import (
     COLOR_PROMPT,
     COLOR_RESET,
     COLOR_INFO,

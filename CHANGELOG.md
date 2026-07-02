@@ -1,5 +1,31 @@
 # Jackify Changelog
 
+## v0.7.1 - Remote Manifest System, Stability Fixes
+**Release Date:** 2026-07-02
+
+### Remote Manifest System
+Jackify can now receive updated instructions without a new release. Tool definitions, problem mods, and compatibility data are fetched from a remote manifest hosted on github at runtime. The first use of this is automatic "problem mod" detection: a JSON-based manifest identifies mods known to cause issues under Proton and the specific action needed for each - disabling the mod, creating directories it expects to exist, etc - applied automatically during the install, with the affected list shown in the success window. The manifest can be updated centrally as new problem mods are identified (or removed), without needing to publish a new Jackify version, or any action by the user. This modular, manifest-based approach will be expanded upon in future versions of Jackify.
+
+### Fixes
+- Improved reliability of vcrun2022 and vcrun2012 native component installation, resolving DLL load failures in modlists that need them.
+- Synthesis's required NuGet security certificate is no longer skipped on modlists that also use NetScriptFramework (NSF/CSF).
+- Problem mod fixes that create extra directories (e.g. Dialogue History) are no longer applied unless the mod is actually present in your modlist.
+- Proton auto-detection no longer selects GE-Proton 9.x when a current version is available. Old GE-Proton builds are now ranked below current Valve Proton releases.
+- Closing the modlist gallery before it finishes loading no longer prevents it from loading again without restarting Jackify.
+- Fixed intermittent crashes when closing screens or dialogs during installation and configuration workflows.
+- Fixed ownership check incorrectly flagging modlist files as broken when they are owned by a supplementary group (e.g. autologin). The suggested fix command also showed the wrong group name.
+- If Nexus API key decryption fails, Jackify now prompts you to re-authenticate rather than quietly using a garbage key.
+- Permissions check on large installs no longer walks the entire directory tree when everything is already correct.
+- Tools Hub: tools marked hidden in the remote manifest now disappear immediately on refresh rather than on next restart.
+- Tools Hub: tools with no GitHub release (Nexus-only) now fall back to manual download rather than failing silently.
+- Standalone MO2 setup now correctly uses Jackify's bundled 7z rather than requiring one to be installed system-wide.
+- Manual download dialog now comes to the front automatically when it opens during a non-premium install.
+- Failed downloads now report the mod name and reason in the error rather than a generic failure message.
+- Wabbajack installer now warns that Steam will close any running game during installation.
+- Update checks against the GitHub API now respect a `GITHUB_TOKEN` env var and cache the result for 24 hours - useful on shared IPs that hit the unauthenticated rate limit.
+
+---
+
 ## v0.7 - Tools Hub, Engine Choice, NXM Link Handling, Native Component Install, NSF/CSF Support
 **Release Date:** 21/06/26
 
@@ -44,6 +70,7 @@
 - Fixed: Manual downloads could open the same download link a second time within seconds if the file was still being written to disk when the watcher first detected it.
 - Fixed: Files that finished downloading were sometimes not picked up by the watch folder scanner, leaving items stuck on "pending" and requiring manual intervention.
 - Added a "Scan Now" button to the manual download dialog to force an immediate re-scan of the watch directory without waiting for the next automatic poll.
+- JContainers64.dll Linux crash fix: Skyrim SE modlists using SKSE 1.6.1170 with JContainers are detected automatically during configuration. The incompatible DLL is replaced with a Linux-compatible build, with the original backed up.
 
 ### Engine (0.5.6)
 - Heroic Launcher game detection (GOG + Epic, native and Flatpak).

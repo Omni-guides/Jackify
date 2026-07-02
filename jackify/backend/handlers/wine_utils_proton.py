@@ -222,7 +222,15 @@ class WineUtilsProtonMixin:
             Path("/usr/share/steam/compatibilitytools.d"),
             Path("/usr/lib/steam/compatibilitytools.d"),
         ]
-        return [path for path in compat_paths if path.exists()]
+        seen_real = set()
+        result = []
+        for path in compat_paths:
+            if path.exists():
+                real = path.resolve()
+                if real not in seen_real:
+                    seen_real.add(real)
+                    result.append(path)
+        return result
 
     @staticmethod
     def _parse_compat_tool_name(proton_dir: Path) -> Optional[str]:
@@ -441,10 +449,19 @@ class WineUtilsProtonMixin:
         all_versions.extend(WineUtilsProtonMixin.scan_ge_proton_versions())
         all_versions.extend(WineUtilsProtonMixin.scan_thirdparty_proton_versions())
         all_versions.extend(WineUtilsProtonMixin.scan_valve_proton_versions())
-        _TYPE_RANK = {'GE-Proton': 2, 'ThirdParty-Proton': 1, 'Valve-Proton': 0}
+        def _type_rank(v: dict) -> int:
+            t = v.get('type', '')
+            if t == 'GE-Proton':
+                return 2 if v.get('major_version', 0) >= 10 else -1
+            if t == 'ThirdParty-Proton':
+                return 1
+            if t == 'Valve-Proton':
+                return 0
+            return -1
+
         all_versions.sort(
             key=lambda x: (
-                _TYPE_RANK.get(x.get('type', ''), 0),
+                _type_rank(x),
                 x.get('major_version', 0),
                 x.get('minor_version', 0),
                 x.get('priority', 0),

@@ -91,6 +91,52 @@ class InstallVerifierMixin:
         except Exception as e:
             logger.warning("JContainers fix check failed (non-fatal): %s", e)
 
+    def _apply_problem_mods_disable(
+        self, install_dir: str, game_type: str, success_params: dict, appid: str = ""
+    ) -> None:
+        """Disable known-problematic mods and apply prefix fixes across all profiles."""
+        try:
+            from jackify.backend.services.problem_mods_service import (
+                disable_problem_mods,
+                create_prefix_dirs,
+                get_enabled_mods,
+            )
+
+            install_path = Path(install_dir)
+            all_disabled: list = []
+            all_enabled_mods: set = set()
+            for modlist_txt in install_path.glob("profiles/*/modlist.txt"):
+                disabled = disable_problem_mods(modlist_txt, game_type)
+                for name in disabled:
+                    if name not in all_disabled:
+                        all_disabled.append(name)
+                all_enabled_mods |= get_enabled_mods(modlist_txt)
+
+            if all_disabled:
+                logger.info(
+                    "Disabled %d problem mod(s) for %s (%s): %s",
+                    len(all_disabled),
+                    success_params.get("modlist_name", ""),
+                    game_type,
+                    ", ".join(all_disabled),
+                )
+                success_params["disabled_problem_mods"] = all_disabled
+
+            resolved_appid = str(appid or self._get_appid_for_install_dir(install_dir) or "")
+            pfx = _resolve_pfx_for_appid(resolved_appid) if resolved_appid else None
+            if pfx and all_enabled_mods:
+                created = create_prefix_dirs(pfx, game_type, all_enabled_mods)
+                if created:
+                    logger.info(
+                        "Created %d prefix dir(s) for %s (%s): %s",
+                        len(created),
+                        success_params.get("modlist_name", ""),
+                        game_type,
+                        ", ".join(created),
+                    )
+        except Exception as e:
+            logger.warning("Problem mods fix check failed (non-fatal): %s", e)
+
     def _run_verifier_then_show_success(
         self,
         install_dir: str,
@@ -105,6 +151,7 @@ class InstallVerifierMixin:
         success_params keys: modlist_name, workflow_type, time_taken, game_name, enb_detected
         """
         self._maybe_apply_jcontainers_fix(install_dir, game_type)
+        self._apply_problem_mods_disable(install_dir, game_type, success_params, appid)
         if hasattr(self, "progress_indicator"):
             self.progress_indicator.set_status("Verifying installation...", 100)
         if hasattr(self, "file_progress_list"):
@@ -170,6 +217,8 @@ class InstallVerifierMixin:
             time_taken=params["time_taken"],
             game_name=params.get("game_name"),
             verification_results=verification_results,
+            disabled_problem_mods=params.get("disabled_problem_mods"),
+            readme_url=params.get("readme_url"),
             parent=self,
         )
         dlg.show()

@@ -8,6 +8,7 @@ the cards are rebuilt and version checks restart.
 """
 
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -69,6 +70,22 @@ class _ToolActionThread(QThread):
                 ok, msg = registry.uninstall(self._tool_id)
             else:
                 ok, msg = False, f"Unknown action: {self._action}"
+        except Exception as e:
+            ok, msg = False, str(e)
+        self.finished_signal.emit(self._tool_id, ok, msg)
+
+
+class _ArchiveInstallThread(QThread):
+    finished_signal = Signal(str, bool, str)   # tool_id, success, message
+
+    def __init__(self, tool_id: str, archive_path: Path):
+        super().__init__()
+        self._tool_id = tool_id
+        self._archive_path = archive_path
+
+    def run(self):
+        try:
+            ok, msg = ToolRegistry().install_from_archive(self._tool_id, self._archive_path)
         except Exception as e:
             ok, msg = False, str(e)
         self.finished_signal.emit(self._tool_id, ok, msg)
@@ -258,7 +275,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
 
     def _on_manifest_ready(self, definitions: List[ToolDefinition]):
         current_ids = set(self._cards.keys())
-        new_ids = {d.tool_id for d in definitions}
+        new_ids = {d.tool_id for d in definitions if not d.hidden}
         apply_remote_manifest(definitions)
         if current_ids != new_ids:
             if self._version_thread and self._version_thread.isRunning():
@@ -336,6 +353,13 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
     def _on_action_finished(self, tool_id: str, success: bool, message: str):
         self._action_thread = None
         card = self._cards.get(tool_id)
+
+        if not success and message.startswith("NEXUS_MANUAL_REQUIRED:"):
+            if card:
+                card.set_busy(False)
+            self._start_nexus_manual_install(tool_id, message[len("NEXUS_MANUAL_REQUIRED:"):])
+            return
+
         if success:
             status = ToolRegistry().get_status(tool_id)
             if status and status.installed and card:
@@ -350,6 +374,23 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             if card:
                 card.set_busy(False)
             MessageService.warning(self, "Failed", message)
+
+    def _start_nexus_manual_install(self, tool_id: str, nexus_url: str) -> None:
+        from jackify.frontends.gui.dialogs.nexus_manual_install_dialog import NexusManualInstallDialog
+        defn = next((d for d in get_effective_definitions() if d.tool_id == tool_id), None)
+        display_name = defn.display_name if defn else tool_id
+        dlg = NexusManualInstallDialog(tool_id, display_name, nexus_url, parent=self)
+        if dlg.exec() != NexusManualInstallDialog.Accepted:
+            return
+        archive = dlg.selected_archive
+        if not archive:
+            return
+        card = self._cards.get(tool_id)
+        if card:
+            card.set_busy(True, "Installing...")
+        self._action_thread = _ArchiveInstallThread(tool_id, archive)
+        self._action_thread.finished_signal.connect(self._on_action_finished)
+        self._action_thread.start()
 
     def _on_update_all(self):
         updates = [tid for tid, card in self._cards.items()
@@ -388,6 +429,9 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         card = self._cards.get(tool_id)
         status = ToolRegistry().get_status(tool_id)
         if not status:
+            return
+        if not status.definition.github_repo:
+            MessageService.warning(self, "Change Version", "Version selection is only available for GitHub-hosted tools.")
             return
         if card:
             card.set_busy(True, "Fetching releases...")
@@ -465,5 +509,3 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         if self.stacked_widget:
             self.stacked_widget.setCurrentIndex(self.main_menu_index)
 
-    def cleanup_processes(self):
-        self._park_all_threads()

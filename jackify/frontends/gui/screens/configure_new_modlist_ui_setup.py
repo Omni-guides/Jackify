@@ -601,9 +601,9 @@ class ConfigureNewModlistUISetupMixin:
             return True
             
         except Exception as e:
-            print(f"Error checking protontricks: {e}")
+            logger.error(f"Error checking protontricks: {e}")
             from jackify.frontends.gui.services.message_service import MessageService
-            MessageService.warning(self, "Protontricks Check Failed", 
+            MessageService.warning(self, "Protontricks Check Failed",
                                  f"Unable to verify protontricks installation: {e}\n\n"
                                  "Continuing anyway, but some features may not work correctly.")
             return True  # Continue anyway

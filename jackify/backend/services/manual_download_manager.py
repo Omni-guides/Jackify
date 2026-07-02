@@ -42,6 +42,7 @@ class DownloadItem:
     status: STATUS = "pending"
     local_path: Optional[str] = None
     error_message: Optional[str] = None
+    download_reason: Optional[str] = None
     needs_user_retry: bool = False
 
     @classmethod
@@ -55,6 +56,21 @@ class DownloadItem:
             or evt.get('url')
             or ''
         )
+        # If engine provides no URL but has mod metadata, construct a Nexus Mods
+        # page URL as a fallback so the user has somewhere to go.
+        if not source_url:
+            game = str(evt.get('game_name') or '').lower().replace(' ', '')
+            mod_id = evt.get('mod_id')
+            file_id = evt.get('file_id')
+            if game and mod_id:
+                if file_id:
+                    source_url = (
+                        f"https://www.nexusmods.com/{game}/mods/{mod_id}"
+                        f"?tab=files&file_id={file_id}"
+                    )
+                else:
+                    source_url = f"https://www.nexusmods.com/{game}/mods/{mod_id}?tab=files"
+
         item = cls(
             file_name=evt.get('file_name', ''),
             nexus_url=source_url,
@@ -66,6 +82,7 @@ class DownloadItem:
             index=evt.get('index', 0),
             total=evt.get('total', 0),
             loop_iteration=loop_iteration,
+            download_reason=evt.get('reason') or evt.get('download_reason') or None,
         )
         if not item.nexus_url:
             # Engine contract says nexus_url should be present and non-empty.

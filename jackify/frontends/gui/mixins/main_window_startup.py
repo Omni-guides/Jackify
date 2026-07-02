@@ -53,17 +53,17 @@ class MainWindowStartupMixin:
                 return
             is_installed, installation_type, details = self.protontricks_service.detect_protontricks()
             if not is_installed:
-                print(f"Protontricks not found: {details}")
+                logger.warning(f"Protontricks not found: {details}")
                 from jackify.frontends.gui.dialogs.protontricks_error_dialog import ProtontricksErrorDialog
                 dialog = ProtontricksErrorDialog(self.protontricks_service, self)
                 result = dialog.exec()
                 if result == QDialog.Rejected:
-                    print("User chose to exit due to missing protontricks")
+                    logger.info("User chose to exit due to missing protontricks")
                     sys.exit(1)
             else:
                 logger.debug(f"Protontricks detected: {details}")
         except Exception as e:
-            print(f"Error checking protontricks: {e}")
+            logger.error(f"Error checking protontricks: {e}")
 
     def _check_tool_updates_on_startup(self):
         class _ToolUpdateCheckThread(QThread):
@@ -105,6 +105,40 @@ class MainWindowStartupMixin:
         self._tool_update_check_thread = _ToolUpdateCheckThread()
         self._tool_update_check_thread.updates_found.connect(on_result)
         self._tool_update_check_thread.start()
+
+    def _prefetch_manifests_on_startup(self):
+        class _ManifestPrefetchThread(QThread):
+            def run(self):
+                try:
+                    from jackify.backend.services.tool_registry import (
+                        fetch_remote_manifest as fetch_tools,
+                        apply_remote_manifest as apply_tools,
+                    )
+                    tools = fetch_tools()
+                    if tools:
+                        apply_tools(tools)
+                        logger.info("Tools manifest refreshed at startup (%d tools)", len(tools))
+                    else:
+                        logger.info("Tools manifest prefetch returned no data (bundled manifest in use)")
+                except Exception as e:
+                    logger.info("Tools manifest prefetch failed: %s", e)
+
+                try:
+                    from jackify.backend.services.problem_mods_service import (
+                        fetch_remote_manifest as fetch_problems,
+                        apply_remote_manifest as apply_problems,
+                    )
+                    problems = fetch_problems()
+                    if problems:
+                        apply_problems(problems)
+                        logger.info("Problem mods manifest refreshed at startup")
+                    else:
+                        logger.info("Problem mods manifest prefetch returned no data (bundled manifest in use)")
+                except Exception as e:
+                    logger.info("Problem mods manifest prefetch failed: %s", e)
+
+        self._manifest_prefetch_thread = _ManifestPrefetchThread()
+        self._manifest_prefetch_thread.start()
 
     def _check_for_updates_on_startup(self):
         try:

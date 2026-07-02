@@ -307,7 +307,7 @@ class InstallerThread(QThread):
         """Emit periodic 'finalising' updates to Show Details when stdout goes silent.
 
         Fires once when silence exceeds THRESHOLD, then repeats every REPEAT seconds
-        of continued silence — so extended waits remain visible to the user.
+        of continued silence - so extended waits remain visible to the user.
         Samples /proc/<pid>/io to show write throughput, giving the user concrete
         evidence that extraction is progressing even when CLF3 emits no output.
         Resets when real output arrives so a new silence period can trigger it again.
@@ -360,7 +360,7 @@ class InstallerThread(QThread):
         JSON progress events (keyed on "type") and plain human-readable text both arrive
         on stdout. Manual download events (keyed on "event") also appear on stdout.
 
-        Extraction dispatch counters ("Extracting: N/M") are dropped — named per-archive
+        Extraction dispatch counters ("Extracting: N/M") are dropped - named per-archive
         completion lines already cover this information.
         Directive counters ("Processing: N/M") are buffered; only the final value is
         emitted when the next non-counter line arrives, avoiding a 1315-line flood.
@@ -391,7 +391,7 @@ class InstallerThread(QThread):
                     self.progress_updated.emit(state)
                     msg = state.message
                     if msg.startswith('Extracting ') and '(' in msg and state.phase_name == "Extracting":
-                        # Relabel as "Queuing" — the N/M counter tracks archive dispatch
+                        # Relabel as "Queuing" - the N/M counter tracks archive dispatch
                         # to worker threads, not completion of decompression.
                         self.output_received.emit(msg.replace('Extracting ', 'Queuing ', 1) + '\n')
                 continue

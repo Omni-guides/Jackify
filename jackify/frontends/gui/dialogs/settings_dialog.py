@@ -72,9 +72,7 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             main_layout.addLayout(btn_layout)
 
         except Exception as e:
-            print(f"[ERROR] Exception in SettingsDialog.__init__: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Exception in SettingsDialog.__init__: {e}", exc_info=True)
 
     def _toggle_api_key_visibility(self, checked):
         eye_icon = QIcon.fromTheme("view-visible")
@@ -402,7 +400,7 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
                     screen.refresh_paths()
                     
         except Exception as e:
-            print(f"Warning: Could not refresh GUI paths: {e}")
+            logger.warning(f"Could not refresh GUI paths: {e}")
 
     def _bold_label(self, text):
         label = QLabel(text)

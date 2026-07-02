@@ -1,4 +1,4 @@
-from .ui_colors import COLOR_INFO, COLOR_RESET
+from jackify.shared.colors import COLOR_INFO, COLOR_RESET
 
 def show_status(message: str):
     """Show a single-line status message, overwriting the current line."""

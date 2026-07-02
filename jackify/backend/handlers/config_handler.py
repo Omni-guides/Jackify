@@ -45,6 +45,8 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
             return
         ConfigHandler._initialized = True
 
+        self._dirty_keys: set = set()
+
         self.config_dir = os.path.expanduser("~/.config/jackify")
         self.config_file = os.path.join(self.config_dir, "config.json")
         self.settings = {
@@ -146,7 +148,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
         logger.info(f"Migrating config from {current_version} to {target_version}")
 
         # Migration: v0.0.x -> v0.2.0
-        # Encryption changed from cryptography (Fernet) to pycryptodome (AES-GCM)
+        # Encryption changed from cryptography (Fernet) to pycryptodomex (AES-GCM)
         # Old encrypted API keys cannot be decrypted, must be re-entered
         from packaging import version
         if version.parse(current_version) < version.parse("0.2.0"):
@@ -219,14 +221,34 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
             logger.error(f"Error creating configuration directory: {e}")
     
     def save_config(self):
-        """Save current configuration to file"""
+        """Save current configuration to file.
+
+        Reads disk state, overlays only dirty keys, then writes atomically.
+        This prevents concurrent callers from clobbering each other's saves.
+        """
         import tempfile
         try:
             self._create_config_dir()
+            # When dirty keys exist, read disk and overlay only those keys so concurrent
+            # callers don't clobber each other. When no keys are dirty (migration/bootstrap
+            # code that mutates self.settings directly), fall back to writing all settings.
+            if self._dirty_keys:
+                try:
+                    if os.path.exists(self.config_file):
+                        with open(self.config_file, 'r') as f:
+                            on_disk = json.load(f)
+                    else:
+                        on_disk = self.settings.copy()
+                except Exception:
+                    on_disk = self.settings.copy()
+                for key in self._dirty_keys:
+                    on_disk[key] = self.settings[key]
+            else:
+                on_disk = self.settings.copy()
             fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(self.config_file), prefix='.config_tmp_')
             try:
                 with os.fdopen(fd, 'w') as f:
-                    json.dump(self.settings, f, indent=2)
+                    json.dump(on_disk, f, indent=2)
                 os.chmod(tmp_path, 0o600)
                 os.replace(tmp_path, self.config_file)
             except Exception:
@@ -235,6 +257,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
                 except OSError:
                     pass
                 raise
+            self._dirty_keys.clear()
             logger.debug("Saved configuration to file")
             return True
         except Exception as e:
@@ -242,35 +265,38 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
             return False
     
     def get(self, key, default=None):
-        """
-        Get a configuration value by key.
-        Always reads fresh from disk to avoid stale data.
-        """
+        """Return configuration value, preferring any unsaved in-memory value."""
+        if key in self._dirty_keys:
+            return self.settings.get(key, default)
         config = self._read_config_from_disk()
         return config.get(key, default)
     
     def set(self, key, value):
-        """Set a configuration value"""
+        """Set a configuration value (marks key dirty until save_config is called)."""
         self.settings[key] = value
+        self._dirty_keys.add(key)
         return True
-    
+
     def update(self, settings_dict):
-        """Update multiple configuration values"""
+        """Update multiple configuration values (marks all keys dirty)."""
         self.settings.update(settings_dict)
+        self._dirty_keys.update(settings_dict.keys())
         return True
     
     def add_steam_library(self, path):
         """Add a Steam library path to configuration"""
         if path not in self.settings["steam_libraries"]:
             self.settings["steam_libraries"].append(path)
+            self._dirty_keys.add("steam_libraries")
             logger.debug(f"Added Steam library: {path}")
             return True
         return False
-    
+
     def remove_steam_library(self, path):
         """Remove a Steam library path from configuration"""
         if path in self.settings["steam_libraries"]:
             self.settings["steam_libraries"].remove(path)
+            self._dirty_keys.add("steam_libraries")
             logger.debug(f"Removed Steam library: {path}")
             return True
         return False

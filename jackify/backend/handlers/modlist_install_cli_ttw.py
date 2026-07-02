@@ -6,7 +6,7 @@ import signal
 import shutil
 from pathlib import Path
 
-from .ui_colors import COLOR_PROMPT, COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_WARNING
+from jackify.shared.colors import COLOR_PROMPT, COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_WARNING
 from jackify.shared.paths import get_jackify_logs_dir
 
 logger = logging.getLogger(__name__)

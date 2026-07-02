@@ -4,6 +4,7 @@ Enhanced Modlist Gallery Screen for Jackify GUI.
 Provides visual browsing, filtering, and selection of modlists using
 rich metadata from jackify-engine.
 """
+import warnings
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QScrollArea, QGridLayout,
@@ -255,23 +256,27 @@ class ModlistGalleryDialog(ModlistGalleryFiltersMixin, ModlistGalleryLoadingMixi
         if timer is not None:
             timer.stop()
 
+        # Kill any in-progress engine subprocess so the loader thread exits
+        # naturally and releases the engine call lock.
+        if hasattr(self, 'gallery_service'):
+            self.gallery_service.cancel()
+
         for attr in ('_loader_thread', '_validation_thread'):
             thread = getattr(self, attr, None)
             if thread is None:
                 continue
-            # Disconnect all signals before terminating - prevents callbacks into
-            # a partially-destroyed dialog
-            try:
-                thread.disconnect()
-            except Exception:
-                pass
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                try:
+                    thread.disconnect()
+                except Exception:
+                    pass
             if thread.isRunning():
-                # terminate() is required here: these threads run plain Python code
-                # with no Qt event loop, so quit() is a no-op and wait() alone
-                # would time out, leaving the thread running when the C++ QThread
-                # object is destroyed (which aborts the process).
-                thread.terminate()
-                thread.wait(3000)
+                # Give the thread time to exit naturally after cancel().
+                # Only fall back to terminate() if it is still stuck after that.
+                if not thread.wait(2000):
+                    thread.terminate()
+                    thread.wait(1000)
 
         # Abort any pending image network requests
         if hasattr(self, 'image_manager'):

@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Optional
 
-from .ui_colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_ERROR
+from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_ERROR
 from .resolution_handler import ResolutionHandler
 
 logger = logging.getLogger(__name__)
@@ -596,7 +596,9 @@ class ModlistConfigurationMixin:
                     # dotnet9 SDK install also flips the prefix to win11; NSF/CSF was only
                     # verified working on win10 + global-native, so we keep that state and skip
                     # the dotnet9/win11 step. Whether Synthesis runs under global-native on an NSF
-                    # prefix is untested - revisit if a modlist needs live Synthesis.
+                    # prefix has not been specifically tested - revisit if a modlist needs live
+                    # Synthesis. The NuGet cert Synthesis needs is applied regardless (see
+                    # apply_tool_config), since it doesn't touch mscoree or Windows version.
                     _nsf = getattr(self, '_nsf_detected', False)
                     apply_tool_config(
                         compatdata_path,

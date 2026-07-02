@@ -27,7 +27,7 @@ from .modlist_configuration import ModlistConfigurationMixin
 from .modlist_wine_ops import ModlistWineOpsMixin
 
 # Import colors from the new central location
-from .ui_colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_SELECTION, COLOR_ERROR
+from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_SELECTION, COLOR_ERROR
 
 # Standard logging (no file handler)
 import logging

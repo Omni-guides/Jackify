@@ -1,4 +1,5 @@
 """Configuration phase workflow for InstallModlistScreen (Mixin)."""
+import warnings
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from .screen_focus_reclaim import FocusReclaimMixin, STEAM_RESTART_SENTINEL
@@ -178,6 +179,7 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                         'time_taken': time_str,
                         'game_name': game_name,
                         'enb_detected': enb_detected,
+                        'readme_url': getattr(self, '_readme_url', None),
                     },
                 )
             elif hasattr(self, '_manual_steps_retry_count') and self._manual_steps_retry_count >= 3:
@@ -233,12 +235,14 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
         if not hasattr(self, 'config_thread') or self.config_thread is None:
             return
 
-        try:
-            self.config_thread.progress_update.disconnect()
-            self.config_thread.configuration_complete.disconnect()
-            self.config_thread.error_occurred.disconnect()
-        except (RuntimeError, TypeError):
-            pass
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            try:
+                self.config_thread.progress_update.disconnect()
+                self.config_thread.configuration_complete.disconnect()
+                self.config_thread.error_occurred.disconnect()
+            except (RuntimeError, TypeError):
+                pass
 
         if self.config_thread.isRunning():
             self.config_thread.quit()
@@ -525,12 +529,14 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
             # Clean up old thread if exists and wait for it to finish
             if hasattr(self, 'config_thread') and self.config_thread is not None:
                 # Disconnect all signals to prevent "Internal C++ object already deleted" errors
-                try:
-                    self.config_thread.progress_update.disconnect()
-                    self.config_thread.configuration_complete.disconnect()
-                    self.config_thread.error_occurred.disconnect()
-                except (RuntimeError, TypeError):
-                    pass  # Ignore errors if already disconnected
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    try:
+                        self.config_thread.progress_update.disconnect()
+                        self.config_thread.configuration_complete.disconnect()
+                        self.config_thread.error_occurred.disconnect()
+                    except (RuntimeError, TypeError):
+                        pass  # Ignore errors if already disconnected
                 if self.config_thread.isRunning():
                     self.config_thread.quit()
                     self.config_thread.wait(5000)  # Wait up to 5 seconds
@@ -618,7 +624,7 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                     
                 except Exception as e:
                     error_details = f"Error in configuration: {e}\nTraceback: {traceback.format_exc()}"
-                    self.progress_update.emit(f"DEBUG: {error_details}")
+                    self.progress_update.emit(f"ERROR: {error_details}")
                     self.error_occurred.emit(str(e))
         
         return ConfigThread(context, is_steamdeck, detect_game_type_func, parent=self)

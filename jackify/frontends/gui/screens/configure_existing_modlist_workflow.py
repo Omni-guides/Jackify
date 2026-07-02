@@ -15,13 +15,33 @@ class ConfigureExistingModlistWorkflowMixin:
     """Mixin providing workflow management for ConfigureExistingModlistScreen."""
 
     def _detect_game_type_from_mo2_ini(self, install_dir: str) -> str:
-        """Detect special game type using the canonical ModlistHandler detection."""
+        """Detect game type for the verifier from ModOrganizer.ini."""
         try:
             from jackify.backend.handlers.modlist_handler import ModlistHandler
-            return ModlistHandler().detect_special_game_type(install_dir) or 'skyrim'
+            special = ModlistHandler().detect_special_game_type(install_dir)
+            if special:
+                return special
         except Exception as e:
-            logger.warning("Game type detection failed, defaulting to skyrim: %s", e)
-            return 'skyrim'
+            logger.warning("Special game type detection failed: %s", e)
+
+        # detect_special_game_type only covers non-default games; read gameName= directly
+        try:
+            from pathlib import Path
+            mo2_ini = Path(install_dir) / "ModOrganizer.ini"
+            if mo2_ini.exists():
+                for raw_line in mo2_ini.read_text(errors='ignore').splitlines():
+                    line = raw_line.strip().lower()
+                    if line.startswith("gamename="):
+                        val = line[len("gamename="):]
+                        if "fallout 4" in val:
+                            return "fallout4"
+                        if "skyrim" in val:
+                            return "skyrim"
+        except Exception as e:
+            logger.warning("ModOrganizer.ini gameName read failed: %s", e)
+
+        logger.warning("Could not determine game type for %s, verifier will run generic checks only", install_dir)
+        return 'unknown'
 
     def validate_and_start_configure(self):
         # Reload config to pick up any settings changes made in Settings dialog

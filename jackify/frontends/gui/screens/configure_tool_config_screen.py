@@ -438,5 +438,3 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         except Exception as e:
             self.process_monitor.setPlainText(f"[process info unavailable: {e}]")
 
-    def cleanup_processes(self):
-        self._park_all_threads()

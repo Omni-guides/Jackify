@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QMessageBox, QApplication, QDialog
 from jackify.frontends.gui.utils import browse_directory, browse_file
 from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QFontMetrics
 import logging
 import os
 import re
@@ -160,7 +161,11 @@ class ModlistSelectionMixin:
 
             if self._gallery_dlg.exec() == QDialog.Accepted and self._gallery_dlg.selected_metadata:
                 metadata = self._gallery_dlg.selected_metadata
-                self.modlist_btn.setText(metadata.title)
+                metrics = QFontMetrics(self.modlist_btn.font())
+                available_width = self.modlist_btn.width() - 24  # padding allowance
+                elided_title = metrics.elidedText(metadata.title, Qt.ElideRight, available_width)
+                self.modlist_btn.setText(elided_title)
+                self.modlist_btn.setToolTip(metadata.title)
                 self.selected_modlist_info = {
                     'machine_url': metadata.namespacedName,
                     'title': metadata.title,

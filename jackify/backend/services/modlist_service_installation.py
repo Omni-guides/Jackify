@@ -152,31 +152,20 @@ class ModlistServiceInstallationMixin:
             cmd += ['-o', install_dir_str, '-d', download_dir_str]
 
             writeback_path = str(auth_service.get_token_writeback_path())
-            original_env_values = {
-                'NEXUS_API_KEY': os.environ.get('NEXUS_API_KEY'),
-                'NEXUS_OAUTH_INFO': os.environ.get('NEXUS_OAUTH_INFO'),
-                'JACKIFY_TOKEN_WRITEBACK': os.environ.get('JACKIFY_TOKEN_WRITEBACK'),
-                'DOTNET_SYSTEM_GLOBALIZATION_INVARIANT': os.environ.get('DOTNET_SYSTEM_GLOBALIZATION_INVARIANT')
+            env_overrides = {
+                'JACKIFY_TOKEN_WRITEBACK': writeback_path,
+                'DOTNET_SYSTEM_GLOBALIZATION_INVARIANT': "1",
             }
+            if oauth_info:
+                env_overrides['NEXUS_OAUTH_INFO'] = oauth_info
+                from jackify.backend.services.nexus_oauth_service import NexusOAuthService
+                env_overrides['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
+                if api_key:
+                    env_overrides['NEXUS_API_KEY'] = api_key
+            elif api_key:
+                env_overrides['NEXUS_API_KEY'] = api_key
 
             try:
-                os.environ['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
-                if oauth_info:
-                    os.environ['NEXUS_OAUTH_INFO'] = oauth_info
-                    from jackify.backend.services.nexus_oauth_service import NexusOAuthService
-                    os.environ['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
-                    if api_key:
-                        os.environ['NEXUS_API_KEY'] = api_key
-                elif api_key:
-                    os.environ['NEXUS_API_KEY'] = api_key
-                else:
-                    if 'NEXUS_API_KEY' in os.environ:
-                        del os.environ['NEXUS_API_KEY']
-                    if 'NEXUS_OAUTH_INFO' in os.environ:
-                        del os.environ['NEXUS_OAUTH_INFO']
-
-                os.environ['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = "1"
-
                 pretty_cmd = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in cmd])
                 if output_callback:
                     output_callback(f"Launching Jackify Install Engine with command: {pretty_cmd}")
@@ -192,7 +181,7 @@ class ModlistServiceInstallationMixin:
                     else:
                         output_callback(f"File descriptor limit warning: {message}")
 
-                clean_env = get_clean_subprocess_env()
+                clean_env = get_clean_subprocess_env(env_overrides)
                 proc = subprocess.Popen(
                     cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=False, env=clean_env, cwd=engine_dir
@@ -322,12 +311,12 @@ class ModlistServiceInstallationMixin:
                     output_callback("Installation completed successfully")
                 return True
 
-            finally:
-                for key, original_value in original_env_values.items():
-                    if original_value is not None:
-                        os.environ[key] = original_value
-                    elif key in os.environ:
-                        del os.environ[key]
+            except Exception as e:
+                error_msg = f"Error running Jackify Install Engine: {e}"
+                logger.error(error_msg)
+                if output_callback:
+                    output_callback(error_msg)
+                return False
 
         except Exception as e:
             error_msg = f"Error running Jackify Install Engine: {e}"

@@ -20,13 +20,13 @@ class FilesystemOwnershipMixin:
     def all_owned_by_user(path: Path) -> bool:
         """Return True if all files and directories under path are owned by the current user."""
         uid = os.getuid()
-        gid = os.getgid()
+        gids = set([os.getgid()] + os.getgroups())
         for root, dirs, files in os.walk(path):
             for name in dirs + files:
                 full_path = os.path.join(root, name)
                 try:
                     stat = os.stat(full_path)
-                    if stat.st_uid != uid or stat.st_gid != gid:
+                    if stat.st_uid != uid or stat.st_gid not in gids:
                         return False
                 except Exception:
                     return False
@@ -50,7 +50,7 @@ class FilesystemOwnershipMixin:
         if not FilesystemOwnershipMixin.all_owned_by_user(path):
             try:
                 user_name = pwd.getpwuid(os.geteuid()).pw_name
-                group_name = grp.getgrgid(os.geteuid()).gr_name
+                group_name = grp.getgrgid(os.getgid()).gr_name
             except KeyError:
                 logger.error("Could not determine current user or group name.")
                 return False, "Could not determine current user or group name."
@@ -68,6 +68,9 @@ class FilesystemOwnershipMixin:
             return False, error_msg
 
         logger.info("Files in %s are owned by current user, verifying permissions...", path)
+        if FilesystemOwnershipMixin._perms_already_ok(path):
+            logger.info("Permissions already correct for %s, skipping chmod", path)
+            return True, ""
         try:
             result = subprocess.run(
                 ['chmod', '-R', '755', str(path)],
@@ -83,6 +86,19 @@ class FilesystemOwnershipMixin:
         except Exception as e:
             logger.warning("Error running chmod: %s, continuing anyway", e)
             return True, ""
+
+    @staticmethod
+    def _perms_already_ok(path: Path) -> bool:
+        """Return True if every entry under path already has mode 0o755."""
+        for root, dirs, files in os.walk(path):
+            for name in dirs + files:
+                full = os.path.join(root, name)
+                try:
+                    if os.stat(full).st_mode & 0o777 != 0o755:
+                        return False
+                except Exception:
+                    return False
+        return True
 
     @staticmethod
     def set_ownership_and_permissions_sudo(path: Path, status_callback=None) -> bool:

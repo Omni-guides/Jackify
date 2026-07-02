@@ -198,8 +198,7 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
                             self.upper_section_widget.setMinimumHeight(self._upper_section_fixed_height)
                     except Exception as e:
                         if self.debug:
-                            print(f"DEBUG: Error calculating upper section height: {e}")
-                        pass
+                            logger.debug(f"Error calculating upper section height: {e}")
                 
                 # Calculate heights immediately after forcing layout update
                 # Prevents visible layout shift
@@ -356,7 +355,7 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
             return True
 
         except Exception as e:
-            print(f"Error checking protontricks: {e}")
+            logger.error(f"Error checking protontricks: {e}")
             MessageService.warning(self, "Protontricks Check Failed",
                                  f"Unable to verify protontricks installation: {e}\n\n"
                                  "Continuing anyway, but some features may not work correctly.")
@@ -424,7 +423,6 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
         super().hideEvent(event)
 
     def cleanup_processes(self):
-        """Clean up any running processes when the window closes or is cancelled"""
         self._stop_clf3_decompress_pulse()
 
         fpl = getattr(self, 'file_progress_list', None)
@@ -440,74 +438,23 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
 
         self._stop_focus_reclaim()
 
-        # Disconnect all thread signals before any stopping - prevents callbacks to
-        # a dying widget if threads emit between now and actual termination.
-        self._park_all_threads()
-
-        def _stop_thread(attr_name: str, cancel_method: Optional[str] = None, cooperative_ms: int = 5000, force_ms: int = 10000):
-            thread = getattr(self, attr_name, None)
-            if thread is None:
-                return
+        # install_thread needs cancel() to kill the child subprocess, not just
+        # signal disconnection. The extended wait gives the engine time to flush.
+        thread = getattr(self, 'install_thread', None)
+        if thread is not None:
             try:
                 running = thread.isRunning()
             except RuntimeError:
-                setattr(self, attr_name, None)
-                return
-
-            if not running:
-                setattr(self, attr_name, None)
-                return
-
-            logger.debug(f"Stopping {attr_name}")
-
-            if cancel_method and hasattr(thread, cancel_method):
+                running = False
+            if running:
                 try:
-                    getattr(thread, cancel_method)()
+                    thread.cancel()
                 except Exception:
                     pass
-            else:
-                try:
-                    thread.requestInterruption()
-                except Exception:
-                    pass
-                try:
-                    thread.quit()
-                except Exception:
-                    pass
-
-            try:
-                if thread.wait(cooperative_ms):
-                    setattr(self, attr_name, None)
-                    return
-            except Exception:
-                pass
-
-            logger.warning(f"WARNING: {attr_name} did not stop in {cooperative_ms}ms, waiting for forced shutdown window")
-            try:
-                if cancel_method and hasattr(thread, cancel_method):
-                    getattr(thread, cancel_method)()
-            except Exception:
-                pass
-            try:
-                if not thread.wait(force_ms):
-                    logger.error(f"ERROR: {attr_name} still running after forced shutdown window")
-            except Exception:
-                pass
-            setattr(self, attr_name, None)
-
-        # Always stop installer thread first; it needs cancel() not terminate().
-        _stop_thread('install_thread', cancel_method='cancel', cooperative_ms=15000, force_ms=10000)
-
-        # Stop any remaining QThread instances on this object, regardless of attribute name.
-        from PySide6.QtCore import QThread
-        for attr_name, value in list(vars(self).items()):
-            if attr_name == 'install_thread':
-                continue
-            try:
-                if isinstance(value, QThread):
-                    _stop_thread(attr_name)
-            except Exception:
-                pass
+                if not thread.wait(15000):
+                    logger.warning("install_thread did not stop in 15s")
+                    thread.wait(10000)
+            self.install_thread = None
     
     def cancel_installation(self):
         """Cancel the currently running installation"""

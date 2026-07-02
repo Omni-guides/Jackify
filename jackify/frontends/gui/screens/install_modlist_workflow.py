@@ -6,6 +6,12 @@ import shutil
 import time
 
 from jackify.frontends.gui.dialogs.existing_setup_dialog import prompt_existing_setup_dialog
+from jackify.backend.services.update_detection import (
+    evaluate_update_candidate as _svc_evaluate,
+    find_existing_shortcut_appid as _svc_find_appid,
+    normalize_version_token,
+    normalize_modlist_name,
+)
 from .install_modlist_output_mixin import InstallModlistOutputMixin
 from .install_modlist_workflow_execution import InstallWorkflowExecutionMixin
 
@@ -15,27 +21,16 @@ logger = logging.getLogger(__name__)
 class InstallWorkflowMixin(InstallWorkflowExecutionMixin, InstallModlistOutputMixin):
     """Mixin providing installation workflow methods for InstallModlistScreen."""
 
-    @staticmethod
-    def _normalize_version_token(value: str | None) -> str | None:
-        """Return a normalized version token for lightweight equality checks."""
-        if value is None:
-            return None
-        token = str(value).strip()
-        if not token:
-            return None
-        token = token.lstrip("vV")
-        return token.lower()
-
-    @staticmethod
-    def _normalize_modlist_name(value: str | None) -> str:
-        return " ".join((value or "").strip().lower().split())
+    # normalize_version_token and normalize_modlist_name are imported from update_detection service
+    _normalize_version_token = staticmethod(normalize_version_token)
+    _normalize_modlist_name = staticmethod(normalize_modlist_name)
 
     def _get_requested_modlist_version(self, install_mode: str) -> str | None:
         """Return selected modlist version from gallery metadata when available."""
         if install_mode != "online":
             return None
         info = getattr(self, "selected_modlist_info", None) or {}
-        return self._normalize_version_token(info.get("version"))
+        return normalize_version_token(info.get("version"))
 
     def _evaluate_update_candidate(
         self,
@@ -44,52 +39,8 @@ class InstallWorkflowMixin(InstallWorkflowExecutionMixin, InstallModlistOutputMi
         install_mode: str,
         existing_appid: str | None,
     ) -> tuple[bool, dict]:
-        """
-        Decide whether update-mode prompt should be shown.
-
-        Policy:
-        - Require existing shortcut AppID and jackify_meta.json.
-        - Require modlist identity match (requested name == installed meta name).
-        - Version relation is informational:
-          - `different` when both requested/installed versions are available and differ.
-          - `same` when both are available and equal.
-          - `unknown` when either side is missing.
-        """
-        from jackify.backend.utils.modlist_meta import read_modlist_meta
-
-        result = {
-            "eligible": False,
-            "reason": "unknown",
-            "requested_version": None,
-            "installed_version": None,
-            "version_relation": "unknown",
-            "installed_name": None,
-        }
-        if not existing_appid:
-            result["reason"] = "missing_shortcut_appid"
-            return False, result
-
-        meta = read_modlist_meta(install_dir)
-        if not meta:
-            result["reason"] = "missing_meta"
-            return False, result
-
-        installed_name = (meta.get("modlist_name") or "").strip()
-        result["installed_name"] = installed_name
-        if self._normalize_modlist_name(installed_name) != self._normalize_modlist_name(modlist_name):
-            result["reason"] = "modlist_name_mismatch"
-            return False, result
-
         requested_version = self._get_requested_modlist_version(install_mode)
-        installed_version = self._normalize_version_token(meta.get("modlist_version"))
-        result["requested_version"] = requested_version
-        result["installed_version"] = installed_version
-        if requested_version and installed_version:
-            result["version_relation"] = "same" if requested_version == installed_version else "different"
-
-        result["eligible"] = True
-        result["reason"] = "eligible"
-        return True, result
+        return _svc_evaluate(modlist_name, install_dir, existing_appid, requested_version)
 
     def _resolve_modorganizer_ini_path(self, install_dir: str) -> str | None:
         """Return ModOrganizer.ini path for standard/special layouts."""
@@ -276,38 +227,7 @@ class InstallWorkflowMixin(InstallWorkflowExecutionMixin, InstallModlistOutputMi
 
     def _find_existing_shortcut_appid(self, modlist_name: str, install_dir: str) -> str | None:
         """Return existing Steam shortcut AppID for this install dir/name when present."""
-        try:
-            from jackify.backend.handlers.shortcut_handler import ShortcutHandler
-            from jackify.backend.services.platform_detection_service import PlatformDetectionService
-
-            platform_service = PlatformDetectionService.get_instance()
-            shortcut_handler = ShortcutHandler(steamdeck=platform_service.is_steamdeck, verbose=False)
-
-            install_real = os.path.realpath(install_dir)
-            candidate_exes = [
-                os.path.join(install_real, "ModOrganizer.exe"),
-                os.path.join(install_real, "files", "ModOrganizer.exe"),  # Somnium layout
-            ]
-
-            for exe_path in candidate_exes:
-                if not os.path.exists(exe_path):
-                    continue
-                appid = shortcut_handler.get_appid_from_vdf(modlist_name, exe_path)
-                if appid:
-                    return appid
-
-            # Fallback: match by name + start dir from shortcuts.vdf even if exe moved
-            for shortcut in shortcut_handler.find_shortcuts_by_exe("ModOrganizer.exe"):
-                if (
-                    (shortcut.get("AppName", "").strip() == modlist_name.strip())
-                    and os.path.realpath(shortcut.get("StartDir", "")) == install_real
-                ):
-                    raw_appid = shortcut.get("appid")
-                    if raw_appid is not None:
-                        return str(int(raw_appid) & 0xFFFFFFFF)
-        except Exception as e:
-            logger.warning("Update detection: failed shortcut lookup: %s", e)
-        return None
+        return _svc_find_appid(modlist_name, install_dir)
 
     def _prompt_update_or_new_install(
         self,

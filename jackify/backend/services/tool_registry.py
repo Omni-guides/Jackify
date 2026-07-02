@@ -30,9 +30,9 @@ class ToolDefinition:
     tool_id: str
     display_name: str
     description: str
-    github_repo: str            # e.g. "SulfurNitride/CLF3"
     asset_patterns: List[str]   # ordered list of regex patterns to match release asset filename
     tier: int                   # 1 = Jackify invokes it, 2 = user runs it themselves
+    github_repo: Optional[str] = None   # e.g. "SulfurNitride/CLF3"; None for Nexus-only tools
     executable_names: List[str] = field(default_factory=list)
     pinned_version: Optional[str] = None   # None = always use latest
     can_uninstall: bool = True             # False for tools Jackify hard-depends on
@@ -44,6 +44,14 @@ class ToolDefinition:
     nexus_file_filter: Optional[str] = None  # Substring filter to pick the right Nexus file
     hidden: bool = False                  # Set true in manifest to suppress display and installs
     include_prereleases: bool = False     # If True, newest release by date (inc. pre-releases) is used
+
+    @property
+    def upstream_url(self) -> Optional[str]:
+        if self.github_repo:
+            return f"https://github.com/{self.github_repo}"
+        if self.nexus_mod_id:
+            return f"https://www.nexusmods.com/{self.nexus_game_domain}/mods/{self.nexus_mod_id}"
+        return None
 
 
 @dataclass
@@ -107,13 +115,12 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
         tool_id="radium",
         display_name="Radium Textures",
         description="Rust alternative to VRAMr for Skyrim and Fallout 4 texture optimisation. Run directly against mod files.",
-        github_repo="SulfurNitride/Radium-Textures",
+        github_repo=None,
         asset_patterns=[r"radium.*linux.*x86_64", r"radium.*\.tar\.gz", r"radium.*\.zip"],
-        executable_names=["radium", "radium-textures"],
+        executable_names=["radium-textures", "radium"],
         tier=2,
         can_launch=True,
         nexus_mod_id=1660,
-        nexus_file_filter="linux",
     ),
 ]
 
@@ -145,8 +152,38 @@ def set_active_engine_id(tool_id: str) -> None:
 
 
 # -- remote manifest ---------------------------------------------------------
-TOOL_MANIFEST_URL = "https://raw.githubusercontent.com/Omni-guides/Jackify/main/tools_manifest.json"
+TOOL_MANIFEST_URL = "https://raw.githubusercontent.com/Omni-guides/Jackify/main/manifests/tools_manifest.json"
 _BUNDLED_MANIFEST_PATH = Path(__file__).parent / "tools_manifest.json"
+
+
+def _disk_cache_path() -> Path:
+    from jackify.shared.paths import get_jackify_data_dir
+    return get_jackify_data_dir() / "manifests" / "tools_manifest.json"
+
+
+def _save_disk_cache(entries: list) -> None:
+    import tempfile
+    path = _disk_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tools_manifest_", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(entries, fh, indent=2)
+        os.replace(tmp, path)
+    except Exception as e:
+        logger.debug("Tool manifest disk save failed: %s", e)
+
+
+def _load_disk_cache() -> Optional[List[ToolDefinition]]:
+    path = _disk_cache_path()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            entries = json.load(fh)
+        if isinstance(entries, list):
+            return _parse_manifest_entries(entries)
+    except Exception:
+        pass
+    return None
 
 
 def _parse_manifest_entries(entries: list) -> Optional[List[ToolDefinition]]:
@@ -157,7 +194,7 @@ def _parse_manifest_entries(entries: list) -> Optional[List[ToolDefinition]]:
                 tool_id=entry["tool_id"],
                 display_name=entry["display_name"],
                 description=entry["description"],
-                github_repo=entry["github_repo"],
+                github_repo=entry.get("github_repo"),
                 asset_patterns=entry["asset_patterns"],
                 tier=entry.get("tier", 2),
                 executable_names=entry.get("executable_names", []),
@@ -199,15 +236,22 @@ def fetch_remote_manifest() -> Optional[List[ToolDefinition]]:
         entries = resp.json()
         if not isinstance(entries, list):
             return None
+        _save_disk_cache(entries)
         return _parse_manifest_entries(entries)
     except Exception as e:
         logger.debug("Tool manifest fetch failed: %s", e)
         return None
 
+
 def get_effective_definitions() -> List[ToolDefinition]:
-    """Remote manifest definitions if fetched this session, else baked-in TOOL_DEFINITIONS."""
-    source = _manifest_cache if _manifest_cache is not None else TOOL_DEFINITIONS
-    return [d for d in source if not d.hidden]
+    """Remote manifest definitions if fetched this session, else disk cache, else bundled."""
+    if _manifest_cache is not None:
+        return [d for d in _manifest_cache if not d.hidden]
+    disk = _load_disk_cache()
+    if disk is not None:
+        return [d for d in disk if not d.hidden]
+    return [d for d in TOOL_DEFINITIONS if not d.hidden]
+
 
 def apply_remote_manifest(definitions: List[ToolDefinition]) -> None:
     """Store fetched manifest as session cache and rebuild the tool map."""
@@ -290,7 +334,7 @@ def fetch_release_list(github_repo: str, max_count: int = 10) -> List[dict]:
         resp.raise_for_status()
         return resp.json()
     except Exception as e:
-        logger.debug("Release list fetch failed for %s: %s", github_repo, e)
+        logger.warning("Release list fetch failed for %s: %s", github_repo, e)
         return []
 
 
@@ -341,38 +385,81 @@ def _verify_sha256_sums(sums_path: Path, target_path: Path) -> Tuple[bool, str]:
         return False, f"SHA256 verification error: {e}"
 
 
-def _extract_archive(file_path: Path, target_dir: Path) -> Tuple[bool, str]:
-    """Extract an archive or chmod an AppImage in place. Removes the archive on success."""
+def _find_7z_binary() -> Optional[str]:
+    """Return path to 7z binary: bundled first, then system."""
+    import shutil
+    candidates = [
+        Path(__file__).parent.parent.parent / "tools" / "7z",
+    ]
+    appdir = os.environ.get("APPDIR")
+    if appdir:
+        candidates.insert(0, Path(appdir) / "opt" / "jackify" / "tools" / "7z")
+    for c in candidates:
+        if c.is_file() and os.access(c, os.X_OK):
+            return str(c)
+    return shutil.which("7z") or shutil.which("7zz")
+
+
+def _extract_archive(file_path: Path, target_dir: Path, delete_archive: bool = True) -> Tuple[bool, str]:
+    """Extract an archive or chmod an AppImage in place.
+
+    Deletes the archive after successful extraction unless delete_archive=False.
+    Never deletes the archive on failure.
+    """
+    import subprocess
     name_lower = file_path.name.lower()
-    is_archive = False
+    extracted = False
     try:
         if name_lower.endswith(".tar.gz") or name_lower.endswith(".tgz"):
-            is_archive = True
             with tarfile.open(file_path, "r:gz") as tf:
                 tf.extractall(path=target_dir)
+            extracted = True
         elif name_lower.endswith(".zip"):
-            is_archive = True
             with zipfile.ZipFile(file_path, "r") as zf:
                 zf.extractall(path=target_dir)
+            extracted = True
+        elif name_lower.endswith(".7z"):
+            sevenzip = _find_7z_binary()
+            if not sevenzip:
+                return False, "7z binary not found - cannot extract .7z archive"
+            result = subprocess.run(
+                [sevenzip, "x", str(file_path), f"-o{target_dir}", "-y"],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                return False, f"7z extraction failed: {result.stderr.strip() or result.stdout.strip()}"
+            extracted = True
         elif name_lower.endswith(".appimage"):
             file_path.chmod(0o755)
         else:
             return False, f"Unsupported format: {file_path.name}"
     finally:
-        if is_archive:
+        if extracted and delete_archive:
             try:
                 file_path.unlink(missing_ok=True)
             except Exception:
                 pass
-    if is_archive:
+    if extracted:
         _chmod_elf_binaries(target_dir)
     return True, ""
 
 
+def _extract_nested_archives(directory: Path) -> None:
+    """Extract any zip/tar.gz/7z files sitting directly inside directory, then delete them."""
+    for child in list(directory.iterdir()):
+        if not child.is_file():
+            continue
+        name_lower = child.name.lower()
+        if any(name_lower.endswith(ext) for ext in (".zip", ".tar.gz", ".tgz", ".7z")):
+            ok, err = _extract_archive(child, directory, delete_archive=True)
+            if not ok:
+                logger.warning("Nested archive extraction failed for %s: %s", child.name, err)
+
+
 def _chmod_elf_binaries(directory: Path) -> None:
-    """Set executable bit on any ELF binaries found directly in directory."""
+    """Set executable bit on any ELF binaries found in directory tree."""
     ELF_MAGIC = b'\x7fELF'
-    for f in directory.iterdir():
+    for f in directory.rglob("*"):
         if not f.is_file():
             continue
         try:
@@ -422,10 +509,20 @@ def _download_and_extract(
     return _extract_archive(temp_path, target_dir)
 
 
-def _try_nexus_download(defn: ToolDefinition, target_dir: Path) -> Tuple[bool, Optional[Path], str]:
-    """Attempt Nexus CDN download for premium users. Returns (success, file_path, message)."""
+_NEXUS_NOT_ELIGIBLE = "NEXUS_NOT_ELIGIBLE"
+
+
+def _try_nexus_download(defn: ToolDefinition, target_dir: Path) -> Tuple[bool, Optional[Path], str, Optional[str]]:
+    """Attempt Nexus CDN download for premium users.
+
+    Returns (success, file_path, message, version).
+    message is _NEXUS_NOT_ELIGIBLE when the user is not authenticated or not premium,
+    indicating a manual download dialog should be offered. Any other failure message
+    means the user is premium but the download itself failed.
+    version is the Nexus file version string on success, None otherwise.
+    """
     if not defn.nexus_mod_id:
-        return False, None, "No Nexus mod configured"
+        return False, None, _NEXUS_NOT_ELIGIBLE, None
     try:
         from jackify.backend.services.nexus_auth_service import NexusAuthService
         from jackify.backend.services.nexus_premium_service import NexusPremiumService
@@ -433,19 +530,24 @@ def _try_nexus_download(defn: ToolDefinition, target_dir: Path) -> Tuple[bool, O
         auth = NexusAuthService()
         token = auth.get_auth_token()
         if not token:
-            return False, None, "No Nexus auth token"
+            return False, None, _NEXUS_NOT_ELIGIBLE, None
         is_oauth = auth.get_auth_method() == "oauth"
         is_premium, _ = NexusPremiumService().check_premium_status(token, is_oauth=is_oauth)
         if not is_premium:
-            return False, None, "Not Nexus Premium"
-        ok, path, msg = NexusDownloadService(token).download_latest_file(
+            return False, None, _NEXUS_NOT_ELIGIBLE, None
+        svc = NexusDownloadService(token)
+        nexus_version = svc.get_latest_file_version(
+            defn.nexus_game_domain, defn.nexus_mod_id,
+            file_name_filter=defn.nexus_file_filter,
+        )
+        ok, path, msg = svc.download_latest_file(
             defn.nexus_game_domain, defn.nexus_mod_id, target_dir,
             file_name_filter=defn.nexus_file_filter,
         )
-        return ok, path, msg
+        return ok, path, msg, nexus_version if ok else None
     except Exception as e:
-        logger.debug("Nexus download attempt failed for %s: %s", defn.tool_id, e)
-        return False, None, str(e)
+        logger.warning("Nexus download failed for %s: %s", defn.tool_id, e)
+        return False, None, str(e), None
 
 
 def _find_executable(tool_def: ToolDefinition, search_dir: Path) -> Optional[Path]:
@@ -474,12 +576,32 @@ class ToolRegistry:
     def get_all_statuses(self) -> List[ToolStatus]:
         return [self._build_status(d) for d in get_effective_definitions()]
 
+    def _check_latest_nexus_version(self, defn: ToolDefinition) -> Optional[str]:
+        try:
+            from jackify.backend.services.nexus_auth_service import NexusAuthService
+            from jackify.backend.services.nexus_download_service import NexusDownloadService
+            auth = NexusAuthService()
+            token = auth.get_auth_token()
+            if not token:
+                return None
+            return NexusDownloadService(token).get_latest_file_version(
+                defn.nexus_game_domain, defn.nexus_mod_id,
+                file_name_filter=defn.nexus_file_filter,
+            )
+        except Exception as e:
+            logger.debug("Nexus version check failed for %s: %s", defn.tool_id, e)
+            return None
+
     def check_latest_version(self, tool_id: str) -> Optional[str]:
         defn = _TOOL_MAP.get(tool_id)
         if defn is None:
             return None
         if defn.pinned_version:
             return defn.pinned_version
+        if not defn.github_repo:
+            if defn.nexus_mod_id:
+                return self._check_latest_nexus_version(defn)
+            return None
         if defn.include_prereleases:
             releases = fetch_release_list(defn.github_repo, max_count=5)
             if releases:
@@ -504,10 +626,20 @@ class ToolRegistry:
         install_dir.mkdir(parents=True, exist_ok=True)
 
         pin = version or defn.pinned_version
-        nexus_ok, nexus_path, _ = _try_nexus_download(defn, install_dir) if not version else (False, None, "")
+        nexus_ok, nexus_path, nexus_msg, nexus_version = _try_nexus_download(defn, install_dir) if not version else (False, None, _NEXUS_NOT_ELIGIBLE, None)
         if nexus_ok and nexus_path:
             ok, err = _extract_archive(nexus_path, install_dir)
-            tag = pin or "nexus"
+            if ok:
+                _extract_nested_archives(install_dir)
+            tag = pin or nexus_version or "nexus"
+        elif not defn.github_repo:
+            if nexus_msg == _NEXUS_NOT_ELIGIBLE:
+                nexus_url = (
+                    f"https://www.nexusmods.com/{defn.nexus_game_domain}/mods/{defn.nexus_mod_id}"
+                    if defn.nexus_mod_id else ""
+                )
+                return False, f"NEXUS_MANUAL_REQUIRED:{nexus_url}"
+            return False, nexus_msg or f"Failed to download {defn.display_name} from Nexus"
         else:
             if defn.include_prereleases and not pin:
                 releases = fetch_release_list(defn.github_repo, max_count=5)
@@ -544,6 +676,38 @@ class ToolRegistry:
 
         logger.info("Installed %s %s", defn.display_name, tag)
         return True, f"{defn.display_name} {tag} installed"
+
+    def install_from_archive(self, tool_id: str, archive_path: Path) -> Tuple[bool, str]:
+        """Install a tool from a locally downloaded archive (manual download fallback)."""
+        defn = _TOOL_MAP.get(tool_id)
+        if defn is None:
+            return False, f"Unknown tool: {tool_id}"
+
+        install_dir = TOOLS_BASE_DIR / tool_id
+        install_dir.mkdir(parents=True, exist_ok=True)
+
+        ok, err = _extract_archive(archive_path, install_dir, delete_archive=False)
+        if not ok:
+            return False, err
+
+        _extract_nested_archives(install_dir)
+        exe_path = _find_executable(defn, install_dir)
+        if exe_path:
+            try:
+                os.chmod(exe_path, 0o755)
+            except Exception:
+                pass
+
+        manifest = _read_manifest(tool_id)
+        _write_manifest(tool_id, {
+            "installed_version": "manual",
+            "previous_version": manifest.get("installed_version"),
+            "binary_path": str(exe_path) if exe_path else None,
+            "install_dir": str(install_dir),
+        })
+
+        logger.info("Installed %s from local archive %s", defn.display_name, archive_path.name)
+        return True, f"{defn.display_name} installed"
 
     def update(self, tool_id: str) -> Tuple[bool, str]:
         defn = _TOOL_MAP.get(tool_id)

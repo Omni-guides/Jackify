@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from ..handlers.ui_colors import COLOR_ERROR, COLOR_INFO, COLOR_RESET
+from jackify.shared.colors import COLOR_ERROR, COLOR_INFO, COLOR_RESET
 
 logger = logging.getLogger(__name__)
 

@@ -39,7 +39,7 @@ class ShortcutLaunchOptionsMixin:
     def ensure_mounts_in_steam_compat(self, app_name: str, exe_path: str, *paths: str) -> str:
         """Add mountpoints of any supplied paths to STEAM_COMPAT_MOUNTS if not already present.
 
-        Reads existing launch options and appends only what is missing — never overwrites
+        Reads existing launch options and appends only what is missing - never overwrites
         unrelated options. Adds the top-level directory of each path so Proton's container
         can bind-mount the subtree into the prefix.
 
@@ -47,11 +47,11 @@ class ShortcutLaunchOptionsMixin:
         can stop Steam first, call apply_pending_mounts_update(), then restart Steam.
 
         Returns:
-            "unchanged"     — mounts already correct, no action needed
-            "updated"       — Steam was not running; write succeeded
-            "steam_running" — changes needed but deferred; call apply_pending_mounts_update()
+            "unchanged"     - mounts already correct, no action needed
+            "updated"       - Steam was not running; write succeeded
+            "steam_running" - changes needed but deferred; call apply_pending_mounts_update()
                               after stopping Steam
-            "failed"        — shortcut not found or write error
+            "failed"        - shortcut not found or write error
         """
         import re
         from pathlib import Path as _Path
@@ -110,7 +110,7 @@ class ShortcutLaunchOptionsMixin:
             steam_running = False
 
         if steam_running:
-            # Defer the write — Steam holds shortcuts.vdf in memory and would clobber it.
+            # Defer the write - Steam holds shortcuts.vdf in memory and would clobber it.
             # Store the pending options so the GUI can stop Steam, apply, then restart.
             self._pending_mounts_app_name = app_name
             self._pending_mounts_exe_path = exe_path

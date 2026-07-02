@@ -30,6 +30,7 @@ from ..utils import set_responsive_minimum, browse_directory
 from ..widgets.file_progress_list import FileProgressList
 from ..widgets.progress_indicator import OverallProgressIndicator
 from .screen_back_mixin import ScreenBackMixin
+from ..mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ class WabbajackInstallerWorker(QThread):
             self.installation_complete.emit(False, error_msg or "Installation failed", "", "", "")
 
 
-class WabbajackInstallerScreen(ScreenBackMixin, FocusReclaimMixin, QWidget):
+class WabbajackInstallerScreen(ThreadLifecycleMixin, ScreenBackMixin, FocusReclaimMixin, QWidget):
     """Wabbajack installer GUI screen following standard Jackify layout"""
 
     resize_request = Signal(str)
@@ -389,14 +390,13 @@ class WabbajackInstallerScreen(ScreenBackMixin, FocusReclaimMixin, QWidget):
         # Get shortcut name
         self.shortcut_name = self.shortcut_name_edit.text().strip() or "Wabbajack"
 
-        # Confirm with user (standard dialog - no safety countdown needed for this operation)
         confirm = MessageService.question(
             self,
             "Confirm Installation",
             f"Install Wabbajack to:\n{self.install_folder}\n\n"
             "This will download Wabbajack, add to Steam, install WebView2,\n"
             "and configure the Wine prefix automatically.\n\n"
-            "Steam will be restarted during installation.\n\n"
+            "Warning: Steam will be restarted during installation - this will close any running game.\n\n"
             "Continue?",
             safety_level="medium",
         )
@@ -620,15 +620,6 @@ class WabbajackInstallerScreen(ScreenBackMixin, FocusReclaimMixin, QWidget):
 
     def cleanup_processes(self):
         self._stop_focus_reclaim()
-        if self.worker is not None:
-            try:
-                if self.worker.isRunning():
-                    self.worker.requestInterruption()
-                    self.worker.wait(5000)
-                self.worker.deleteLater()
-            except Exception:
-                pass
-            self.worker = None
 
     def showEvent(self, event):
         """Called when widget becomes visible"""

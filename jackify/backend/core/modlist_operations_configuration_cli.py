@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from ..handlers.ui_colors import (
+from jackify.shared.colors import (
     COLOR_PROMPT,
     COLOR_RESET,
     COLOR_INFO,

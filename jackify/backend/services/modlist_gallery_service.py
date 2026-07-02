@@ -30,12 +30,12 @@ class ModlistGalleryService:
 
     # REMOVED: CACHE_VALIDITY_DAYS - metadata is now always fetched fresh from engine
     # Images are still cached indefinitely (managed separately)
-    # CRITICAL: Thread lock to prevent concurrent engine calls that could cause recursive spawning
     _engine_call_lock = threading.Lock()
 
     def __init__(self):
         """Initialize the gallery service"""
         self.config_handler = ConfigHandler()
+        self._engine_process: Optional[subprocess.Popen] = None
         # Cache directories in Jackify Data Directory
         jackify_data_dir = get_jackify_data_dir()
         self.CACHE_DIR = jackify_data_dir / "modlist-cache" / "metadata"
@@ -47,6 +47,15 @@ class ModlistGalleryService:
         self._tag_mapping_lookup: Optional[Dict[str, str]] = None
         self._allowed_tags_cache: Optional[set] = None
         self._allowed_tags_lookup: Optional[Dict[str, str]] = None
+
+    def cancel(self) -> None:
+        """Kill any in-progress engine call. Safe to call from any thread."""
+        proc = self._engine_process
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
     def _ensure_cache_dirs(self):
         """Create cache directories if they don't exist"""
@@ -125,20 +134,28 @@ class ModlistGalleryService:
             from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
             clean_env = get_clean_subprocess_env()
 
-            result = subprocess.run(
+            self._engine_process = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=300,  # 5 minute timeout for large data
-                env=clean_env
+                env=clean_env,
             )
+            try:
+                stdout_data, stderr_data = self._engine_process.communicate(timeout=300)
+                returncode = self._engine_process.returncode
+            except subprocess.TimeoutExpired:
+                self._engine_process.kill()
+                raise RuntimeError("jackify-engine timed out")
+            finally:
+                self._engine_process = None
 
-            if result.returncode != 0:
-                raise RuntimeError(f"jackify-engine failed: {result.stderr}")
+            if returncode != 0:
+                raise RuntimeError(f"jackify-engine failed: {stderr_data}")
 
             # Parse JSON response - skip progress messages and extract JSON
             # jackify-engine prints progress to stdout before the JSON
-            stdout = result.stdout.strip()
+            stdout = stdout_data.strip()
 
             # Find the start of JSON (first '{' on its own line)
             lines = stdout.split('\n')

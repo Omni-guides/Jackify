@@ -6,7 +6,6 @@ Engines show Set Active / Active badge; tools with can_launch show Launch.
 """
 
 import logging
-import subprocess
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -16,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from jackify.backend.services.tool_registry import ToolRegistry, ToolStatus, set_active_engine_id
-from jackify.frontends.gui.services.message_service import MessageService
+from jackify.frontends.gui.services.message_service import MessageService, open_url
 from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
 
 logger = logging.getLogger(__name__)
@@ -27,6 +26,12 @@ _C_LAUNCH     = "#1a5fa8"
 _C_SET_ACTIVE = "#4a5568"
 _C_BACK       = "#4a5568"
 _C_DISABLED   = "#333"
+
+_STYLE_BTN_INVISIBLE = (
+    "QPushButton { background: transparent; border: none; color: transparent; "
+    "font-size: 11px; font-weight: bold; padding: 4px 8px; min-width: 90px; }"
+    "QPushButton:hover { background: transparent; }"
+)
 
 _BADGE_NOT_INSTALLED = ("#555", "#ccc")
 _BADGE_UP_TO_DATE    = ("#1a3545", "#5fb8c8")
@@ -78,7 +83,18 @@ class ToolCard(QFrame):
 
         info_col = QVBoxLayout()
         info_col.setSpacing(2)
-        self._name_label = QLabel(f"<b>{status.definition.display_name}</b>")
+        url = status.definition.upstream_url
+        if url:
+            name_html = (
+                f'<a href="{url}" style="color: #e0e0e0; text-decoration: none; font-weight: bold;">'
+                f'{status.definition.display_name}</a>'
+            )
+        else:
+            name_html = f"<b>{status.definition.display_name}</b>"
+        self._name_label = QLabel(name_html)
+        self._name_label.setTextFormat(Qt.RichText)
+        self._name_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self._name_label.linkActivated.connect(self._open_url)
         self._name_label.setStyleSheet("color: #e0e0e0; font-size: 13px; background: transparent; border: none;")
         info_col.addWidget(self._name_label)
         desc_label = QLabel(status.definition.description)
@@ -118,7 +134,6 @@ class ToolCard(QFrame):
         btn_col.addWidget(self._btn_primary)
         self._btn_update = QPushButton("Update")
         self._btn_update.setFixedWidth(100)
-        self._btn_update.setVisible(False)
         self._btn_update.clicked.connect(lambda: self.action_requested.emit(self._tool_id, "update"))
         btn_col.addWidget(self._btn_update)
         self._btn_more = QPushButton("...")
@@ -150,7 +165,10 @@ class ToolCard(QFrame):
             self._btn_primary.setText(self._busy_label or "Working...")
             self._btn_primary.setEnabled(False)
             self._btn_primary.setVisible(True)
-            self._btn_update.setVisible(False)
+            self._btn_update.setStyleSheet(
+                _STYLE_BTN_INVISIBLE
+            )
+            self._btn_update.setEnabled(False)
             self._btn_more.setEnabled(False)
             return
 
@@ -170,9 +188,7 @@ class ToolCard(QFrame):
 
         iv = self._status.installed_version or "-"
         lv = self._status.latest_version or "checking..."
-        self._version_label.setText(
-            f"Installed: {iv}\nLatest: {lv}" if installed else f"Latest: {lv}"
-        )
+        self._version_label.setText(f"Installed: {iv}\nLatest: {lv}")
 
         if not installed:
             self._btn_primary.setText("Install")
@@ -197,9 +213,14 @@ class ToolCard(QFrame):
         else:
             self._btn_primary.setVisible(False)
 
-        self._btn_update.setVisible(installed and update_avail and not self._busy)
-        if installed and update_avail:
+        if installed and update_avail and not self._busy:
             self._btn_update.setStyleSheet(btn_style(_C_UPDATE))
+            self._btn_update.setEnabled(True)
+        else:
+            self._btn_update.setStyleSheet(
+                _STYLE_BTN_INVISIBLE
+            )
+            self._btn_update.setEnabled(False)
         self._btn_more.setEnabled(not self._busy)
 
     def set_latest_version(self, tag: str) -> bool:
@@ -289,6 +310,9 @@ class ToolCard(QFrame):
             else:
                 self._launch()
 
+    def _open_url(self, url: str):
+        open_url(url)
+
     def _launch(self):
         binary = ToolRegistry().get_binary_path(self._tool_id)
         if not binary:
@@ -313,13 +337,18 @@ class ToolCard(QFrame):
             "QMenu::item:disabled { color: #555; }"
         )
         defn = self._status.definition
+        upstream_action = menu.addAction("Open Website")
+        upstream_action.setEnabled(bool(defn.upstream_url))
+        menu.addSeparator()
         downgrade_action = menu.addAction("Change Version")
         downgrade_action.setEnabled(self._status.can_downgrade and not self._busy)
         uninstall_action = menu.addAction("Uninstall")
         uninstall_action.setEnabled(defn.can_uninstall and self._status.installed and not self._busy)
 
         chosen = menu.exec(self._btn_more.mapToGlobal(self._btn_more.rect().bottomLeft()))
-        if chosen == downgrade_action and downgrade_action.isEnabled():
+        if chosen == upstream_action and defn.upstream_url:
+            self._open_url(defn.upstream_url)
+        elif chosen == downgrade_action and downgrade_action.isEnabled():
             self.action_requested.emit(self._tool_id, "downgrade")
         elif chosen == uninstall_action and uninstall_action.isEnabled():
             QTimer.singleShot(0, lambda: self._prompt_uninstall(defn.display_name))

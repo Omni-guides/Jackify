@@ -371,29 +371,89 @@ class NativeComponentInstaller:
             return False
 
         syswow64, system32 = self._get_system_dirs()
-        # x86 inner cab is 'a10', x64 inner cab is 'a12'
+
+        # DLL overrides must be written before the installer runs so Wine picks them up
+        self._apply_dll_overrides()
+
+        env = self._wine_env_base()
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            for exe, cab, dest, dlls in [(x86, 'a10', syswow64, _VCRUN2022_DLLS_X86),
-                                         (x64, 'a12', system32, _VCRUN2022_DLLS_X64)]:
-                arch_tmp = Path(tmpdir) / cab
-                arch_tmp.mkdir()
-                subprocess.run([cabextract, '-d', str(arch_tmp), '-F', cab, str(exe)], capture_output=True)
-                inner_cab = arch_tmp / cab
-                if not inner_cab.is_file():
-                    self.logger.error("vcrun2022: inner cab '%s' not found in %s", cab, exe.name)
-                    return False
-                for dll_name in dlls:
-                    subprocess.run([cabextract, '-d', str(dest), '-F', dll_name, str(inner_cab)], capture_output=True)
-                if not (dest / 'msvcp140.dll').is_file():
-                    self.logger.error("vcrun2022: msvcp140.dll not extracted to %s", dest)
-                    return False
+            tmpdir_path = Path(tmpdir)
+
+            # x86: pre-extract msvcp140.dll before running the installer.
+            # Wine's builtin msvcp140 reports a higher version number so the installer
+            # skips it without this manual extraction (Wine bug #57518).
+            win32_tmp = tmpdir_path / 'win32'
+            win32_tmp.mkdir()
+            subprocess.run(
+                [cabextract, '-d', str(win32_tmp), '-F', 'a10', str(x86)],
+                capture_output=True,
+            )
+            inner_x86 = win32_tmp / 'a10'
+            if inner_x86.is_file():
+                subprocess.run(
+                    [cabextract, '-d', str(syswow64), '-F', 'msvcp140.dll', str(inner_x86)],
+                    capture_output=True,
+                )
+            else:
+                self.logger.warning("vcrun2022: x86 inner cab 'a10' not found, msvcp140.dll pre-extraction skipped")
+
+            self.logger.info("vcrun2022: running x86 installer")
+            r = subprocess.run(
+                [self.wine_binary, str(x86), '/q'],
+                env=env,
+                capture_output=True,
+                timeout=600,
+            )
+            # 3010 = reboot required - normal for VC redist, treat as success
+            if r.returncode not in (0, 3010):
+                self.logger.error("vcrun2022: x86 installer failed (rc=%d)", r.returncode)
+                self.logger.debug("vcrun2022 x86 stderr: %s", r.stderr.decode(errors='replace'))
+                return False
+
+            # x64: same msvcp140.dll pre-extraction workaround
+            win64_tmp = tmpdir_path / 'win64'
+            win64_tmp.mkdir()
+            subprocess.run(
+                [cabextract, '-d', str(win64_tmp), '-F', 'a12', str(x64)],
+                capture_output=True,
+            )
+            inner_x64 = win64_tmp / 'a12'
+            if inner_x64.is_file():
+                subprocess.run(
+                    [cabextract, '-d', str(system32), '-F', 'msvcp140.dll', str(inner_x64)],
+                    capture_output=True,
+                )
+            else:
+                self.logger.warning("vcrun2022: x64 inner cab 'a12' not found, msvcp140.dll pre-extraction skipped")
+
+            self.logger.info("vcrun2022: running x64 installer")
+            r = subprocess.run(
+                [self.wine_binary, str(x64), '/q'],
+                env=env,
+                capture_output=True,
+                timeout=600,
+            )
+            if r.returncode not in (0, 3010):
+                self.logger.error("vcrun2022: x64 installer failed (rc=%d)", r.returncode)
+                self.logger.debug("vcrun2022 x64 stderr: %s", r.stderr.decode(errors='replace'))
+                return False
+
+        critical = [
+            (syswow64 / 'msvcp140.dll',       'msvcp140.dll (x86)'),
+            (syswow64 / 'vcruntime140.dll',    'vcruntime140.dll (x86)'),
+            (system32 / 'msvcp140.dll',        'msvcp140.dll (x64)'),
+            (system32 / 'vcruntime140.dll',    'vcruntime140.dll (x64)'),
+            (system32 / 'vcruntime140_1.dll',  'vcruntime140_1.dll (x64)'),
+        ]
+        for path, label in critical:
+            if not path.is_file():
+                self.logger.error("vcrun2022: %s missing after install", label)
+                return False
+
         return True
 
     def _install_vcrun2012(self) -> bool:
-        cabextract = self._get_cabextract()
-        if not cabextract:
-            self.logger.warning("cabextract not available for vcrun2012")
-            return False
         cache_dir = get_jackify_data_dir() / 'component_cache' / 'vcrun2012'
         cache_dir.mkdir(parents=True, exist_ok=True)
         x86 = cache_dir / 'vcredist_x86.exe'
@@ -402,24 +462,38 @@ class NativeComponentInstaller:
             return False
         if not self._download_file(_VCRUN2012_X64_URL, x64):
             return False
+
+        self._apply_dll_overrides()
+
+        env = self._wine_env_base()
         syswow64, system32 = self._get_system_dirs()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for exe, dest in [(x86, syswow64), (x64, system32)]:
-                for cab_name in ('a2', 'a3'):
-                    td = Path(tmpdir) / (exe.stem + cab_name)
-                    td.mkdir()
-                    subprocess.run([cabextract, '-d', str(td), '-F', cab_name, str(exe)], capture_output=True)
-                    inner = td / cab_name
-                    if not inner.is_file():
-                        continue
-                    dd = td / 'x'
-                    dd.mkdir()
-                    subprocess.run([cabextract, '-d', str(dd), '-L', '-F', 'F_CENTRAL_*', str(inner)], capture_output=True)
-                    for src in dd.iterdir():
-                        if src.name.startswith('f_central_'):
-                            shutil.copy2(src, dest / (src.name[10:].rsplit('_', 1)[0] + '.dll'))
+
+        self.logger.info("vcrun2012: running x86 installer")
+        r = subprocess.run(
+            [self.wine_binary, str(x86), '/q'],
+            env=env,
+            capture_output=True,
+            timeout=300,
+        )
+        if r.returncode not in (0, 3010):
+            self.logger.error("vcrun2012: x86 installer failed (rc=%d)", r.returncode)
+            self.logger.debug("vcrun2012 x86 stderr: %s", r.stderr.decode(errors='replace'))
+            return False
+
+        self.logger.info("vcrun2012: running x64 installer")
+        r = subprocess.run(
+            [self.wine_binary, str(x64), '/q'],
+            env=env,
+            capture_output=True,
+            timeout=300,
+        )
+        if r.returncode not in (0, 3010):
+            self.logger.error("vcrun2012: x64 installer failed (rc=%d)", r.returncode)
+            self.logger.debug("vcrun2012 x64 stderr: %s", r.stderr.decode(errors='replace'))
+            return False
+
         if not (syswow64 / 'msvcr110.dll').is_file():
-            self.logger.error("vcrun2012: msvcr110.dll not extracted to syswow64")
+            self.logger.error("vcrun2012: msvcr110.dll missing after install")
             return False
         return True
 

@@ -8,7 +8,7 @@ from typing import Optional, Dict, List, Any, Union
 from .protontricks_handler import ProtontricksHandler
 from .shortcut_handler import ShortcutHandler
 from .menu_handler import MenuHandler, ModlistMenuHandler
-from .ui_colors import COLOR_PROMPT, COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_SUCCESS, COLOR_WARNING, COLOR_SELECTION
+from jackify.shared.colors import COLOR_PROMPT, COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_SUCCESS, COLOR_WARNING, COLOR_SELECTION
 # Standard logging (no file handler) - LoggingHandler import removed
 import re
 import subprocess
@@ -20,7 +20,7 @@ import time
 import pty
 
 # Import UI Colors first - these should always be available
-from .ui_colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_ERROR, COLOR_SELECTION, COLOR_WARNING
+from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_ERROR, COLOR_SELECTION, COLOR_WARNING
 
 # Standard logging (no file handler) - LoggingHandler import removed
 

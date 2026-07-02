@@ -17,7 +17,7 @@ from pathlib import Path
 import glob  # Add for the simpler tab completion
 
 # Import colors from the new central location
-from .ui_colors import (
+from jackify.shared.colors import (
     COLOR_PROMPT, COLOR_SELECTION, COLOR_RESET, COLOR_INFO, COLOR_ERROR,
     COLOR_SUCCESS, COLOR_WARNING, COLOR_DISABLED, COLOR_ACTION, COLOR_INPUT
 )

@@ -310,7 +310,12 @@ def main(initial_nxm_url: str = ""):
 
     # Global cleanup function for signal handling
     def emergency_cleanup():
-        logger.debug("Cleanup: terminating jackify-engine processes")
+        logger.debug("Cleanup: draining QThreads and terminating jackify-engine processes")
+        try:
+            from jackify.frontends.gui.mixins.thread_registry import drain_all_threads
+            drain_all_threads(timeout_ms=5000)
+        except Exception:
+            pass
         try:
             import subprocess
             subprocess.run(['pkill', '-f', 'jackify-engine'], timeout=5, capture_output=True)
@@ -389,6 +394,7 @@ def main(initial_nxm_url: str = ""):
     # Start background update check after window is shown
     window._check_for_updates_on_startup()
     window._check_tool_updates_on_startup()
+    window._prefetch_manifests_on_startup()
 
     if initial_nxm_url:
         from PySide6.QtCore import QTimer
@@ -397,7 +403,12 @@ def main(initial_nxm_url: str = ""):
     # Ensure cleanup on exit
     import atexit
     atexit.register(emergency_cleanup)
-    
+    try:
+        from jackify.frontends.gui.mixins.thread_registry import drain_all_threads
+        app.aboutToQuit.connect(lambda: drain_all_threads(timeout_ms=8000))
+    except Exception:
+        pass
+
     return app.exec()
 
 if __name__ == "__main__":

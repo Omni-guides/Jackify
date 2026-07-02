@@ -1,4 +1,5 @@
 # Copy of ConfigureNewModlistScreen, adapted for existing modlists
+import warnings
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
@@ -58,7 +59,6 @@ class ConfigureExistingModlistScreen(
         super().hideEvent(event)
 
     def cleanup_processes(self):
-        """Clean up any running processes when the window closes or is cancelled"""
         if getattr(self, '_vnv_controller', None) is not None:
             try:
                 self._vnv_controller.cleanup()
@@ -67,7 +67,6 @@ class ConfigureExistingModlistScreen(
                 pass
         if hasattr(self, 'file_progress_list'):
             self.file_progress_list.stop_cpu_tracking()
-        self._park_all_threads()
 
     def cancel_and_cleanup(self):
         """Handle Cancel button - clean up processes and go back"""
@@ -91,7 +90,7 @@ class ConfigureExistingModlistScreen(
                 main_window.setMaximumSize(QSize(16777215, 16777215))
                 set_responsive_minimum(main_window, min_width=960, min_height=420)
         except Exception as e:
-            print(f"Warning: Failed to set initial collapsed state: {e}")
+            logger.warning(f"Failed to set initial collapsed state: {e}")
 
         # Shortcut loading is handled by reset_screen_to_defaults() → refresh_modlist_list()
         # which fires via _debug_screen_change on every navigation to this screen.
@@ -183,11 +182,13 @@ class ConfigureExistingModlistScreen(
         if not hasattr(self, 'config_thread') or self.config_thread is None:
             return
 
-        for sig_name in ('progress_update', 'configuration_complete', 'error_occurred', 'steam_restart_needed'):
-            try:
-                getattr(self.config_thread, sig_name).disconnect()
-            except (RuntimeError, TypeError, AttributeError):
-                pass
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            for sig_name in ('progress_update', 'configuration_complete', 'error_occurred', 'steam_restart_needed'):
+                try:
+                    getattr(self.config_thread, sig_name).disconnect()
+                except (RuntimeError, TypeError, AttributeError):
+                    pass
 
         if self.config_thread.isRunning():
             self.config_thread.quit()

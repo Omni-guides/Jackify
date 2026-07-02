@@ -25,6 +25,7 @@ from typing import Optional, Callable
 from ..handlers.subprocess_utils import get_clean_subprocess_env
 from .nexus_download_service import NexusDownloadService
 from .nexus_auth_service import NexusAuthService
+from .tool_registry import _find_7z_binary
 
 logger = logging.getLogger(__name__)
 
@@ -140,8 +141,11 @@ class VNVPostInstallService:
                 with zipfile.ZipFile(archive_path, 'r') as zip_ref:
                     zip_ref.extractall(extract_dir)
             elif suffix == ".7z":
+                sevenzip = _find_7z_binary()
+                if not sevenzip:
+                    return False, None, "7z binary not found (bundled copy missing and no system 7z/7zz on PATH)"
                 result = subprocess.run(
-                    ["7z", "x", "-y", f"-o{extract_dir}", str(archive_path)],
+                    [sevenzip, "x", "-y", f"-o{extract_dir}", str(archive_path)],
                     capture_output=True,
                     text=True,
                     check=False,

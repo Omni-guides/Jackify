@@ -6,6 +6,7 @@ worker thread management, and completion callbacks.
 """
 
 import logging
+import warnings
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -301,6 +302,8 @@ class VNVAutomationController(QObject):
         dialog.load_items(manager.items)
         dialog.finished.connect(lambda _result: self._cancel_manual_download_flow(on_complete, state))
         dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def _cancel_manual_download_flow(self, on_complete, state: dict) -> None:
         if state["done"]:
@@ -342,10 +345,12 @@ class VNVAutomationController(QObject):
         self._manual_dialog = None
         self._manual_manager = None
         if dialog is not None:
-            try:
-                dialog.finished.disconnect()
-            except Exception:
-                pass
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                try:
+                    dialog.finished.disconnect()
+                except Exception:
+                    pass
             try:
                 dialog.close()
             except Exception:

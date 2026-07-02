@@ -2,6 +2,7 @@
 ConfigureNewModlistScreen for Jackify GUI
 """
 import logging
+import warnings
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QTabWidget, QDialog, QListWidget, QListWidgetItem, QMessageBox, QProgressDialog, QCheckBox, QMainWindow
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer, QProcess, QMetaObject
 from PySide6.QtGui import QPixmap, QTextCursor
@@ -126,12 +127,14 @@ class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegr
         if not hasattr(self, 'config_thread') or self.config_thread is None:
             return
 
-        try:
-            self.config_thread.progress_update.disconnect()
-            self.config_thread.configuration_complete.disconnect()
-            self.config_thread.error_occurred.disconnect()
-        except (RuntimeError, TypeError):
-            pass
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            try:
+                self.config_thread.progress_update.disconnect()
+                self.config_thread.configuration_complete.disconnect()
+                self.config_thread.error_occurred.disconnect()
+            except (RuntimeError, TypeError):
+                pass
 
         if self.config_thread.isRunning():
             self.config_thread.quit()

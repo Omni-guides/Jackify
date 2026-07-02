@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from .status_utils import clear_status, show_status
-from .ui_colors import COLOR_ERROR, COLOR_INFO, COLOR_RESET
+from jackify.shared.colors import COLOR_ERROR, COLOR_INFO, COLOR_RESET
 
 logger = logging.getLogger(__name__)
 

@@ -9,7 +9,7 @@ requests>=2.25.0
 tqdm>=4.65.0
 
 # OAuth token encryption (pure-Python compatible)
-pycryptodome>=3.19.0
+pycryptodomex>=3.19.0
 
 # Configuration file handling
 PyYAML>=6.0

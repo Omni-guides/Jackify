@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QFont
 
+from jackify.frontends.gui.services.message_service import open_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +40,8 @@ class SuccessDialog(QDialog):
         time_taken: str,
         game_name: str = None,
         verification_results=None,
+        disabled_problem_mods=None,
+        readme_url: str = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -46,6 +50,8 @@ class SuccessDialog(QDialog):
         self.time_taken = time_taken
         self.game_name = game_name
         self.verification_results = verification_results
+        self.disabled_problem_mods = disabled_problem_mods or []
+        self.readme_url = readme_url
         self.setWindowTitle("Complete" if (verification_results and verification_results.failures) else "Success!")
         self.setWindowModality(Qt.NonModal)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
@@ -180,6 +186,25 @@ class SuccessDialog(QDialog):
         if self.verification_results is not None:
             self._add_verification_section(card_layout)
 
+        # Problem mods that were auto-disabled
+        if self.disabled_problem_mods:
+            self._add_problem_mods_section(card_layout)
+
+        # Readme link (install workflow only)
+        if self.readme_url:
+            readme_label = QLabel(
+                f'<a href="{self.readme_url}" style="color:#3fd0ea; text-decoration:none;">'
+                "Open modlist readme"
+                "</a>"
+            )
+            readme_label.setAlignment(Qt.AlignCenter)
+            readme_label.setStyleSheet(
+                "QLabel { color: #3fd0ea; font-size: 11px; margin-top: 4px; padding: 4px; background-color: transparent; }"
+            )
+            readme_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            readme_label.linkActivated.connect(open_url)
+            card_layout.addWidget(readme_label)
+
         # Subtle Ko-Fi support link
         kofi_label = QLabel('<a href="https://ko-fi.com/omni1" style="color:#3fd0ea; text-decoration:none;">Enjoying Jackify? Support development ♥</a>')
         kofi_label.setAlignment(Qt.AlignCenter)
@@ -193,7 +218,7 @@ class SuccessDialog(QDialog):
             "}"
         )
         kofi_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        kofi_label.setOpenExternalLinks(True)
+        kofi_label.linkActivated.connect(open_url)
         card_layout.addWidget(kofi_label)
 
         layout.addStretch()
@@ -389,6 +414,29 @@ class SuccessDialog(QDialog):
             dlg.show()
         except Exception as exc:
             logger.error("Could not open verification dialog: %s", exc)
+
+    def _add_problem_mods_section(self, card_layout):
+        """Add an auto-disabled problem mods section to the card layout."""
+        from PySide6.QtWidgets import QFrame
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("color: #444;")
+        card_layout.addWidget(sep)
+
+        header = QLabel("Compatibility Notice")
+        header.setStyleSheet("font-size: 12px; font-weight: bold; color: #c8a050; margin-top: 4px;")
+        card_layout.addWidget(header)
+
+        msg_text = (
+            "Due to known compatibility issues with Proton, the following mods were "
+            "automatically disabled:\n\n"
+            + "\n".join(f"  - {name}" for name in self.disabled_problem_mods)
+        )
+        msg_label = QLabel(msg_text)
+        msg_label.setWordWrap(True)
+        msg_label.setStyleSheet("font-size: 11px; color: #bbb; margin-bottom: 4px;")
+        card_layout.addWidget(msg_label)
 
     def _update_countdown(self):
         if self._countdown > 0:

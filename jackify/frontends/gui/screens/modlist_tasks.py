@@ -28,6 +28,7 @@ from PySide6.QtGui import QFont, QPalette, QColor, QPixmap
 from jackify.backend.models.configuration import SystemInfo
 from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import set_responsive_minimum
+from ..mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 # Constants
 DEBUG_BORDERS = False
@@ -35,7 +36,7 @@ DEBUG_BORDERS = False
 logger = logging.getLogger(__name__)
 
 
-class ModlistTasksScreen(QWidget):
+class ModlistTasksScreen(ThreadLifecycleMixin, QWidget):
     """
     Migrated Modlist Tasks screen that uses backend services directly.
     
@@ -233,5 +234,4 @@ class ModlistTasksScreen(QWidget):
             pass
 
     def cleanup(self):
-        """Clean up resources when the screen is closed"""
-        pass 
+        self._park_all_threads()

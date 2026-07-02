@@ -667,7 +667,7 @@ _LEGACY_GAME_TYPES = {"falloutnv", "fallout3", "oblivion"}
 def _is_nsf_prefix(pfx: Path) -> bool:
     """Return True if this prefix has global mscoree=native in Wine DllOverrides.
 
-    All Skyrim prefixes get a per-exe AppDefaults\\SkyrimSE.exe mscoree override —
+    All Skyrim prefixes get a per-exe AppDefaults\\SkyrimSE.exe mscoree override -
     that does not qualify. NSF/CSF prefixes additionally have it in the global
     DllOverrides section, which is what this checks.
     """
@@ -686,7 +686,7 @@ def _is_nsf_prefix(pfx: Path) -> bool:
 
 
 def check_native_dotnet(pfx: Path, r: Results, game_type: str = ""):
-    """Check native dotnet40/48 installation — only meaningful for NSF/CSF prefixes.
+    """Check native dotnet40/48 installation - only meaningful for NSF/CSF prefixes.
 
     Non-NSF prefixes always have phantom NDP keys written by Wine Mono; checking
     them produces false positives. Skip entirely unless global mscoree=native is set.
@@ -1079,7 +1079,7 @@ def check_ttw_installation(modlist_dir: Path, game_type: str, r: Results, modlis
 
 def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
     """Check whether Tool Compatibility Config has been applied to this prefix."""
-    # Tool compat is not applied for these game types — nothing to check
+    # Tool compat is not applied for these game types - nothing to check
     _no_tool_compat = ("falloutnv", "fallout3", "enderal", "cp2077", "bg3", "skyrimvr", "fallout4vr")
     if game_type in _no_tool_compat:
         return

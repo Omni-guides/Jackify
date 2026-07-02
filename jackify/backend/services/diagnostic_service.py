@@ -129,7 +129,7 @@ def _append_steam_info(lines: list) -> None:
     else:
         lines.append("Steam: not detected")
 
-    # Proton versions — official builds in steamapps/common, community builds in compatibilitytools.d
+    # Proton versions - official builds in steamapps/common, community builds in compatibilitytools.d
     proton_scan = [
         (native_steam / "steamapps/common", "valve"),
         (flatpak_steam / "data/Steam/steamapps/common", "valve"),

@@ -17,11 +17,12 @@ from PySide6.QtGui import QFont
 from jackify.backend.models.configuration import SystemInfo
 from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import set_responsive_minimum
+from ..mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 logger = logging.getLogger(__name__)
 
 
-class AdditionalTasksScreen(QWidget):
+class AdditionalTasksScreen(ThreadLifecycleMixin, QWidget):
     """Additional Tasks screen for automation and standalone tools."""
 
     def __init__(self, stacked_widget=None, main_menu_index=0, system_info: Optional[SystemInfo] = None,

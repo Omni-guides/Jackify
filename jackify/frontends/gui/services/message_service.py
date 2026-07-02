@@ -3,9 +3,31 @@ Non-Focus-Stealing Message Service for Jackify
 Provides message boxes that don't steal focus from the current application
 """
 
+import logging
+import os
 import random
 import string
+import subprocess
+import warnings
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+def open_url(url: str) -> None:
+    """Open a URL in the system browser, safe to call from within an AppImage."""
+    env = os.environ.copy()
+    if "APPIMAGE" in env or "APPDIR" in env:
+        for var in ("LD_LIBRARY_PATH", "PYTHONPATH", "PYTHONHOME", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH"):
+            env.pop(var, None)
+    try:
+        subprocess.Popen(
+            ["xdg-open", url], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as e:
+        logger.warning("Failed to open URL %s: %s", url, e)
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout,
     QCheckBox, QTextEdit, QPushButton, QDialog, QDialogButtonBox, QSizePolicy,
@@ -61,14 +83,16 @@ class SafeMessageBox(NonFocusMessageBox):
             self._setup_low_safety(danger_action, safe_action)
         # --- Fix: For question dialogs, set proceed/cancel button return values, but do NOT call setStandardButtons ---
         if is_question and hasattr(self, 'proceed_btn'):
-            self.proceed_btn.setText(danger_action)
-            self.proceed_btn.setProperty('role', QMessageBox.YesRole)
-            self.proceed_btn.clicked.disconnect()
-            self.proceed_btn.clicked.connect(lambda: self.done(QMessageBox.Yes))
-            self.cancel_btn.setText(safe_action)
-            self.cancel_btn.setProperty('role', QMessageBox.NoRole)
-            self.cancel_btn.clicked.disconnect()
-            self.cancel_btn.clicked.connect(lambda: self.done(QMessageBox.No))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                self.proceed_btn.setText(danger_action)
+                self.proceed_btn.setProperty('role', QMessageBox.YesRole)
+                self.proceed_btn.clicked.disconnect()
+                self.proceed_btn.clicked.connect(lambda: self.done(QMessageBox.Yes))
+                self.cancel_btn.setText(safe_action)
+                self.cancel_btn.setProperty('role', QMessageBox.NoRole)
+                self.cancel_btn.clicked.disconnect()
+                self.cancel_btn.clicked.connect(lambda: self.done(QMessageBox.No))
     
     def _setup_high_safety(self, danger_action: str, safe_action: str):
         """High safety: requires typing confirmation code"""

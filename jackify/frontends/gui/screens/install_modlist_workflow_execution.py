@@ -8,6 +8,7 @@ import os
 
 from .install_modlist_installer_thread import InstallerThread
 from jackify.backend.services.steam_restart_service import ensure_flatpak_steam_filesystem_access
+from jackify.backend.models.game_types import GAME_DISPLAY_NAMES, GAME_NAME_TO_TYPE
 from jackify.shared.errors import install_dir_create_failed
 
 logger = logging.getLogger(__name__)
@@ -307,57 +308,20 @@ class InstallWorkflowExecutionMixin:
                 if result:
                     if isinstance(result, tuple):
                         game_type, raw_game_type = result
-                        # Get display name for the game
-                        display_names = {
-                            'skyrim': 'Skyrim',
-                            'fallout4': 'Fallout 4',
-                            'falloutnv': 'Fallout New Vegas',
-                            'oblivion': 'Oblivion',
-                            'starfield': 'Starfield',
-                            'oblivion_remastered': 'Oblivion Remastered',
-                            'enderal': 'Enderal'
-                        }
                         if game_type == 'unknown' and raw_game_type:
                             game_name = raw_game_type
                         else:
-                            game_name = display_names.get(game_type, game_type)
+                            game_name = GAME_DISPLAY_NAMES.get(game_type, game_type)
                     else:
                         game_type = result
-                        display_names = {
-                            'skyrim': 'Skyrim',
-                            'fallout4': 'Fallout 4',
-                            'falloutnv': 'Fallout New Vegas',
-                            'oblivion': 'Oblivion',
-                            'starfield': 'Starfield',
-                            'oblivion_remastered': 'Oblivion Remastered',
-                            'enderal': 'Enderal'
-                        }
-                        game_name = display_names.get(game_type, game_type)
+                        game_name = GAME_DISPLAY_NAMES.get(game_type, game_type)
             else:
                 # For online modlists, try to get game type from selected modlist
                 if hasattr(self, 'selected_modlist_info') and self.selected_modlist_info:
                     readme_url = self.selected_modlist_info.get('readme_url')
                     game_name = self.selected_modlist_info.get('game', '')
                     logger.debug(f"Detected game_name from selected_modlist_info: '{game_name}'")
-                    
-                    # Map game name to game type
-                    game_mapping = {
-                        'skyrim special edition': 'skyrim',
-                        'skyrim': 'skyrim',
-                        'fallout 4': 'fallout4',
-                        'fallout new vegas': 'falloutnv',
-                        'oblivion': 'oblivion',
-                        'starfield': 'starfield',
-                        'oblivion_remastered': 'oblivion_remastered',
-                        'oblivion remastered': 'oblivion_remastered',
-                        'enderal': 'enderal',
-                        'enderal special edition': 'enderal',
-                        'skyrim vr': 'skyrimvr',
-                        'fallout 4 vr': 'fallout4vr',
-                        'cyberpunk 2077': 'cp2077',
-                        "baldur's gate 3": 'bg3',
-                    }
-                    game_type = game_mapping.get(game_name.lower())
+                    game_type = GAME_NAME_TO_TYPE.get(game_name.lower())
                     logger.debug(f"Mapped game_name '{game_name}' to game_type: '{game_type}'")
                     if not game_type:
                         game_type = 'unknown'
@@ -504,7 +468,7 @@ class InstallWorkflowExecutionMixin:
                     readme_url = readme_url.replace("raw.githubusercontent.com", "github.com")
                     readme_url = readme_url.replace("/main/", "/blob/main/")
                     readme_url = readme_url.replace("/master/", "/blob/master/")
-                logger.info(f"Opening modlist readme: {readme_url}")
+                logger.info("Opening modlist readme: %s", readme_url)
                 _strip = {"LD_LIBRARY_PATH", "LD_PRELOAD", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "PYTHONPATH", "PYTHONHOME"}
                 clean_env = {k: v for k, v in os.environ.items() if k not in _strip}
                 subprocess.Popen(["xdg-open", readme_url], env=clean_env, start_new_session=True)
@@ -512,6 +476,7 @@ class InstallWorkflowExecutionMixin:
                     "Modlist readme opened in your browser. "
                     "Check it for any manual post-install steps before launching the game."
                 )
+            self._readme_url = readme_url or None
 
             logger.debug(f"Calling run_modlist_installer with modlist={modlist}, install_dir={install_dir}, downloads_dir={downloads_dir}, install_mode={install_mode}")
             self.run_modlist_installer(modlist, install_dir, downloads_dir, api_key, install_mode, oauth_info)
@@ -620,8 +585,9 @@ class InstallWorkflowExecutionMixin:
         concurrent_limit = max(1, min(5, concurrent_limit))
 
         self._safe_append_text(
-            f"\n[Manual Download Required] {count} file(s) need manual download.\n"
-            f"Opening download dialog - check your taskbar if it does not appear in front.\n"
+            f"\n[Manual Download Required] {count} file(s) need manual download "
+            f"(rate limit, access error, or non-premium).\n"
+            f"Opening download dialog - it will appear in front momentarily.\n"
         )
         logger.info(
             f"[MDL-1006] Manual download protocol initialized | count={count} "
@@ -663,3 +629,5 @@ class InstallWorkflowExecutionMixin:
 
         if not self._manual_dl_dialog.isVisible():
             self._manual_dl_dialog.show()
+            self._manual_dl_dialog.raise_()
+            self._manual_dl_dialog.activateWindow()

@@ -162,6 +162,7 @@ class InstallModlistUISetupMixin:
         # --- Modlist Selection ---
         self.modlist_btn = QPushButton("Select Modlist")
         self.modlist_btn.setMinimumWidth(300)
+        self.modlist_btn.setMaximumWidth(300)
         self.modlist_btn.clicked.connect(self.open_modlist_dialog)
         self.modlist_btn.setEnabled(False)
         online_layout.addWidget(QLabel("Game Type:"))

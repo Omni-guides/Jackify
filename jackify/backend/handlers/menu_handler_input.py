@@ -7,7 +7,7 @@ import logging
 import os
 import glob
 
-from .ui_colors import COLOR_PROMPT, COLOR_RESET
+from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET
 
 READLINE_AVAILABLE = False
 READLINE_HAS_PROMPT = False

@@ -233,8 +233,8 @@ class InstallTTWScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWUISetupMixin, T
             return True
             
         except Exception as e:
-            print(f"Error checking protontricks: {e}")
-            MessageService.warning(self, "Protontricks Check Failed", 
+            logger.error(f"Error checking protontricks: {e}")
+            MessageService.warning(self, "Protontricks Check Failed",
                                  f"Unable to verify protontricks installation: {e}\n\n"
                                  "Continuing anyway, but some features may not work correctly.")
             return True  # Continue anyway
@@ -305,14 +305,10 @@ class InstallTTWScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWUISetupMixin, T
         dlg.exec()
 
     def cleanup_processes(self):
-        """Clean up any running processes when the window closes or is cancelled"""
-        # Disconnect all signals first - prevents callbacks to a dying widget.
-        self._park_all_threads()
-
-        # install_thread gets a cooperative cancel signal on top of the park.
-        if hasattr(self, 'install_thread') and self.install_thread and self.install_thread.isRunning():
+        if hasattr(self, 'install_thread') and self.install_thread:
             try:
-                self.install_thread.cancel()
+                if self.install_thread.isRunning():
+                    self.install_thread.cancel()
             except Exception:
                 pass
     

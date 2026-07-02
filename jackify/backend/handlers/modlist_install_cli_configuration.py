@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from .engine_monitor import EnginePerformanceMonitor, create_stall_alert_callback
-from .ui_colors import (
+from jackify.shared.colors import (
     COLOR_PROMPT,
     COLOR_RESET,
     COLOR_INFO,

@@ -1,6 +1,7 @@
 """Shortcut loading for ConfigureExistingModlistScreen (Mixin)."""
 from PySide6.QtCore import QThread, Signal, QObject
 import logging
+import warnings
 
 logger = logging.getLogger(__name__)
 class ConfigureExistingModlistShortcutsMixin:
@@ -75,14 +76,16 @@ class ConfigureExistingModlistShortcutsMixin:
                 if hasattr(self, '_park_thread'):
                     self._park_thread(self._shortcut_loader, ["finished_signal", "error_signal"])
                 else:
-                    try:
-                        self._shortcut_loader.finished_signal.disconnect()
-                    except Exception:
-                        pass
-                    try:
-                        self._shortcut_loader.error_signal.disconnect()
-                    except Exception:
-                        pass
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", RuntimeWarning)
+                        try:
+                            self._shortcut_loader.finished_signal.disconnect()
+                        except Exception:
+                            pass
+                        try:
+                            self._shortcut_loader.error_signal.disconnect()
+                        except Exception:
+                            pass
                     if not hasattr(self, '_old_loaders'):
                         self._old_loaders = []
                     self._old_loaders.append(self._shortcut_loader)
@@ -101,14 +104,13 @@ class ConfigureExistingModlistShortcutsMixin:
     def _on_shortcuts_loaded(self, shortcuts):
         """Update UI when shortcuts are loaded"""
         self.mo2_shortcuts = shortcuts
-        
-        # Update the dropdown
+
         if hasattr(self, 'shortcut_combo'):
             self.shortcut_combo.clear()
             self.shortcut_combo.setEnabled(True)
             self.shortcut_combo.addItem("Please Select...")
             self.shortcut_map.clear()
-            
+
             for shortcut in self.mo2_shortcuts:
                 display = f"{shortcut.get('AppName', shortcut.get('appname', 'Unknown'))} ({shortcut.get('StartDir', shortcut.get('startdir', ''))})"
                 self.shortcut_combo.addItem(display)

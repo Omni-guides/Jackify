@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from .ui_colors import (
+from jackify.shared.colors import (
     COLOR_PROMPT, COLOR_SELECTION, COLOR_RESET, COLOR_INFO, COLOR_ERROR,
     COLOR_SUCCESS, COLOR_WARNING, COLOR_ACTION, COLOR_INPUT
 )

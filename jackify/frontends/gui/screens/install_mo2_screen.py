@@ -30,6 +30,7 @@ from .screen_focus_reclaim import FocusReclaimMixin, STEAM_RESTART_SENTINEL
 from ..widgets.progress_indicator import OverallProgressIndicator
 from ..widgets.file_progress_list import FileProgressList
 from .screen_back_mixin import ScreenBackMixin
+from ..mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class MO2SetupWorker(QThread):
             self.setup_complete.emit(False, None, str(e))
 
 
-class InstallMO2Screen(ScreenBackMixin, FocusReclaimMixin, QWidget):
+class InstallMO2Screen(ThreadLifecycleMixin, ScreenBackMixin, FocusReclaimMixin, QWidget):
     """Standalone MO2 setup screen"""
 
     resize_request = Signal(str)
@@ -498,22 +499,11 @@ class InstallMO2Screen(ScreenBackMixin, FocusReclaimMixin, QWidget):
         self.go_back()
 
     def cleanup_processes(self):
-        """Stop active MO2 worker and CPU tracking before screen/app shutdown."""
         self._stop_focus_reclaim()
         try:
             self.file_progress_list.stop_cpu_tracking()
         except Exception:
             pass
-
-        if self.worker is not None:
-            try:
-                if self.worker.isRunning():
-                    self.worker.requestInterruption()
-                    self.worker.wait(10000)
-                self.worker.deleteLater()
-            except Exception:
-                pass
-            self.worker = None
 
     def reset_screen_to_defaults(self):
         self.file_progress_list.clear()

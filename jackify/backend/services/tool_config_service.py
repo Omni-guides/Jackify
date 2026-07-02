@@ -356,10 +356,12 @@ def apply_tool_config(
     """
     Apply tool compatibility settings to the Wine prefix.
 
-    install_dotnet9_sdk=True downloads and installs the .NET 9/10 SDK, which is
-    required for Synthesis. Intentionally opt-in - the download is ~220MB and
-    only appropriate when the user explicitly runs Configure Tool Compatibility
-    from Additional Tasks.
+    install_dotnet9_sdk=True downloads and installs the .NET 9/10 SDK and flips the
+    prefix to Windows 11, which are required for Synthesis. Intentionally opt-in -
+    the download is ~220MB and the win11 flip has not been verified against NSF/CSF
+    prefixes (see preserve_global_mscoree).
+    The NuGet Root CA cert (also required for Synthesis) is applied regardless of
+    this flag, since it has no interaction with mscoree hosting or Windows version.
 
     install_fxc2_d3dcompiler=True replaces d3dcompiler_47.dll with the Mozilla
     fxc2 build. Only appropriate for Skyrim SE/AE modlists using Community Shaders.
@@ -383,8 +385,13 @@ def apply_tool_config(
     if install_dotnet9_sdk:
         _install_dotnet9_sdk(prefix_path, wine_bin, _log)
         _install_dotnet10_desktop_runtime(prefix_path, wine_bin, _log)
-        _install_nuget_cert(prefix_path, wine_bin, _log)
         _set_windows_version_win11(prefix_path, wine_bin, _log)
+
+    # NuGet cert import is independent of the SDK/win11 install above - it only adds a
+    # Root CA entry and has no interaction with mscoree hosting, so it must not be
+    # skipped for NSF/CSF modlists (which pass install_dotnet9_sdk=False to avoid the
+    # win11 flip). Synthesis still needs this cert even on an NSF/CSF prefix.
+    _install_nuget_cert(prefix_path, wine_bin, _log)
 
     # Remove legacy global *mscoree=native from DllOverrides if present.
     # Old installs wrote this globally, which breaks .NET 9/10 bootstrap (Synthesis).

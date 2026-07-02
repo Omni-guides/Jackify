@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
+from jackify.backend.models.game_types import normalize_game_name
+
 
 @dataclass
 class ModlistContext:
@@ -39,7 +41,7 @@ class ModlistContext:
         return {
             'modlist_name': self.name,
             'install_dir': str(self.install_dir),
-            'download_dir': str(self.download_dir),
+            'download_dir': str(self.download_dir) if self.download_dir else None,
             'game_type': self.game_type,
             'nexus_api_key': self.nexus_api_key,
             'modlist_value': self.modlist_value,
@@ -49,14 +51,16 @@ class ModlistContext:
             'skip_confirmation': self.skip_confirmation,
             'engine_installed': self.engine_installed,
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ModlistContext':
         """Create from dictionary for legacy compatibility."""
+        raw_dl = data.get('download_dir')
+        download_dir = Path(raw_dl) if raw_dl and raw_dl != 'None' else None
         return cls(
             name=data.get('modlist_name', ''),
             install_dir=Path(data.get('install_dir', '')),
-            download_dir=Path(data.get('download_dir', '')),
+            download_dir=download_dir,
             game_type=data.get('game_type', ''),
             nexus_api_key=data.get('nexus_api_key', ''),
             modlist_value=data.get('modlist_value'),
@@ -102,5 +106,42 @@ class ModlistInfo:
             result['status_down'] = self.status_down
         if hasattr(self, 'status_nsfw'):
             result['status_nsfw'] = self.status_nsfw
-            
-        return result 
+
+        return result
+
+
+def build_modlist_context(
+    name: str,
+    install_dir,
+    game_type: str,
+    nexus_api_key: str = '',
+    download_dir=None,
+    modlist_value: Optional[str] = None,
+    modlist_source: Optional[str] = None,
+    resolution: Optional[str] = None,
+    mo2_exe_path=None,
+    skip_confirmation: bool = False,
+    engine_installed: bool = False,
+    enb_detected: bool = False,
+) -> ModlistContext:
+    """Canonical factory for ModlistContext.
+
+    Normalises game_type via game_types.normalize_game_name so both frontends
+    produce consistent canonical strings.  Falls back to the raw value when the
+    name is not in the known map (unknown/custom game types).
+    """
+    canonical = normalize_game_name(game_type)
+    return ModlistContext(
+        name=name,
+        install_dir=install_dir,
+        game_type=canonical if canonical else game_type,
+        nexus_api_key=nexus_api_key,
+        download_dir=download_dir,
+        modlist_value=modlist_value,
+        modlist_source=modlist_source,
+        resolution=resolution,
+        mo2_exe_path=mo2_exe_path,
+        skip_confirmation=skip_confirmation,
+        engine_installed=engine_installed,
+        enb_detected=enb_detected,
+    )

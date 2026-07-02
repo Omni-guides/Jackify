@@ -3,7 +3,7 @@
     "tool_id": "jackify-engine",
     "display_name": "jackify-engine",
     "description": "Native Wabbajack-matched file handler. The proven, stable engine for modlist installs.",
-    "github_repo": "Omni-guides/jackify-engine",
+    "github_repo": "Omni-guides/dev-jackify-engine",
     "asset_patterns": ["jackify-engine.*linux.*x64.*\\.tar\\.gz", "jackify-engine.*\\.tar\\.gz", "jackify-engine.*\\.zip"],
     "executable_names": ["jackify-engine"],
     "tier": 1,
@@ -42,7 +42,7 @@
     "tool_id": "radium",
     "display_name": "Radium Textures",
     "description": "Rust alternative to VRAMr for Skyrim and Fallout 4 texture optimisation. Run directly against mod files.",
-    "github_repo": "SulfurNitride/Radium-Textures",
+    "github_repo": null,
     "asset_patterns": ["radium.*linux.*x86_64", "radium.*\\.tar\\.gz", "radium.*\\.zip"],
     "executable_names": ["radium", "radium-textures"],
     "tier": 2,
@@ -50,7 +50,7 @@
     "can_launch": true,
     "nexus_mod_id": 1660,
     "nexus_game_domain": "site",
-    "nexus_file_filter": "linux",
-    "hidden": true
+    "nexus_file_filter": null,
+    "hidden": false
   }
 ]

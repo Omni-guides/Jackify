@@ -3,7 +3,7 @@ import logging
 import os
 
 from .status_utils import clear_status, show_status
-from .ui_colors import COLOR_ERROR, COLOR_INFO, COLOR_PROMPT, COLOR_RESET
+from jackify.shared.colors import COLOR_ERROR, COLOR_INFO, COLOR_PROMPT, COLOR_RESET
 
 logger = logging.getLogger(__name__)
 

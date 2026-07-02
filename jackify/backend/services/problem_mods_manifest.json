@@ -1,0 +1,20 @@
+{
+  "SkyrimSE": {
+    "mod_fixes": [
+      {
+        "mod": "Dialogue History",
+        "create_dirs": [
+          "users/steamuser/Documents/My Games/Skyrim Special Edition/Saves/DialogueHistory"
+        ]
+      }
+    ]
+  },
+  "Fallout4": {
+    "mod_fixes": [
+      { "mod": "MCM Booster", "disable": true }
+    ]
+  },
+  "SkyrimVR": { "mod_fixes": [] },
+  "Fallout4VR": { "mod_fixes": [] },
+  "Enderal": { "mod_fixes": [] }
+}

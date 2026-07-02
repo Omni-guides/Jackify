@@ -4,6 +4,7 @@ from PySide6.QtCore import QThread, Signal
 import os
 import time
 import logging
+import warnings
 from jackify.shared.resolution_utils import get_resolution_fallback
 from jackify.shared.errors import configuration_failed
 from jackify.backend.services.steam_restart_service import ensure_flatpak_steam_filesystem_access
@@ -262,12 +263,14 @@ class ConfigureNewModlistWorkflowMixin:
         """Safely release the automated prefix thread after it has finished."""
         if not hasattr(self, 'automated_prefix_thread') or self.automated_prefix_thread is None:
             return
-        try:
-            self.automated_prefix_thread.progress_update.disconnect()
-            self.automated_prefix_thread.workflow_complete.disconnect()
-            self.automated_prefix_thread.error_occurred.disconnect()
-        except (RuntimeError, TypeError):
-            pass
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            try:
+                self.automated_prefix_thread.progress_update.disconnect()
+                self.automated_prefix_thread.workflow_complete.disconnect()
+                self.automated_prefix_thread.error_occurred.disconnect()
+            except (RuntimeError, TypeError):
+                pass
         if self.automated_prefix_thread.isRunning():
             self.automated_prefix_thread.quit()
             self.automated_prefix_thread.wait(5000)

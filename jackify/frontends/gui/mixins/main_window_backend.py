@@ -64,14 +64,14 @@ class MainWindowBackendMixin:
                 if status['target_achieved']:
                     logger.debug(f"Resource limits optimized: file descriptors set to {status['current_soft']}")
                 else:
-                    print(f"Resource limits improved: file descriptors increased to {status['current_soft']} (target: {status['target_limit']})")
+                    logger.info(f"Resource limits improved: file descriptors increased to {status['current_soft']} (target: {status['target_limit']})")
             else:
                 status = resource_manager.get_limit_status()
-                print(f"Warning: Could not optimize resource limits: current file descriptors={status['current_soft']}, target={status['target_limit']}")
+                logger.warning(f"Could not optimize resource limits: current file descriptors={status['current_soft']}, target={status['target_limit']}")
                 from jackify.backend.handlers.config_handler import ConfigHandler
                 config_handler = ConfigHandler()
                 if config_handler.get('debug_mode', False):
                     instructions = resource_manager.get_manual_increase_instructions()
-                    print(f"Manual increase instructions available for {instructions['distribution']}")
+                    logger.debug(f"Manual increase instructions available for {instructions['distribution']}")
         except Exception as e:
-            print(f"Warning: Error applying resource limits: {e}")
+            logger.warning(f"Error applying resource limits: {e}")

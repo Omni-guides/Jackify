@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
-from .ui_colors import COLOR_ERROR, COLOR_INFO, COLOR_PROMPT, COLOR_RESET
+from jackify.shared.colors import COLOR_ERROR, COLOR_INFO, COLOR_PROMPT, COLOR_RESET
 
 logger = logging.getLogger(__name__)
 

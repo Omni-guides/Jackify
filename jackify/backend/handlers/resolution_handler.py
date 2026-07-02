@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict
 # Import colors from the new central location
-from .ui_colors import COLOR_PROMPT, COLOR_RESET, COLOR_ERROR, COLOR_INFO
+from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET, COLOR_ERROR, COLOR_INFO
 
 # Initialize logger
 logger = logging.getLogger(__name__)

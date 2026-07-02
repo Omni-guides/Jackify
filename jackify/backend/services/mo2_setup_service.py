@@ -8,7 +8,6 @@ Downloads and configures a standalone Mod Organizer 2 instance:
 """
 
 import re
-import shutil
 import logging
 import subprocess
 import tempfile
@@ -17,6 +16,8 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 import requests
+
+from jackify.backend.services.tool_registry import _find_7z_binary
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,14 @@ class MO2SetupService:
     ) -> Tuple[bool, Optional[str]]:
         """Extract the MO2 archive without interactive prompts and honor cancellation."""
 
+        sevenzip = _find_7z_binary()
+        if not sevenzip:
+            return False, "7z binary not found (bundled copy missing and no system 7z/7zz on PATH)"
+
         process = None
         try:
             process = subprocess.Popen(
-                ['7z', 'x', '-y', '-aoa', str(archive_path), f'-o{install_dir}'],
+                [sevenzip, 'x', '-y', '-aoa', str(archive_path), f'-o{install_dir}'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -102,8 +107,8 @@ class MO2SetupService:
             except Exception:
                 return False
 
-        if not shutil.which('7z'):
-            return False, None, "7z not found. Install p7zip-full (or equivalent) first."
+        if not _find_7z_binary():
+            return False, None, "7z binary not found (bundled copy missing and no system 7z/7zz on PATH)"
 
         if _is_dangerous_path(install_dir):
             return False, None, f"Refusing to install to dangerous path: {install_dir}"

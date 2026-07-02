@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Callable
 import requests
@@ -52,25 +53,61 @@ class UpdateService:
         self.github_api_base = "https://api.github.com"
         self.update_check_timeout = 10  # seconds
         
+    _UPDATE_CHECK_CACHE_HOURS = 24
+
+    def _get_last_check_timestamp(self) -> Optional[datetime]:
+        """Read last successful update-check timestamp from config."""
+        try:
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            raw = ConfigHandler().get('last_update_check')
+            if raw:
+                return datetime.fromisoformat(raw).replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+        return None
+
+    def _save_last_check_timestamp(self) -> None:
+        """Store the current UTC time as the last successful update-check timestamp."""
+        try:
+            from jackify.backend.handlers.config_handler import ConfigHandler
+            now = datetime.now(timezone.utc).isoformat()
+            config = ConfigHandler()
+            config.set('last_update_check', now)
+            config.save_config()
+        except Exception:
+            pass
+
     def check_for_updates(self) -> Optional[UpdateInfo]:
+        """Check for available updates via GitHub releases API.
+
+        Returns UpdateInfo if an update is available, None otherwise.
+        Skips the network call if a successful check was made within the last 24 hours.
         """
-        Check for available updates via GitHub releases API.
-        
-        Returns:
-            UpdateInfo if update available, None otherwise
-        """
+        last_check = self._get_last_check_timestamp()
+        if last_check is not None:
+            age_hours = (datetime.now(timezone.utc) - last_check).total_seconds() / 3600
+            if age_hours < self._UPDATE_CHECK_CACHE_HOURS:
+                logger.debug("Skipping update check - last check was %.1f hours ago", age_hours)
+                return None
         try:
             url = f"{self.github_api_base}/repos/{self.github_repo}/releases/latest"
             headers = {
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': f'Jackify/{self.current_version}'
             }
-            
+            token = os.environ.get('GITHUB_TOKEN')
+            if token:
+                headers['Authorization'] = f'Bearer {token}'
+
             logger.debug(f"Checking for updates at {url}")
             response = requests.get(url, headers=headers, timeout=self.update_check_timeout)
+            if response.status_code == 403:
+                logger.debug("GitHub API rate limit reached (403) - update check skipped")
+                return None
             response.raise_for_status()
             
             release_data = response.json()
+            self._save_last_check_timestamp()
             latest_version = release_data['tag_name'].lstrip('v')
             
             if self._is_newer_version(latest_version):

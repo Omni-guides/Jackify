@@ -93,7 +93,6 @@ class ConfigureNewModlistDialogsMixin:
         super().hideEvent(event)
 
     def cleanup_processes(self):
-        """Clean up any running processes when the window closes or is cancelled"""
         if getattr(self, '_vnv_controller', None) is not None:
             try:
                 self._vnv_controller.cleanup()
@@ -103,7 +102,6 @@ class ConfigureNewModlistDialogsMixin:
         self._stop_focus_reclaim()
         if hasattr(self, 'file_progress_list'):
             self.file_progress_list.stop_cpu_tracking()
-        self._park_all_threads()
 
     def show_shortcut_conflict_dialog(self, conflicts):
         """Show dialog to reuse an existing shortcut or choose a new name."""

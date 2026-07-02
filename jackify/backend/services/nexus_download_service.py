@@ -147,6 +147,23 @@ class NexusDownloadService:
                 output_path.unlink()
             return False
 
+    def get_latest_file_version(
+        self,
+        game_domain: str,
+        mod_id: int,
+        file_name_filter: Optional[str] = None,
+    ) -> Optional[str]:
+        """Return the version string of the most recent file for a mod, or None."""
+        files = self.get_mod_files(game_domain, mod_id)
+        if not files:
+            return None
+        if file_name_filter:
+            files = [f for f in files if file_name_filter.lower() in f.get("file_name", "").lower()]
+        if not files:
+            return None
+        files.sort(key=lambda f: f.get("uploaded_timestamp", 0), reverse=True)
+        return files[0].get("version") or None
+
     def download_latest_file(
         self,
         game_domain: str,

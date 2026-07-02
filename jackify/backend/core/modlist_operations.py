@@ -4,7 +4,7 @@ from typing import Optional, Dict, List, Any, Union
 from ..handlers.protontricks_handler import ProtontricksHandler
 from ..handlers.shortcut_handler import ShortcutHandler
 from ..handlers.menu_handler import MenuHandler, ModlistMenuHandler
-from ..handlers.ui_colors import COLOR_PROMPT, COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_SUCCESS, COLOR_WARNING, COLOR_SELECTION
+from jackify.shared.colors import COLOR_PROMPT, COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_SUCCESS, COLOR_WARNING, COLOR_SELECTION
 import logging
 from ..handlers.wabbajack_parser import WabbajackParser
 import re
@@ -24,6 +24,12 @@ from .modlist_operations_configuration_cli import ModlistOperationsConfiguration
 from .modlist_operations_configuration_gui import ModlistOperationsConfigurationGUIMixin
 from .modlist_operations_game_detection import ModlistOperationsGameDetectionMixin
 from .modlist_operations_nexus import ModlistOperationsNexusMixin
+from jackify.backend.services.update_detection import (
+    evaluate_update_candidate as _svc_evaluate,
+    find_existing_shortcut_appid as _svc_find_appid,
+    normalize_version_token,
+    normalize_modlist_name,
+)
 
 
 def _get_user_proton_version():
@@ -179,22 +185,12 @@ class ModlistInstallCLI(
         # Initialize process tracking for cleanup
         self._current_process = None
 
-    @staticmethod
-    def _normalize_version_token(value: str | None) -> str | None:
-        if value is None:
-            return None
-        token = str(value).strip()
-        if not token:
-            return None
-        return token.lstrip("vV").lower()
-
-    @staticmethod
-    def _normalize_modlist_name(value: str | None) -> str:
-        return " ".join((value or "").strip().lower().split())
+    _normalize_version_token = staticmethod(normalize_version_token)
+    _normalize_modlist_name = staticmethod(normalize_modlist_name)
 
     def _get_requested_modlist_version(self) -> str | None:
         info = self.context.get("selected_modlist_info") or {}
-        return self._normalize_version_token(info.get("version"))
+        return normalize_version_token(info.get("version"))
 
     def _evaluate_update_candidate(
         self,
@@ -202,68 +198,11 @@ class ModlistInstallCLI(
         install_dir: str,
         existing_appid: str | None,
     ) -> tuple[bool, dict]:
-        from jackify.backend.utils.modlist_meta import read_modlist_meta
-
-        result = {
-            "eligible": False,
-            "reason": "unknown",
-            "requested_version": None,
-            "installed_version": None,
-            "version_relation": "unknown",
-            "installed_name": None,
-        }
-        if not existing_appid:
-            result["reason"] = "missing_shortcut_appid"
-            return False, result
-
-        meta = read_modlist_meta(install_dir)
-        if not meta:
-            result["reason"] = "missing_meta"
-            return False, result
-
-        installed_name = (meta.get("modlist_name") or "").strip()
-        result["installed_name"] = installed_name
-        if self._normalize_modlist_name(installed_name) != self._normalize_modlist_name(modlist_name):
-            result["reason"] = "modlist_name_mismatch"
-            return False, result
-
         requested_version = self._get_requested_modlist_version()
-        installed_version = self._normalize_version_token(meta.get("modlist_version"))
-        result["requested_version"] = requested_version
-        result["installed_version"] = installed_version
-        if requested_version and installed_version:
-            result["version_relation"] = "same" if requested_version == installed_version else "different"
-
-        result["eligible"] = True
-        result["reason"] = "eligible"
-        return True, result
+        return _svc_evaluate(modlist_name, install_dir, existing_appid, requested_version)
 
     def _find_existing_shortcut_appid(self, modlist_name: str, install_dir: str) -> str | None:
-        try:
-            install_real = os.path.realpath(install_dir)
-            candidate_exes = [
-                os.path.join(install_real, "ModOrganizer.exe"),
-                os.path.join(install_real, "files", "ModOrganizer.exe"),
-            ]
-
-            for exe_path in candidate_exes:
-                if not os.path.exists(exe_path):
-                    continue
-                appid = self.shortcut_handler.get_appid_from_vdf(modlist_name, exe_path)
-                if appid:
-                    return appid
-
-            for shortcut in self.shortcut_handler.find_shortcuts_by_exe("ModOrganizer.exe"):
-                if (
-                    shortcut.get("AppName", "").strip() == modlist_name.strip()
-                    and os.path.realpath(shortcut.get("StartDir", "")) == install_real
-                ):
-                    raw_appid = shortcut.get("appid")
-                    if raw_appid is not None:
-                        return str(int(raw_appid) & 0xFFFFFFFF)
-        except Exception as e:
-            self.logger.warning("CLI update detection: failed shortcut lookup: %s", e)
-        return None
+        return _svc_find_appid(modlist_name, install_dir)
 
     def cleanup(self):
         """Clean up any running jackify-engine process"""

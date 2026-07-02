@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from jackify.backend.services.nxm_url import NxmUrl
 from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
+from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 import jackify.backend.services.nxm_session as nxm_session
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ class _DownloadThread(QThread):
         self.progress.emit(downloaded, total)
 
 
-class NxmDownloadDialog(QDialog):
+class NxmDownloadDialog(ThreadLifecycleMixin, QDialog):
     """Modlist picker and download runner for incoming nxm:// links.
 
     When auto_start_modlist is provided the picker is hidden and the download

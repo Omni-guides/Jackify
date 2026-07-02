@@ -7,12 +7,12 @@ Handles encrypted storage and retrieval of OAuth tokens
 
 import os
 import json
-import base64
-import hashlib
 import logging
 import time
 from typing import Optional, Dict
 from pathlib import Path
+
+from jackify.backend.utils.machine_crypto import encrypt as _mc_encrypt, decrypt as _mc_decrypt
 
 logger = logging.getLogger(__name__)
 
@@ -40,140 +40,13 @@ class OAuthTokenHandler:
         # Ensure config directory exists
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate encryption key based on machine-specific data
-        self._encryption_key = self._generate_encryption_key()
-
-    def _generate_encryption_key(self) -> bytes:
-        """
-        Generate encryption key based on machine-specific data using Fernet
-
-        Uses hostname + username + machine ID as key material, similar to DPAPI approach.
-        This provides proper symmetric encryption while remaining machine-specific.
-
-        Returns:
-            Fernet-compatible 32-byte encryption key
-        """
-        import socket
-        import getpass
-
-        try:
-            hostname = socket.gethostname()
-            username = getpass.getuser()
-
-            # Try to get machine ID for additional entropy
-            machine_id = None
-            try:
-                # Linux machine-id
-                with open('/etc/machine-id', 'r') as f:
-                    machine_id = f.read().strip()
-            except (OSError, IOError):
-                try:
-                    # Alternative locations
-                    with open('/var/lib/dbus/machine-id', 'r') as f:
-                        machine_id = f.read().strip()
-                except (OSError, IOError):
-                    pass
-
-            # Combine multiple sources of machine-specific data
-            if machine_id:
-                key_material = f"{hostname}:{username}:{machine_id}:jackify"
-            else:
-                key_material = f"{hostname}:{username}:jackify"
-
-        except Exception as e:
-            logger.warning(f"Failed to get machine info for encryption: {e}")
-            key_material = "jackify:default:key"
-
-        # Generate 32-byte key using SHA256 for Fernet
-        # Fernet requires base64-encoded 32-byte key
-        key_bytes = hashlib.sha256(key_material.encode('utf-8')).digest()
-        return base64.urlsafe_b64encode(key_bytes)
-
     def _encrypt_data(self, data: str) -> str:
-        """
-        Encrypt data using AES-GCM (authenticated encryption)
-
-        Uses pycryptodome for cross-platform compatibility.
-        AES-GCM provides authenticated encryption similar to Fernet.
-
-        Args:
-            data: Plain text data
-
-        Returns:
-            Encrypted data as base64 string (nonce:ciphertext:tag format)
-        """
-        try:
-            from Crypto.Cipher import AES
-            from Crypto.Random import get_random_bytes
-
-            # Derive 32-byte AES key from encryption_key (which is base64-encoded)
-            key = base64.urlsafe_b64decode(self._encryption_key)
-
-            # Generate random nonce (12 bytes for GCM)
-            nonce = get_random_bytes(12)
-
-            # Create AES-GCM cipher
-            cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
-
-            # Encrypt and get authentication tag
-            data_bytes = data.encode('utf-8')
-            ciphertext, tag = cipher.encrypt_and_digest(data_bytes)
-
-            # Combine nonce:ciphertext:tag and base64 encode
-            combined = nonce + ciphertext + tag
-            return base64.b64encode(combined).decode('utf-8')
-
-        except ImportError:
-            logger.error("pycryptodome package not available for token encryption")
-            return ""
-        except Exception as e:
-            logger.error(f"Failed to encrypt data: {e}")
-            return ""
+        """Encrypt data using AES-GCM via machine_crypto."""
+        return _mc_encrypt(data)
 
     def _decrypt_data(self, encrypted_data: str) -> Optional[str]:
-        """
-        Decrypt data using AES-GCM (authenticated encryption)
-
-        Args:
-            encrypted_data: Encrypted data string (base64-encoded nonce:ciphertext:tag)
-
-        Returns:
-            Decrypted plain text or None on failure
-        """
-        try:
-            from Crypto.Cipher import AES
-            
-            # Check if MODE_GCM is available (pycryptodome has it, old pycrypto doesn't)
-            if not hasattr(AES, 'MODE_GCM'):
-                logger.error("pycryptodome required for token decryption (pycrypto doesn't support MODE_GCM)")
-                return None
-
-            # Derive 32-byte AES key from encryption_key
-            key = base64.urlsafe_b64decode(self._encryption_key)
-
-            # Decode base64 and split nonce:ciphertext:tag
-            combined = base64.b64decode(encrypted_data.encode('utf-8'))
-            nonce = combined[:12]
-            tag = combined[-16:]
-            ciphertext = combined[12:-16]
-
-            # Create AES-GCM cipher
-            cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
-
-            # Decrypt and verify authentication tag
-            plaintext = cipher.decrypt_and_verify(ciphertext, tag)
-
-            return plaintext.decode('utf-8')
-
-        except ImportError:
-            logger.error("pycryptodome package not available for token decryption")
-            return None
-        except AttributeError:
-            logger.error("pycryptodome required for token decryption (pycrypto doesn't support MODE_GCM)")
-            return None
-        except Exception as e:
-            logger.error(f"Failed to decrypt data: {e}")
-            return None
+        """Decrypt data. Returns None on any failure."""
+        return _mc_decrypt(encrypted_data)
 
     def save_token(self, token_data: Dict) -> bool:
         """

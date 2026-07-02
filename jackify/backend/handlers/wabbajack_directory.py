@@ -7,7 +7,7 @@ from typing import Optional
 
 import requests
 
-from .ui_colors import COLOR_ERROR, COLOR_INFO, COLOR_PROMPT, COLOR_RESET, COLOR_WARNING
+from jackify.shared.colors import COLOR_ERROR, COLOR_INFO, COLOR_PROMPT, COLOR_RESET, COLOR_WARNING
 
 logger = logging.getLogger(__name__)
 

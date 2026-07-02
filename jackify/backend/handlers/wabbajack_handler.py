@@ -19,7 +19,7 @@ import time
 import re
 
 # Import UI Colors first - these should always be available
-from .ui_colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_ERROR, COLOR_WARNING
+from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_ERROR, COLOR_WARNING
 
 # Import necessary components from other modules
 try:
@@ -444,56 +444,3 @@ class InstallWabbajackHandler(
         print(f"\nDetailed log available at: {log_path}")
         print("───────────────────────────────────────────────────────────────────")
 
-
-# Example usage (for testing - keep this section for easy module testing)
-if __name__ == '__main__':
-    # Configure logging for standalone testing
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-    print("Testing Wabbajack Install Handler...")
-    # Simulate running on or off deck
-    test_on_deck = False
-    print(f"Simulating run with steamdeck={test_on_deck}")
-
-    # Need dummy handlers for direct testing
-    class DummyProton:
-        which_protontricks = 'native'
-        def check_and_setup_protontricks(self): return True
-        def set_protontricks_permissions(self, path, steamdeck): return True
-        def enable_dotfiles(self, appid): return True
-        def _cleanup_wine_processes(self): pass
-        def run_protontricks(self, *args, **kwargs): return subprocess.CompletedProcess(args=[], returncode=0)
-        def list_non_steam_shortcuts(self): return {"Wabbajack": "12345"}
-
-    class DummyShortcut:
-        def create_shortcut(self, *args, **kwargs): return True, "12345"
-        def secure_steam_restart(self): return True
-        
-    class DummyPath:
-        def find_compat_data(self, appid): return Path(f"/tmp/test_compat/{appid}")
-        def find_steam_library(self): return Path("/tmp/test_steam/steamapps/common")
-        
-    class DummyVDF:
-        @staticmethod
-        def load(path):
-            if "config.vdf" in str(path):
-                 # Simulate structure needed for proton check
-                 return {'UserLocalConfigStore': {'Software': {'Valve': {'Steam': {'apps': {'12345': {'CompatTool': 'proton_experimental'}}}}}}}
-            return {}
-
-    handler = InstallWabbajackHandler(
-        steamdeck=test_on_deck, 
-        protontricks_handler=DummyProton(), 
-        shortcut_handler=DummyShortcut(),
-        path_handler=DummyPath(),
-        vdf_handler=DummyVDF(),
-        modlist_handler=ModlistHandler(),
-        filesystem_handler=FileSystemHandler()
-    )
-    # Pre-create dummy compatdata dir for verification step
-    if not Path("/tmp/test_compat/12345/pfx").exists():
-        os.makedirs("/tmp/test_compat/12345/pfx", exist_ok=True)
-        
-    handler.run_install_workflow()
-
-    print("\nTesting completed.") 

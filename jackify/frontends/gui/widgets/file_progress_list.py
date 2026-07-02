@@ -7,8 +7,11 @@ R&D NOTE: This is experimental code for investigation purposes.
 """
 
 from typing import Optional
+import logging
 import shiboken6
 import time
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QListWidget, QListWidgetItem,
@@ -113,7 +116,7 @@ class _CpuWorker(QThread):
 def _debug_log(message):
     from jackify.backend.handlers.config_handler import ConfigHandler
     if ConfigHandler().get('debug_mode', False):
-        print(message)
+        logger.debug(message)
 
 
 class FileProgressList(QWidget):

@@ -6,6 +6,7 @@ Settings, About, open URL, cleanup_processes, closeEvent.
 import logging
 import os
 import subprocess
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +26,19 @@ class MainWindowDialogsMixin:
             return None
 
         # Disconnect all signals before stopping to prevent callbacks to a dying widget.
-        try:
-            thread.finished.disconnect()
-        except Exception:
-            pass
-        for _sig in ("update_available", "no_update", "check_failed", "cache_ready", "progress_update"):
+        # disconnect() with no receivers connected raises via Python's warnings module
+        # (not as a catchable exception), so it must be suppressed rather than try/excepted.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
             try:
-                getattr(thread, _sig).disconnect()
+                thread.finished.disconnect()
             except Exception:
                 pass
+            for _sig in ("update_available", "no_update", "check_failed", "cache_ready", "progress_update"):
+                try:
+                    getattr(thread, _sig).disconnect()
+                except Exception:
+                    pass
 
         try:
             thread.requestInterruption()
@@ -78,9 +83,7 @@ class MainWindowDialogsMixin:
             dlg.finished.connect(on_dialog_finished)
             dlg.exec()
         except Exception as e:
-            print(f"[ERROR] Exception in open_settings_dialog: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Exception in open_settings_dialog: {e}", exc_info=True)
             self._settings_dialog = None
 
     def open_about_dialog(self):
@@ -104,9 +107,7 @@ class MainWindowDialogsMixin:
             dlg.finished.connect(on_dialog_finished)
             dlg.exec()
         except Exception as e:
-            print(f"[ERROR] Exception in open_about_dialog: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Exception in open_about_dialog: {e}", exc_info=True)
             self._about_dialog = None
 
     def _open_url(self, url: str):
@@ -186,15 +187,12 @@ class MainWindowDialogsMixin:
                     screen.cleanup_processes()
                 elif hasattr(screen, 'cleanup'):
                     screen.cleanup()
-                elif hasattr(screen, 'worker'):
-                    worker = getattr(screen, 'worker', None)
-                    setattr(screen, 'worker', self._stop_qthread(worker, f"{screen.__class__.__name__}.worker"))
             try:
                 subprocess.run(['pkill', '-f', 'jackify-engine'], timeout=5, capture_output=True)
             except Exception:
                 pass
         except Exception as e:
-            print(f"Error during cleanup: {e}")
+            logger.error(f"Error during cleanup: {e}")
 
     def closeEvent(self, event):
         self._save_geometry_on_quit()

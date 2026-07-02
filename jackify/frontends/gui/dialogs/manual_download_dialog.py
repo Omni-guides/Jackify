@@ -339,8 +339,9 @@ class ManualDownloadDialog(QDialog):
         colour = _STATUS_COLOURS.get(item.status, '#808080')
         status_cell = QTableWidgetItem(_STATUS_LABELS.get(item.status, item.status))
         status_cell.setForeground(QColor(colour))
-        if item.error_message:
-            status_cell.setToolTip(item.error_message)
+        tooltip_parts = [p for p in (item.download_reason, item.error_message) if p]
+        if tooltip_parts:
+            status_cell.setToolTip("\n".join(tooltip_parts))
         self._table.setItem(row, _COL_STATUS, status_cell)
 
     def _update_row(self, row: int, item: DownloadItem) -> None:
@@ -349,7 +350,8 @@ class ManualDownloadDialog(QDialog):
         if status_cell:
             status_cell.setText(_STATUS_LABELS.get(item.status, item.status))
             status_cell.setForeground(QColor(_STATUS_COLOURS.get(item.status, '#808080')))
-            status_cell.setToolTip(item.error_message or "")
+            tooltip_parts = [p for p in (item.download_reason, item.error_message) if p]
+            status_cell.setToolTip("\n".join(tooltip_parts))
 
     def _rebuild_row_map(self) -> None:
         self._row_map.clear()

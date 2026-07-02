@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QLineEd
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont
 from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from jackify.frontends.gui.services.message_service import open_url
 from jackify.backend.handlers.wabbajack_parser import WabbajackParser
 from jackify.frontends.gui.widgets.file_progress_list import FileProgressList
 
@@ -110,7 +111,8 @@ class TTWUISetupMixin:
         )
         instruction_text.setWordWrap(True)
         instruction_text.setStyleSheet("color: #ccc; font-size: 12px; margin: 0px; padding: 0px; line-height: 1.2;")
-        instruction_text.setOpenExternalLinks(True)
+        instruction_text.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        instruction_text.linkActivated.connect(open_url)
         user_config_vbox.addWidget(instruction_text)
         
         # --- Compact Form Grid for inputs (align with other screens) ---

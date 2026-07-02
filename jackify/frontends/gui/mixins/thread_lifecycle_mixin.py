@@ -22,13 +22,9 @@ import logging
 import warnings
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
+from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
 
-# Module-level registry keeps references to parked threads alive independent
-# of screen widget lifetime. Screens are destroyed on navigation; without this,
-# _parked_threads on self evaporates and the GC destroys still-running threads,
-# triggering Qt's "QThread: Destroyed while thread is still running" abort.
-_PARKED_THREAD_REGISTRY: set = set()
+logger = logging.getLogger(__name__)
 
 
 class ThreadLifecycleMixin:
@@ -38,8 +34,8 @@ class ThreadLifecycleMixin:
         """Disconnect a thread from this screen and let it finish on its own.
 
         Disconnects the named signals so no callbacks fire on this (potentially
-        dying) widget. Keeps a reference in _parked_threads so the thread is
-        not garbage-collected before it finishes.
+        dying) widget. Keeps a reference alive via the global registry until the
+        thread finishes.
 
         Returns None so callers can do: self.thread = self._park_thread(self.thread, [...])
         """
@@ -54,13 +50,9 @@ class ThreadLifecycleMixin:
                 except Exception:
                     pass
 
-        # Register in the module-level set so the reference survives screen destruction.
-        # Remove from registry when the thread finishes so it can be GC'd cleanly.
-        _PARKED_THREAD_REGISTRY.add(thread)
-        try:
-            thread.finished.connect(lambda t=thread: _PARKED_THREAD_REGISTRY.discard(t))
-        except Exception:
-            pass
+        # Hand the thread to the global registry so it survives screen destruction
+        # and is drained cleanly on app exit.
+        register_managed_thread(thread)
         return None
 
     def hideEvent(self, event):
@@ -70,6 +62,14 @@ class ThreadLifecycleMixin:
         except Exception:
             pass
         self._park_all_threads()
+
+    def closeEvent(self, event):
+        """Park all running threads when the widget is closed."""
+        self._park_all_threads()
+        try:
+            super().closeEvent(event)
+        except Exception:
+            pass
 
     def _kill_prefix_wine_processes(self, appid: str = '') -> None:
         """Kill wine/winetricks subprocesses on user-initiated cancel.
@@ -105,19 +105,11 @@ class ThreadLifecycleMixin:
         """Park every running QThread attribute found on this instance.
 
         Inspects instance variables, disconnects common signal names from any
-        running QThread, and parks them. Used in cleanup_processes() / closeEvent().
+        running QThread, and registers them globally. Used in cleanup_processes()
+        / closeEvent() / hideEvent().
         """
         from PySide6.QtCore import QThread
-
-        _common_signals = (
-            "finished_signal",
-            "progress_update",
-            "workflow_complete",
-            "configuration_complete",
-            "error_occurred",
-            "status_update",
-            "finished",
-        )
+        from jackify.frontends.gui.mixins.thread_registry import _COMMON_SIGNAL_NAMES
 
         for attr_name, value in list(vars(self).items()):
             try:
@@ -125,7 +117,7 @@ class ThreadLifecycleMixin:
                     continue
                 if not value.isRunning():
                     continue
-                signal_names = [s for s in _common_signals if hasattr(value, s)]
+                signal_names = [s for s in _COMMON_SIGNAL_NAMES if hasattr(value, s)]
                 setattr(self, attr_name, self._park_thread(value, signal_names))
             except Exception:
                 pass
