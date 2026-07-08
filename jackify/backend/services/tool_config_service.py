@@ -18,6 +18,11 @@ import zipfile
 from pathlib import Path
 from typing import Callable, Optional
 
+from jackify.backend.services.nuget_signature_service import (
+    configure_nuget_signature_policy,
+    install_nuget_cert,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -90,6 +95,30 @@ def _build_reg_content() -> str:
         lines.append(f'"{dll}"="native,builtin"')
     lines.append("")
 
+    # Disable MSBuild/Roslyn shared compiler server. Under Wine, VBCSCompiler's
+    # named pipe IPC is unreliable (mono/mono#11406), so each dotnet build falls
+    # back to spawning its own dotnet.exe instead of reusing one server process.
+    # Synthesis compiles one patcher per mod - without this, those pile up
+    # unreaped and can consume tens of GB of RAM. Writing to HKCU\Environment is
+    # the registry equivalent of setx, so every process in the prefix (including
+    # Synthesis's internal dotnet build calls) inherits these automatically.
+    #
+    # The two NUGET_* entries are needed for NuGet package signature validation
+    # (Synthesis fails to compile patchers without it): offline revocation mode
+    # avoids online CRL/OCSP checks that routinely fail or time out under Wine's
+    # sandboxed networking, and the experimental chain-build retry policy works
+    # around a known NuGet flake where the first chain build after a fresh cert
+    # import races and fails (NuGet/Home#11099). Both are written here rather
+    # than only passed to our own subprocess calls so Synthesis itself inherits
+    # them when launched later via Steam, matching Fluorine-Manager's
+    # confirmed-working NuGet signature fix.
+    lines.append("[HKEY_CURRENT_USER\\Environment]")
+    lines.append('"UseSharedCompilation"="false"')
+    lines.append('"MSBUILDDISABLENODEREUSE"="1"')
+    lines.append('"NUGET_CERT_REVOCATION_MODE"="offline"')
+    lines.append('"NUGET_EXPERIMENTAL_CHAIN_BUILD_RETRY_POLICY"="10,1000"')
+    lines.append("")
+
     return "\r\n".join(lines)
 
 
@@ -103,13 +132,6 @@ _DOTNET9_SDK_FILENAME = "dotnet-sdk-9.0.310-win-x64.zip"
 # Covers Synthesis patchers targeting .NET 10 runtime.
 _DOTNET10_DESKTOP_URL = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.2/windowsdesktop-runtime-10.0.2-win-x64.exe"
 _DOTNET10_DESKTOP_FILENAME = "windowsdesktop-runtime-10.0.2-win-x64.exe"
-
-# DigiCert Universal Root CA - required for NuGet package signature validation.
-# Without this, dotnet fails to verify NuGet package signatures when Synthesis
-# compiles patchers. Imported into the Wine prefix Windows cert store so no
-# system-level changes are needed.
-_DIGICERT_CERT_URL = "https://cacerts.digicert.com/DigiCertTrustedRootG4.crt.pem"
-_DIGICERT_CERT_FILENAME = "DigiCertTrustedRootG4.crt.pem"
 
 # fxc2 build of d3dcompiler_47 - required for Community Shaders shader compilation.
 # The winetricks-provided d3dcompiler_47 lacks support for certain shader models
@@ -202,56 +224,6 @@ def _install_dotnet10_desktop_runtime(
     except Exception as e:
         log(f"Failed to install .NET Desktop Runtime 10: {e}")
         return False
-
-
-def _install_nuget_cert(
-    prefix_path: Path,
-    wine_bin: str,
-    log: Callable[[str], None],
-) -> bool:
-    """
-    Import the DigiCert Trusted Root G4 CA into the Wine prefix Windows cert
-    store. Required for NuGet package signature validation when Synthesis
-    compiles patchers. Uses wine certutil so no system-level changes are needed.
-    """
-    try:
-        from jackify.shared.paths import get_jackify_data_dir
-        cache_dir = get_jackify_data_dir() / "cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cert_file = cache_dir / _DIGICERT_CERT_FILENAME
-
-        if not cert_file.exists():
-            log(f"Downloading DigiCert Trusted Root G4 certificate...")
-            urllib.request.urlretrieve(_DIGICERT_CERT_URL, cert_file)
-            log("Certificate downloaded")
-        else:
-            log("DigiCert certificate already cached, skipping download")
-
-        log("Importing certificate into Wine prefix cert store...")
-        env = os.environ.copy()
-        env["WINEPREFIX"] = str(prefix_path)
-        env["WINEDEBUG"] = "-all"
-        env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d"
-        env["DISPLAY"] = env.get("DISPLAY", ":0")
-
-        result = subprocess.run(
-            [wine_bin, "certutil", "-addstore", "Root", str(cert_file)],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-
-        if result.returncode != 0:
-            log(f"certutil exited with code {result.returncode} (may already be installed)")
-        else:
-            log("DigiCert certificate imported into Wine cert store")
-        return True
-
-    except Exception as e:
-        log(f"Failed to install NuGet certificate: {e}")
-        return False
-
 
 
 def _install_fxc2_d3dcompiler(
@@ -360,8 +332,9 @@ def apply_tool_config(
     prefix to Windows 11, which are required for Synthesis. Intentionally opt-in -
     the download is ~220MB and the win11 flip has not been verified against NSF/CSF
     prefixes (see preserve_global_mscoree).
-    The NuGet Root CA cert (also required for Synthesis) is applied regardless of
-    this flag, since it has no interaction with mscoree hosting or Windows version.
+    The NuGet Root CA certs (also required for Synthesis) are only imported when
+    the SDK is present, since the trusted-root PEM bundles ship inside the SDK
+    (see nuget_signature_service.install_nuget_cert).
 
     install_fxc2_d3dcompiler=True replaces d3dcompiler_47.dll with the Mozilla
     fxc2 build. Only appropriate for Skyrim SE/AE modlists using Community Shaders.
@@ -387,12 +360,6 @@ def apply_tool_config(
         _install_dotnet10_desktop_runtime(prefix_path, wine_bin, _log)
         _set_windows_version_win11(prefix_path, wine_bin, _log)
 
-    # NuGet cert import is independent of the SDK/win11 install above - it only adds a
-    # Root CA entry and has no interaction with mscoree hosting, so it must not be
-    # skipped for NSF/CSF modlists (which pass install_dotnet9_sdk=False to avoid the
-    # win11 flip). Synthesis still needs this cert even on an NSF/CSF prefix.
-    _install_nuget_cert(prefix_path, wine_bin, _log)
-
     # Remove legacy global *mscoree=native from DllOverrides if present.
     # Old installs wrote this globally, which breaks .NET 9/10 bootstrap (Synthesis).
     # The targeted AppDefaults\SkyrimSE.exe entry written below replaces it.
@@ -416,7 +383,15 @@ def apply_tool_config(
         except Exception as e:
             _log(f"Note: could not remove legacy mscoree entry (non-fatal): {e}")
 
+    # _build_reg_content() writes UseSharedCompilation=false and
+    # MSBUILDDISABLENODEREUSE=1, which prevent the Roslyn shared compiler server
+    # hang under Wine (see module docstring history). Must be in place before
+    # anything invokes dotnet in the prefix - without these keys the first
+    # "dotnet run" can hang on VBCSCompiler's named pipe and leave an orphaned
+    # dotnet.exe/winedevice.exe spinning at high CPU indefinitely (confirmed
+    # reproducible during the original cert-import ordering bug).
     reg_content = _build_reg_content()
+    regedit_ok = False
 
     try:
         with tempfile.NamedTemporaryFile(
@@ -441,22 +416,34 @@ def apply_tool_config(
 
         if result.returncode != 0:
             _log(f"wine regedit exited with code {result.returncode}: {result.stderr[:200]}")
-            return False
-
-        _log(f"Tool compatibility settings applied ({len(_XEDIT_EXECUTABLES)} xEdit variants, Pandora, {len(_DLL_OVERRIDES)} DLL overrides)")
-        return True
+        else:
+            _log(f"Tool compatibility settings applied ({len(_XEDIT_EXECUTABLES)} xEdit variants, Pandora, {len(_DLL_OVERRIDES)} DLL overrides)")
+            regedit_ok = True
 
     except subprocess.TimeoutExpired:
         _log("wine regedit timed out after 30 seconds")
-        return False
     except Exception as e:
         _log(f"Failed to apply tool config: {e}")
-        return False
     finally:
         try:
             os.unlink(reg_file)
         except Exception:
             pass
+
+    # Must run before the first dotnet invocation in this prefix: the SDK
+    # auto-generates a bare-bones NuGet.Config (nuget.org source only, no trust
+    # policy) as a side effect of any restore if none exists yet, and
+    # configure_nuget_signature_policy skips writing when the file already
+    # exists - so a stub landing first means our trust policy never applies.
+    configure_nuget_signature_policy(prefix_path, _log)
+
+    # NuGet cert import requires the .NET SDK already present (the trusted-root
+    # PEM bundles ship inside the SDK). On NSF/CSF prefixes
+    # (install_dotnet9_sdk=False) the SDK is not installed, so this is skipped
+    # there - those modlists don't run Synthesis in the same prefix.
+    install_nuget_cert(prefix_path, wine_bin, _log)
+
+    return regedit_ok
 
 
 def setup_nemesis_compatibility(

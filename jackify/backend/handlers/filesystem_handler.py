@@ -19,11 +19,13 @@ from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET
 from .filesystem_handler_download import FilesystemDownloadMixin
 from .filesystem_handler_ownership import FilesystemOwnershipMixin
 from .filesystem_handler_steam import FilesystemSteamMixin
+from .filesystem_handler_first_launch import FilesystemFirstLaunchMixin
 
 logger = logging.getLogger(__name__)
 
-
-class FileSystemHandler(FilesystemDownloadMixin, FilesystemOwnershipMixin, FilesystemSteamMixin):
+class FileSystemHandler(
+    FilesystemDownloadMixin, FilesystemOwnershipMixin, FilesystemSteamMixin, FilesystemFirstLaunchMixin
+):
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
@@ -384,8 +386,6 @@ class FileSystemHandler(FilesystemDownloadMixin, FilesystemOwnershipMixin, Files
             logger.error(f"Failed to add backupPath entry to {modlist_ini}: {e}")
             return False # Backup succeeded, but adding entry failed
 
-
-
     def copy_file(self, src: Path, dst: Path, overwrite: bool = False) -> bool:
         """
         Copy a file from source to destination.
@@ -474,19 +474,20 @@ class FileSystemHandler(FilesystemDownloadMixin, FilesystemOwnershipMixin, Files
             self.logger.error(f"Error deleting directory: {e}")
             return False
     
-    def create_required_dirs(self, game_name: str, appid: str) -> bool:
+    def create_required_dirs(self, game_name: str, appid: str, modlist_dir: Optional[str] = None) -> bool:
         """
         Create required directories for a game modlist
-        
+
         This includes both Linux home directories and Wine prefix directories.
         Creating the Wine prefix Documents directories is critical for USVFS
         to work properly on first launch - USVFS needs the target directory
         to exist before it can virtualize profile INI files.
-        
+
         Args:
             game_name: Name of the game (e.g., skyrimse, fallout4)
             appid: Steam AppID of the modlist
-            
+            modlist_dir: Modlist install directory, used to seed the MO2 profile's own
+                INI files for games whose plugin has no bundled default-ini fallback
         Returns:
             bool: True if directories were created successfully, False otherwise
         """
@@ -502,8 +503,10 @@ class FileSystemHandler(FilesystemDownloadMixin, FilesystemOwnershipMixin, Files
                 "fallout4vr": "Fallout4VR",
                 "falloutnv": "FalloutNV",
                 "oblivion": "Oblivion",
+                "oblivion_remastered": "Oblivion Remastered",
                 "enderal": "Enderal Special Edition",
                 "enderalse": "Enderal Special Edition",
+                "starfield": "Starfield",
             }
             
             game_dirs = {
@@ -585,6 +588,8 @@ class FileSystemHandler(FilesystemDownloadMixin, FilesystemOwnershipMixin, Files
                         self._seed_skyrimvr_first_launch_files(prefix_user, docs_dir_name)
                     elif game_name == "fallout4vr":
                         self._seed_fallout4vr_first_launch_files(prefix_user, docs_dir_name)
+                    elif game_name == "starfield":
+                        self._seed_starfield_first_launch_files(prefix_user, docs_dir_name, modlist_dir)
             else:
                 self.logger.warning(f"Could not find compatdata path for AppID {appid}, skipping Wine prefix directory creation")
             
@@ -593,139 +598,3 @@ class FileSystemHandler(FilesystemDownloadMixin, FilesystemOwnershipMixin, Files
             self.logger.error(f"Error creating required directories: {e}")
             return False
 
-    def _seed_skyrim_first_launch_files(self, prefix_user: str, docs_dir_name: str) -> None:
-        """
-        Pre-seed files in the Wine prefix that Skyrim SE/AE needs on first launch.
-
-        Two files must exist before first launch to avoid USVFS and engine issues:
-
-        1. AppData/Local/Skyrim Special Edition/Plugins.txt - empty anchor file.
-           USVFS builds its VFS tree at MO2 startup. If this path does not exist,
-           USVFS logs the directory as missing and skips adding Plugins.txt to the
-           initial tree. It then tries to reroute the file dynamically, but a mutex
-           deadlock (thread never releases the write mutex on first launch) blocks
-           the reroute. The game falls through to the real filesystem, finds no
-           Plugins.txt, and loads only base-game ESPs - causing a null form crash
-           for any SKSE plugin that expects modlist ESPs (e.g. BladeAndBlunt.dll).
-           On second launch the directory exists, USVFS initialises correctly, no crash.
-           Pre-seeding an empty file gives USVFS its anchor; content is irrelevant
-           because USVFS reroutes reads to the active MO2 profile's plugins.txt anyway.
-
-        2. Documents/My Games/Skyrim Special Edition/SkyrimPrefs.ini - minimal stub.
-           The CC/AE download prompt is triggered by bDownloadCC=0 (or absent) in
-           SkyrimPrefs.ini. This check fires before PrivateProfileRedirector (PPR)
-           hooks the Windows INI API, so the game reads the real prefix path directly,
-           not the MO2 profile version. A minimal stub with bDownloadCC=1 suppresses
-           the prompt. PPR redirects all subsequent reads to the active profile once
-           it loads, so this stub is never read again after early engine init.
-           Only created if the file does not already exist.
-        """
-        # Fix 1: empty Plugins.txt anchor for USVFS
-        appdata_sse = os.path.join(prefix_user, "AppData", "Local", "Skyrim Special Edition")
-        plugins_txt = os.path.join(appdata_sse, "Plugins.txt")
-        try:
-            os.makedirs(appdata_sse, exist_ok=True)
-            if not os.path.exists(plugins_txt):
-                open(plugins_txt, 'w').close()
-                self.logger.info(f"Created Plugins.txt anchor for USVFS: {plugins_txt}")
-            else:
-                self.logger.debug(f"Plugins.txt already exists, skipping: {plugins_txt}")
-        except Exception as e:
-            self.logger.warning(f"Could not create Plugins.txt anchor: {e}")
-
-        # Fix 2: minimal SkyrimPrefs.ini at real Documents path to suppress AE popup
-        skyrimprefs_path = os.path.join(
-            prefix_user, "Documents", "My Games", docs_dir_name, "SkyrimPrefs.ini"
-        )
-        try:
-            if not os.path.exists(skyrimprefs_path):
-                with open(skyrimprefs_path, 'w', encoding='utf-8') as f:
-                    f.write("[General]\nbDownloadCC=1\n")
-                self.logger.info(f"Created SkyrimPrefs.ini stub to suppress AE popup: {skyrimprefs_path}")
-            else:
-                self.logger.debug(f"SkyrimPrefs.ini already exists, skipping: {skyrimprefs_path}")
-        except Exception as e:
-            self.logger.warning(f"Could not create SkyrimPrefs.ini stub: {e}")
-
-    def _seed_fo4_first_launch_files(self, prefix_user: str, docs_dir_name: str) -> None:
-        """
-        Pre-seed files in the Wine prefix that Fallout 4 needs on first launch.
-
-        1. AppData/Local/Fallout4/Plugins.txt - empty anchor file for USVFS.
-           Same mutex deadlock mechanism as Skyrim SE - confirmed to apply to FO4.
-
-        INI stub for CC popup suppression is intentionally omitted until the correct
-        key name in Fallout4Prefs.ini is confirmed via testing.
-        """
-        appdata_fo4 = os.path.join(prefix_user, "AppData", "Local", docs_dir_name)
-        plugins_txt = os.path.join(appdata_fo4, "Plugins.txt")
-        try:
-            os.makedirs(appdata_fo4, exist_ok=True)
-            if not os.path.exists(plugins_txt):
-                open(plugins_txt, 'w').close()
-                self.logger.info(f"Created Plugins.txt anchor for USVFS: {plugins_txt}")
-            else:
-                self.logger.debug(f"Plugins.txt already exists, skipping: {plugins_txt}")
-        except Exception as e:
-            self.logger.warning(f"Could not create Plugins.txt anchor: {e}")
-
-    def _seed_skyrimvr_first_launch_files(self, prefix_user: str, docs_dir_name: str) -> None:
-        """
-        Pre-seed files in the Wine prefix that Skyrim VR needs on first launch.
-
-        1. AppData/Local/Skyrim VR/Plugins.txt - empty anchor file for USVFS.
-           Same mutex deadlock mechanism as Skyrim SE applies to VR.
-
-        2. Documents/My Games/Skyrim VR/SkyrimPrefs.ini - minimal stub with two keys:
-           - bDownloadCC=1: suppresses the AE/CC download prompt (same engine behaviour
-             as Skyrim SE; fires before PPR hooks the INI API).
-           - bLoadVRPlayroom=0: prevents the game loading the Bethesda VR playroom
-             tutorial on first launch. Without this, SkyrimVR skips the main menu and
-             drops the user into the playroom, bypassing the modlist's startup sequence.
-        """
-        appdata_vr = os.path.join(prefix_user, "AppData", "Local", docs_dir_name)
-        plugins_txt = os.path.join(appdata_vr, "Plugins.txt")
-        try:
-            os.makedirs(appdata_vr, exist_ok=True)
-            if not os.path.exists(plugins_txt):
-                open(plugins_txt, 'w').close()
-                self.logger.info(f"Created Plugins.txt anchor for USVFS: {plugins_txt}")
-            else:
-                self.logger.debug(f"Plugins.txt already exists, skipping: {plugins_txt}")
-        except Exception as e:
-            self.logger.warning(f"Could not create Plugins.txt anchor: {e}")
-
-        skyrimprefs_path = os.path.join(
-            prefix_user, "Documents", "My Games", docs_dir_name, "SkyrimPrefs.ini"
-        )
-        try:
-            if not os.path.exists(skyrimprefs_path):
-                with open(skyrimprefs_path, 'w', encoding='utf-8') as f:
-                    f.write("[General]\nbDownloadCC=1\nbLoadVRPlayroom=0\n")
-                self.logger.info(f"Created SkyrimPrefs.ini stub for VR first-launch: {skyrimprefs_path}")
-            else:
-                self.logger.debug(f"SkyrimPrefs.ini already exists, skipping: {skyrimprefs_path}")
-        except Exception as e:
-            self.logger.warning(f"Could not create SkyrimPrefs.ini stub: {e}")
-
-    def _seed_fallout4vr_first_launch_files(self, prefix_user: str, docs_dir_name: str) -> None:
-        """
-        Pre-seed files in the Wine prefix that Fallout 4 VR needs on first launch.
-
-        1. AppData/Local/Fallout4VR/Plugins.txt - empty anchor file for USVFS.
-           Same mutex deadlock mechanism as Skyrim SE and FO4 applies to VR.
-
-        INI stub is intentionally omitted - the correct key name in Fallout4VRPrefs.ini
-        has not been confirmed via testing.
-        """
-        appdata_fo4vr = os.path.join(prefix_user, "AppData", "Local", docs_dir_name)
-        plugins_txt = os.path.join(appdata_fo4vr, "Plugins.txt")
-        try:
-            os.makedirs(appdata_fo4vr, exist_ok=True)
-            if not os.path.exists(plugins_txt):
-                open(plugins_txt, 'w').close()
-                self.logger.info(f"Created Plugins.txt anchor for USVFS: {plugins_txt}")
-            else:
-                self.logger.debug(f"Plugins.txt already exists, skipping: {plugins_txt}")
-        except Exception as e:
-            self.logger.warning(f"Could not create Plugins.txt anchor: {e}")

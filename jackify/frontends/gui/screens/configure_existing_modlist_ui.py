@@ -144,28 +144,7 @@ class ConfigureExistingModlistUIMixin:
         self.resolution_combo = QComboBox()
         self.resolution_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.resolution_combo.addItem("Leave unchanged")
-        self.resolution_combo.addItems([
-            "1280x720",
-            "1280x800 (Steam Deck)",
-            "1366x768",
-            "1440x900",
-            "1600x900",
-            "1600x1200",
-            "1680x1050",
-            "1920x1080",
-            "1920x1200",
-            "2048x1152",
-            "2560x1080",
-            "2560x1440",
-            "2560x1600",
-            "3440x1440",
-            "3840x1600",
-            "3840x2160",
-            "3840x2400",
-            "5120x1440",
-            "5120x2160",
-            "7680x4320"
-        ])
+        self.resolution_combo.addItems(self.resolution_service.get_resolution_list())
         form_grid.addWidget(resolution_label, 2, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
         form_grid.addWidget(self.resolution_combo, 2, 1)
         

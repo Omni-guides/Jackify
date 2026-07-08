@@ -1,5 +1,21 @@
 # Jackify Changelog
 
+## v0.7.1.1 - Synthesis, Starfield, and Stability Fixes
+**Release Date:** 2026-07-08
+
+### Fixes
+- Fixed vcrun2022/vcrun2012 native component installs leaving Wine's own runtime DLLs in effect instead of the real ones, causing DLL load failures in some situations.
+- Fixed instances where Synthesis under Proton spawning huge numbers of dotnet processes and running the system out of memory during patcher compilation.
+- Improved Synthesis' required NuGet security certificate installation.
+- Fixed a related NuGet signature validation failure (NU3037/NU3028) affecting some patchers that depend on older signed packages.
+- Fixed Starfield modlists failing to launch on first use and showing a MO2 warning about missing profile INI files. Added recognition for Oblivion Remastered.
+- Fixed the resolution dropdown being duplicated across three separate screens, and added detection of the actual connected screen resolutions.
+- Fixed an intermittent crash when closing the install/configure window while CPU usage tracking was still running in the background.
+- Fixed the archive download progress total sometimes shrinking or climbing indefinitely during large downloads.
+- Fixed some modlists showing a "Failed to start the helper application: nxmhandler.exe" error when closing MO2.
+
+---
+
 ## v0.7.1 - Remote Manifest System, Stability Fixes
 **Release Date:** 2026-07-02
 

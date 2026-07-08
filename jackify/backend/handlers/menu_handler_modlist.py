@@ -237,6 +237,7 @@ class ModlistMenuHandler:
             mo2_dir = os.path.dirname(mo2_path)
             # --- Auto-create nxmhandler.ini to suppress NXM Handling popup (MOVED UP) ---
             self.shortcut_handler.write_nxmhandler_ini(mo2_dir, mo2_path)
+            self.shortcut_handler.repair_dlls_manifest(mo2_dir)
             steam_icons_path = os.path.join(mo2_dir, "Steam Icons")
             steamicons_path = os.path.join(mo2_dir, "SteamIcons")
             if os.path.isdir(steam_icons_path) and not os.path.isdir(steamicons_path):
@@ -454,6 +455,7 @@ class ModlistMenuHandler:
         _mo2_dir = os.path.dirname(_mo2_exe)
         if _mo2_dir and os.path.isdir(_mo2_dir):
             self.shortcut_handler.write_nxmhandler_ini(_mo2_dir, _mo2_exe)
+            self.shortcut_handler.repair_dlls_manifest(_mo2_dir)
         # Robust AppID lookup for GUI/CLI: if appid missing but mo2_exe_path present, look it up
         if 'appid' not in context or not context.get('appid'):
             if 'mo2_exe_path' in context and context['mo2_exe_path']:

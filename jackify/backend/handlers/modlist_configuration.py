@@ -209,6 +209,7 @@ class ModlistConfigurationMixin:
                     "fnv": "falloutnv",
                     "falloutnv": "falloutnv",
                     "oblivion": "oblivion",
+                    "oblivion_remastered": "oblivion_remastered",
                     "enderal": "enderalse",
                     "enderalspecialedition": "enderalse",
                     "bg3": "bg3",
@@ -232,7 +233,9 @@ class ModlistConfigurationMixin:
 
                 if game_name:
                     appid_str = str(self.appid)
-                    if self.filesystem_handler.create_required_dirs(game_name, appid_str):
+                    if self.filesystem_handler.create_required_dirs(
+                        game_name, appid_str, modlist_dir=str(self.modlist_dir) if self.modlist_dir else None
+                    ):
                         self.logger.info("Wine prefix Documents directories created successfully for USVFS")
                     else:
                         self.logger.warning("Failed to create Wine prefix Documents directories (non-critical, continuing)")

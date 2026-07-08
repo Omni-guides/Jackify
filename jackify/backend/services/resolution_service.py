@@ -18,7 +18,31 @@ class ResolutionService:
     Centralized service for managing resolution settings
     Handles saving, loading, and validation of resolution settings
     """
-    
+
+    COMMON_RESOLUTIONS = [
+        "1280x720",
+        "1280x800 (Steam Deck)",
+        "1366x768",
+        "1440x900",
+        "1600x900",
+        "1600x1200",
+        "1680x1050",
+        "1920x1080",
+        "1920x1200",
+        "2048x1152",
+        "2560x1080",
+        "2560x1440",
+        "2560x1600",
+        "3440x1440",
+        "3840x1080",
+        "3840x1600",
+        "3840x2160",
+        "3840x2400",
+        "5120x1440",
+        "5120x2160",
+        "7680x4320",
+    ]
+
     def __init__(self):
         """Initialize the resolution service"""
         self.config_handler = ConfigHandler()
@@ -140,6 +164,37 @@ class ResolutionService:
             logger.warning(f"Resolution does not match WxH format: {resolution}")
             return False
     
+    def get_resolution_list(self) -> list:
+        """
+        Build the resolution dropdown list: the curated common resolutions,
+        plus any resolution reported by a connected Qt screen that isn't
+        already covered, so unusual native resolutions (e.g. ultrawide)
+        still show up. Falls back to the curated list alone if screen
+        detection is unavailable (headless, sandboxed launch, etc).
+
+        Returns:
+            list: Resolution labels sorted by pixel dimensions
+        """
+        resolutions = {}
+        for label in self.COMMON_RESOLUTIONS:
+            key = label.split(' ')[0]
+            resolutions[key] = label
+
+        try:
+            from PySide6.QtGui import QGuiApplication
+            for screen in QGuiApplication.screens():
+                size = screen.size()
+                key = f"{size.width()}x{size.height()}"
+                resolutions.setdefault(key, key)
+        except Exception as e:
+            logger.debug(f"Could not query Qt screens for resolution detection: {e}")
+
+        def sort_key(label: str):
+            width, height = label.split(' ')[0].split('x')
+            return (int(width), int(height))
+
+        return sorted(resolutions.values(), key=sort_key)
+
     def get_resolution_index(self, resolution: str, combo_items: list) -> int:
         """
         Get the index of a resolution in a combo box list

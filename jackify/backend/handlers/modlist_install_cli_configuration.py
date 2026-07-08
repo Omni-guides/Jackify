@@ -461,6 +461,7 @@ class ModlistInstallCLIConfigurationMixin:
             from .shortcut_handler import ShortcutHandler
             shortcut_handler = ShortcutHandler(steamdeck=self.steamdeck, verbose=False)
             shortcut_handler.write_nxmhandler_ini(install_dir_str, mo2_exe_path)
+            shortcut_handler.repair_dlls_manifest(install_dir_str)
 
             from ..services.automated_prefix_service import AutomatedPrefixService
             prefix_service = AutomatedPrefixService()

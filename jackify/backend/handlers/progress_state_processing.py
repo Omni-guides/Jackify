@@ -84,7 +84,16 @@ class ProgressStateProcessingMixin:
             updated = True
 
         if parsed.data_info:
-            self.state.data_processed, self.state.data_total = parsed.data_info
+            new_processed, new_total = parsed.data_info
+            self.state.data_processed = new_processed
+            if self.state.phase == InstallationPhase.DOWNLOAD and self._download_total_bytes > 0:
+                # The engine only reports remaining bytes during download; the parser
+                # extrapolates a total from it and that estimate drifts both up and
+                # down line to line as archive sizes vary. Prefer the total already
+                # accumulated from real per-file sizes below once it's available.
+                self.state.data_total = self._download_total_bytes
+            else:
+                self.state.data_total = new_total
             if self.state.data_total > 0 and self.state.overall_percent == 0.0:
                 self.state.overall_percent = (self.state.data_processed / self.state.data_total) * 100.0
             updated = True

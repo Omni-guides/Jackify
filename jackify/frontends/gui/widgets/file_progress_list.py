@@ -343,10 +343,19 @@ class FileProgressList(QWidget):
 
     def stop_cpu_tracking(self):
         self._cpu_timer.stop()
-        if self._cpu_worker and self._cpu_worker.isRunning():
-            self._cpu_worker.quit()
-            self._cpu_worker.wait(1000)
-            self._cpu_worker = None
+        worker = self._cpu_worker
+        if worker is None:
+            return
+        self._cpu_worker = None
+        if not worker.isRunning():
+            return
+        worker.wait(2000)
+        if worker.isRunning():
+            # psutil scan (baselining new child processes) didn't finish in time.
+            # Dropping the last Python reference to a still-running QThread makes
+            # Qt abort ("QThread: Destroyed while thread is still running") - let
+            # it finish naturally and clean itself up instead.
+            worker.finished.connect(worker.deleteLater)
 
     def _start_cpu_worker(self):
         # Skip if a worker is already running to avoid pileup

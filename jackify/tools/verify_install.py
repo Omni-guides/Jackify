@@ -524,7 +524,7 @@ def check_user_directories(pfx: Path, game_type: str, r: Results):
         if my_games.is_dir():
             r.ok(f"My Games/{MY_GAMES_DIR[game_type]} exists")
         else:
-            r.fail(f"My Games/{MY_GAMES_DIR[game_type]} missing")
+            r.warn(f"My Games/{MY_GAMES_DIR[game_type]} missing")
 
     # AppData/Local
     if game_type in APPDATA_LOCAL_DIRS:
@@ -1124,8 +1124,13 @@ def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
 
         # .NET 9 SDK is installed natively (not via winetricks) for Synthesis.
         # NSF/CSF prefixes use global *mscoree=native and deliberately skip dotnet9 (win11 flip
-        # breaks NSF), so suppress the check when that override is present.
-        _nsf_prefix = '"*mscoree"="native"' in content
+        # breaks NSF), so suppress the check when that override is present. Must check the
+        # global [Software\Wine\DllOverrides] section specifically, not just any occurrence of
+        # the string - every Skyrim modlist (NSF or not) also gets a scoped
+        # AppDefaults\SkyrimSE.exe\DllOverrides entry with the same value, which a plain
+        # substring search can't tell apart from the global one.
+        _global_overrides_match = re.search(r"\[Software\\\\Wine\\\\DllOverrides\][^\[]*", content)
+        _nsf_prefix = bool(_global_overrides_match and '"*mscoree"="native"' in _global_overrides_match.group(0))
         sdk_base = pfx / "drive_c" / "Program Files" / "dotnet" / "sdk"
         if _nsf_prefix:
             r.ok(".NET 9 SDK check skipped (NSF/CSF prefix - global mscoree=native detected)")
@@ -1138,6 +1143,49 @@ def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
                 r.warn(f".NET 9 SDK not found under drive_c/Program Files/dotnet/sdk/ (found: {installed or 'none'})")
         else:
             r.warn(".NET 9 SDK not found (drive_c/Program Files/dotnet/sdk/ missing; run Configure Tool Compatibility)")
+
+        if not _nsf_prefix:
+            sys_content = system_reg.read_text(errors="replace") if system_reg.exists() else ""
+            _check_nuget_signature_config(pfx, content, sys_content, r)
+
+
+def _check_nuget_signature_config(pfx: Path, user_reg_content: str, system_reg_content: str, r: Results):
+    """
+    Check NuGet package signature validation is configured for Synthesis.
+    Three independent pieces, all required (see nuget_signature_service.py):
+    the trust-pin NuGet.Config, the SDK's own trusted-root certs imported into
+    Wine's cert store, and the offline-revocation/retry-policy env vars.
+    """
+    config_path = pfx / "drive_c" / "users" / "steamuser" / "AppData" / "Roaming" / "NuGet" / "NuGet.Config"
+    if not config_path.exists():
+        r.warn("NuGet.Config not found (Synthesis package restore will likely fail)")
+    else:
+        config_content = config_path.read_text(errors="replace")
+        if "allowUntrustedRoot" in config_content and "trustedSigners" in config_content:
+            r.ok("NuGet signature trust policy configured")
+        else:
+            r.warn(
+                "NuGet.Config exists but lacks the trust policy - likely the SDK's "
+                "auto-generated stub (dotnet wrote it before Jackify could); delete "
+                "it and re-run Configure Tool Compatibility"
+            )
+
+    # X509Store(StoreName.Root, StoreLocation.CurrentUser) lands in user.reg
+    # (HKCU) on some Wine versions and system.reg (HKLM) on others - confirmed
+    # via a real CachyOS repro (wine-11.0) where the import genuinely succeeded
+    # but landed in system.reg while an older Wine build on another machine put
+    # it in user.reg. Check both rather than assume one.
+    marker = "SystemCertificates\\\\Root\\\\Certificates\\\\"
+    root_cert_count = user_reg_content.count(marker) + system_reg_content.count(marker)
+    if root_cert_count > 0:
+        r.ok(f".NET SDK trusted-root certs imported into Wine cert store ({root_cert_count} entries)")
+    else:
+        r.warn(".NET SDK trusted-root certs not found in Wine cert store")
+
+    if "NUGET_CERT_REVOCATION_MODE" in user_reg_content and "NUGET_EXPERIMENTAL_CHAIN_BUILD_RETRY_POLICY" in user_reg_content:
+        r.ok("NuGet offline-revocation/retry-policy env vars set")
+    else:
+        r.warn("NuGet offline-revocation/retry-policy env vars not found in HKCU\\Environment")
 
 
 def check_steam_artwork(appid: str, r: Results):

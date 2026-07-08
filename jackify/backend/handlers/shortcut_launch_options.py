@@ -1,11 +1,14 @@
 """Launch options and icon methods for ShortcutHandler (Mixin)."""
 import logging
 import os
+import re
 import shutil
 import time
 import vdf
 
 logger = logging.getLogger(__name__)
+
+_MANIFEST_FILE_RE = re.compile(r'<file\s+name="([^"]+)"\s*/>', re.IGNORECASE)
 
 
 class ShortcutLaunchOptionsMixin:
@@ -258,20 +261,77 @@ class ShortcutLaunchOptionsMixin:
             logger.debug("[DEBUG] No SteamIcons directory found; shortcut will have no icon.")
         return ""
 
+    def repair_dlls_manifest(self, mo2_dir: str) -> None:
+        """
+        Some MO2 builds ship a dlls/dlls.manifest (Windows SxS assembly manifest) that omits
+        an entry for a DLL actually present in dlls/. Wine's loader only redirects lookups for
+        files declared in the manifest, so an undeclared DLL is invisible to dependents even
+        though it exists on disk (e.g. Qt6Core.dll importing icuuc.dll) - ModOrganizer.exe then
+        fails to load entirely (status c0000135). Patch in any missing entries so the manifest
+        matches what's actually in the directory. Never removes existing entries.
+        """
+        dlls_dir = os.path.join(mo2_dir, "dlls")
+        manifest_path = os.path.join(dlls_dir, "dlls.manifest")
+        if not os.path.isfile(manifest_path):
+            return
+
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            self.logger.debug(f"Could not read dlls.manifest: {e}")
+            return
+
+        declared = {m.group(1).lower() for m in _MANIFEST_FILE_RE.finditer(content)}
+        try:
+            actual = {name for name in os.listdir(dlls_dir) if name.lower().endswith(".dll")}
+        except Exception as e:
+            self.logger.debug(f"Could not list dlls directory: {e}")
+            return
+
+        missing = sorted(name for name in actual if name.lower() not in declared)
+        if not missing:
+            return
+
+        if "</assembly>" not in content:
+            self.logger.warning(f"dlls.manifest at {manifest_path} has unexpected format - skipping repair")
+            return
+
+        insert = "".join(f'  <file name="{name}" />\n' for name in missing)
+        patched = content.replace("</assembly>", insert + "</assembly>")
+
+        try:
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                f.write(patched)
+            self.logger.info(f"Added missing dlls.manifest entries: {', '.join(missing)}")
+        except Exception as e:
+            self.logger.error(f"Failed to patch dlls.manifest: {e}")
+
     def write_nxmhandler_ini(self, modlist_dir, mo2_exe_path):
         """
         Create nxmhandler.ini in the modlist directory to suppress the NXM Handling popup on first MO2 launch.
-        If the file already exists, do nothing.
         The executable path will be written as Z:\\<absolute path with double backslashes>, matching MO2's format.
+
+        Some modlists ship their own nxmhandler.ini bundled with the packaged MO2 install,
+        carrying handler entries from the author's own machine (wrong drive letters, paths
+        to other modlists). Only skip writing if an existing file already references this
+        modlist's own executable path - otherwise regenerate it, since stale foreign entries
+        can make MO2 fail to re-verify its self-registration on close.
         """
         ini_path = os.path.join(modlist_dir, "nxmhandler.ini")
-        if os.path.exists(ini_path):
-            self.logger.info(f"nxmhandler.ini already exists at {ini_path}")
-            return
         abs_path = os.path.abspath(mo2_exe_path)
         z_path = f"Z:{abs_path}"
         win_path = z_path.replace('/', '\\')
         win_path = win_path.replace('\\', '\\\\')
+
+        if os.path.exists(ini_path):
+            with open(ini_path, "r", encoding="utf-8") as f:
+                existing = f.read()
+            if win_path in existing:
+                self.logger.info(f"nxmhandler.ini already configured for this modlist at {ini_path}")
+                return
+            self.logger.info(f"nxmhandler.ini exists but does not reference this modlist, regenerating: {ini_path}")
+
         content = (
             "[handlers]\n"
             "size=1\n"
