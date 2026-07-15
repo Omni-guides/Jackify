@@ -63,9 +63,10 @@ class ModlistGalleryLoadingMixin:
                 content_height = self.content_area.height()
                 x = (content_width - 300) // 2
                 y = (content_height - 120) // 2
-                self._loading_overlay.move(x, y)
-                self._loading_overlay.show()
-                self._loading_overlay.raise_()
+                if hasattr(self, '_loading_overlay') and self._loading_overlay is not None:
+                    self._loading_overlay.move(x, y)
+                    self._loading_overlay.show()
+                    self._loading_overlay.raise_()
         
         # Delay slightly to ensure content_area is laid out
         QTimer.singleShot(50, position_overlay)

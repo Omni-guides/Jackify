@@ -9,7 +9,7 @@ venv/
 
 # Logs
 *.log
-jackify-install-engine/logs/ 
+jackify-install-engine/logs/
 logs/
 
 # Build artifacts
@@ -31,7 +31,9 @@ jackify/engine/
 *.bak
 *.swp
 .DS_Store
-Thumbs.db 
+Thumbs.db
+.clj-kondo # auto-inserted by VSCode Kondo extension
+.lsp       # auto-inserted by VSCode langserver extension
 
 # Development-only directories (should not be in public repo)
 docs/
