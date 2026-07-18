@@ -579,13 +579,18 @@ class ModlistConfigurationMixin:
         self._re_enforce_windows_10_mode()
 
         # Step 15: Apply tool compatibility settings (xEdit, Pandora, DLL overrides).
-        # Only runs for standard Skyrim SE/AE modlists. Non-Skyrim games (Enderal, FNV,
-        # FO3, etc.) are excluded because the mscoree AppDefault targets SkyrimSE.exe,
-        # which is also Enderal's executable, causing a crash on those modlists.
+        # Runs for standard Skyrim SE/AE modlists and Enderal SE. Other special types
+        # (FNV, FO3, etc.) are excluded entirely - different engine, none of these
+        # fixes apply. Enderal SE shares the Skyrim SE engine and plugin format, so
+        # xEdit/Pandora/DLL overrides/Synthesis dotnet+NuGet setup all still apply -
+        # only the mscoree AppDefault is skipped for it (apply_engine_mscoree below),
+        # since that entry is scoped to SkyrimSE.exe, which is also Enderal's own
+        # game process and would crash it.
         _special_type = self.detect_special_game_type(self.modlist_dir)
+        _enderal = _special_type == 'enderal'
         try:
             from jackify.backend.handlers.config_handler import ConfigHandler
-            if ConfigHandler().get('auto_tool_compat', True) and _special_type is None:
+            if ConfigHandler().get('auto_tool_compat', True) and (_special_type is None or _enderal):
                 if status_callback:
                     status_callback(f"{self._get_progress_timestamp()} Applying tool compatibility settings")
                 self.logger.info("Step 15: Applying tool compatibility settings...")
@@ -596,10 +601,10 @@ class ModlistConfigurationMixin:
                     # NSF/CSF modlists need the global *mscoree=native that winetricks dotnet48
                     # set: the per-exe scoping this function applies starves NSF's CLR hosting
                     # (verified directly). So preserve the global override for them.
-                    # dotnet9 SDK install also flips the prefix to win11; NSF/CSF was only
+                    # dotnet SDK install also flips the prefix to win11; NSF/CSF was only
                     # verified working on win10 + global-native, so we keep that state and skip
-                    # the dotnet9/win11 step. Whether Synthesis runs under global-native on an NSF
-                    # prefix has not been specifically tested - revisit if a modlist needs live
+                    # the dotnet SDK/win11 step. Whether Synthesis runs under global-native on an
+                    # NSF prefix has not been specifically tested - revisit if a modlist needs live
                     # Synthesis. The NuGet cert Synthesis needs is applied regardless (see
                     # apply_tool_config), since it doesn't touch mscoree or Windows version.
                     _nsf = getattr(self, '_nsf_detected', False)
@@ -607,13 +612,21 @@ class ModlistConfigurationMixin:
                         compatdata_path,
                         wine_bin,
                         log=lambda msg: status_callback(f"{self._get_progress_timestamp()} {msg}") if status_callback else None,
-                        install_dotnet9_sdk=not _nsf,
+                        install_dotnet_sdk=not _nsf,
                         install_fxc2_d3dcompiler=True,
                         preserve_global_mscoree=_nsf,
+                        apply_engine_mscoree=not _enderal,
                     )
                     self.logger.info("Step 15: Tool compatibility settings applied")
                 else:
                     self.logger.warning("Step 15: Could not resolve prefix path or wine binary - skipping tool compat")
+
+                if self.modlist_dir:
+                    from jackify.backend.services.synthesis_updater import update_synthesis
+                    update_synthesis(
+                        str(self.modlist_dir),
+                        log=lambda msg: status_callback(f"{self._get_progress_timestamp()} {msg}") if status_callback else None,
+                    )
             elif _special_type is not None:
                 self.logger.info(f"Step 15: Skipping tool compat for {_special_type} modlist")
         except Exception as e:

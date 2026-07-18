@@ -15,6 +15,7 @@ import logging
 from jackify.backend.utils.engine_error_parser import parse_engine_error_line, error_from_exit_code, nexus_url_from_error_line
 from jackify.backend.utils.cc_content_detector import is_cc_content_error, extract_cc_filename, is_creation_kit_missing_error
 from jackify.shared.errors import JackifyError, cc_content_missing, creation_kit_missing
+from jackify.shared.progress_models import InstallationPhase
 
 
 logger = logging.getLogger(__name__)
@@ -201,6 +202,23 @@ class InstallerThread(QThread):
             if _stderr_fh:
                 _stderr_fh.close()
                 logger.info("CLF3 stderr log written to /tmp/clf3_stderr.log")
+
+    def _is_download_phase(self) -> bool:
+        """True while the engine is downloading, per the structured progress parser.
+
+        [FILE_PROGRESS] per-file console text (filename/percent/speed) is only
+        useful during downloads, where per-file speed is the whole point. During
+        hashing/extract/install it fires once per file with no throttling on the
+        engine side, flooding Show Details with a filename flash for every one of
+        tens of thousands of files. The Activity panel's counters are unaffected
+        either way - they come from progress_state, parsed unconditionally above.
+        """
+        if not self.progress_state_manager:
+            return False
+        try:
+            return self.progress_state_manager.get_state().phase == InstallationPhase.DOWNLOAD
+        except Exception:
+            return False
 
     def _remember_stdout_line(self, line: str) -> None:
         """Keep a bounded tail of meaningful stdout lines for failure diagnostics."""
@@ -604,6 +622,10 @@ class InstallerThread(QThread):
                                 parts = decoded.split('[FILE_PROGRESS]', 1)
                                 if parts[0].strip():
                                     self.progress_received.emit(parts[0].rstrip())
+                                if self._is_download_phase():
+                                    tail = parts[1].strip() if len(parts) > 1 else ''
+                                    if tail:
+                                        self.progress_received.emit(tail + '\r')
                             else:
                                 self.progress_received.emit(decoded + '\r')
                         elif b'\n' in buffer:
@@ -671,6 +693,10 @@ class InstallerThread(QThread):
                                 parts = decoded.split('[FILE_PROGRESS]', 1)
                                 if parts[0].strip():
                                     self.output_received.emit(parts[0].rstrip())
+                                if self._is_download_phase():
+                                    tail = parts[1].strip() if len(parts) > 1 else ''
+                                    if tail:
+                                        self.output_received.emit(tail + '\r')
                                 last_was_blank = False
                                 continue
                             if decoded.strip() == '':
@@ -687,6 +713,10 @@ class InstallerThread(QThread):
                         parts = decoded.split('[FILE_PROGRESS]', 1)
                         if parts[0].strip():
                             self.output_received.emit(parts[0].rstrip())
+                        if self._is_download_phase():
+                            tail = parts[1].strip() if len(parts) > 1 else ''
+                            if tail:
+                                self.output_received.emit(tail + '\r')
                     else:
                         self._remember_stdout_line(decoded)
                         self.output_received.emit(decoded)

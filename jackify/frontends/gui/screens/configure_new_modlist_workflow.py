@@ -17,14 +17,28 @@ class ConfigureNewModlistWorkflowMixin:
     def _detect_game_type_from_mo2_ini(self, install_dir: str) -> str:
         """Detect game type by checking ModOrganizer.ini for loader executables."""
         from pathlib import Path
-        
+
+        # Enderal and FNV run on the Skyrim/FO3 engine and share its loader
+        # executables (skse64_loader.exe, etc.), so they must be identified before
+        # the generic engine keyword scan below or they always get misdetected as
+        # skyrim/fallout3.
+        try:
+            from jackify.backend.handlers.modlist_handler import ModlistHandler
+            special = ModlistHandler().detect_special_game_type(install_dir)
+            if special == 'fnv':
+                return 'falloutnv'
+            if special:
+                return special
+        except Exception as e:
+            logger.warning(f"Special game type detection failed: {e}")
+
         mo2_ini = Path(install_dir) / "ModOrganizer.ini"
         if not mo2_ini.exists():
             return 'skyrim'  # Fallback to most common
-        
+
         try:
             content = mo2_ini.read_text(encoding='utf-8', errors='ignore').lower()
-            
+
             if 'skse64_loader.exe' in content or 'skyrim special edition' in content:
                 return 'skyrim'
             elif 'f4se_loader.exe' in content or 'fallout 4' in content:

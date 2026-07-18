@@ -38,26 +38,16 @@ def on_installation_output_simple(self, message):
     self._safe_append_text(cleaned)
     
     # Extract progress for Activity window ONLY - minimal regex with error handling
-    # Pattern: [X/Y] or "Loading manifest: X/Y"
+    # Pattern: "Progress: NN%" or "Loading manifest: <path>"
     try:
-        # Try to extract [X/Y] pattern
         import re
-        match = re.search(r'\[(\d+)/(\d+)\]', cleaned)
+        match = re.search(r'Progress:\s*(\d+)%', cleaned)
         if match:
-            current = int(match.group(1))
-            total = int(match.group(2))
-            percent = int((current / total) * 100) if total > 0 else 0
-            phase = self._ttw_current_phase or "Processing"
-            self._update_ttw_activity(current, total, percent)
-        
-        # Try "Loading manifest: X/Y"
-        match = re.search(r'loading manifest:\s*(\d+)/(\d+)', cleaned.lower())
-        if match:
-            current = int(match.group(1))
-            total = int(match.group(2))
-            percent = int((current / total) * 100) if total > 0 else 0
+            percent = int(match.group(1))
+            self._update_ttw_activity(percent, 100, percent)
+
+        if 'loading manifest:' in cleaned.lower():
             self._ttw_current_phase = "Loading manifest"
-            self._update_ttw_activity(current, total, percent)
     except (RecursionError, re.error, Exception):
         # If regex fails, just skip progress extraction - show output anyway
         pass

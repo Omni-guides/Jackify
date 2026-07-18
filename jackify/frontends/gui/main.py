@@ -397,7 +397,6 @@ def main(initial_nxm_url: str = ""):
     window._prefetch_manifests_on_startup()
 
     if initial_nxm_url:
-        from PySide6.QtCore import QTimer
         QTimer.singleShot(500, lambda: window._on_nxm_url_received(initial_nxm_url))
     
     # Ensure cleanup on exit

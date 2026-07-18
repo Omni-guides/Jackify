@@ -273,18 +273,18 @@ class ModlistWineOpsMixin:
         game = (game_var_full or modlist_name or "").lower().replace(" ", "")
         # Add game-specific extras
         if "fallout4vr" in game or "fo4vr" in game:
-            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnetdesktop6", "vcrun2012"]
+            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9", "vcrun2012"]
         elif "skyrim" in game or "fallout4" in game or "starfield" in game or "oblivion_remastered" in game or "enderal" in game:
-            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnetdesktop6"]
+            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9"]
         elif "falloutnewvegas" in game or "fnv" in game or "fallout3" in game or "fo3" in game or "oblivion" in game:
             extras += ["d3dx9_43", "d3dx9"]
         elif "cp2077" in game or "cyberpunk" in game:
-            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnetdesktop6"]
+            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9"]
         elif "bg3" in game or "baldursgate" in game:
-            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnetdesktop6"]
+            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9"]
         else:
             # Unknown game type - install the union of all known component sets
-            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnetdesktop6", "d3dx9_43", "d3dx9"]
+            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9", "d3dx9_43", "d3dx9"]
         # Add modlist-specific extras
         modlist_lower = modlist_name.lower().replace(" ", "") if modlist_name else ""
         for key, components in self.MODLIST_WINE_COMPONENTS.items():

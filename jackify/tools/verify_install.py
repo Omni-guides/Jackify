@@ -14,7 +14,9 @@ No external dependencies required. vdf is bundled in tools/vdf/.
 """
 
 import argparse
+import base64
 import configparser
+import hashlib
 import os
 import re
 import struct
@@ -1079,8 +1081,12 @@ def check_ttw_installation(modlist_dir: Path, game_type: str, r: Results, modlis
 
 def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
     """Check whether Tool Compatibility Config has been applied to this prefix."""
-    # Tool compat is not applied for these game types - nothing to check
-    _no_tool_compat = ("falloutnv", "fallout3", "enderal", "cp2077", "bg3", "skyrimvr", "fallout4vr")
+    # Tool compat is not applied for these game types - nothing to check.
+    # Enderal SE shares the Skyrim SE engine/plugin format and gets the same
+    # xEdit/Pandora/DLL-overrides/Synthesis fixes (see modlist_configuration.py
+    # Step 15) - only the SkyrimSE.exe-scoped mscoree entry is skipped for it,
+    # handled below.
+    _no_tool_compat = ("falloutnv", "fallout3", "cp2077", "bg3", "skyrimvr", "fallout4vr")
     if game_type in _no_tool_compat:
         return
 
@@ -1108,12 +1114,16 @@ def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
     else:
         r.warn("Global DLL overrides not found")
 
-    # Synthesis: mscoree AppDefaults entry is Skyrim-specific
-    if game_type == "skyrim":
-        if "AppDefaults\\\\SkyrimSE.exe\\\\DllOverrides" in content and "mscoree" in content:
-            r.ok("Synthesis mscoree fix applied (SkyrimSE.exe AppDefaults)")
-        else:
-            r.warn("Synthesis mscoree AppDefaults entry not found")
+    # Synthesis/dotnet checks apply to both Skyrim and Enderal SE (same engine and
+    # plugin format). The mscoree AppDefaults entry itself is Skyrim-only: it is
+    # scoped to SkyrimSE.exe, which is also Enderal's own game process, so
+    # Step 15 deliberately skips writing it there - don't flag it missing.
+    if game_type in ("skyrim", "enderal"):
+        if game_type == "skyrim":
+            if "AppDefaults\\\\SkyrimSE.exe\\\\DllOverrides" in content and "mscoree" in content:
+                r.ok("Synthesis mscoree fix applied (SkyrimSE.exe AppDefaults)")
+            else:
+                r.warn("Synthesis mscoree AppDefaults entry not found")
 
         # OnlyUseLatestCLR is written to HKLM during the same Synthesis compat pass
         sys_content = system_reg.read_text(errors="replace") if system_reg.exists() else ""
@@ -1122,9 +1132,9 @@ def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
         else:
             r.warn("OnlyUseLatestCLR not found in system.reg")
 
-        # .NET 9 SDK is installed natively (not via winetricks) for Synthesis.
-        # NSF/CSF prefixes use global *mscoree=native and deliberately skip dotnet9 (win11 flip
-        # breaks NSF), so suppress the check when that override is present. Must check the
+        # .NET 10 SDK is installed natively (not via winetricks) for Synthesis.
+        # NSF/CSF prefixes use global *mscoree=native and deliberately skip the SDK install (win11
+        # flip breaks NSF), so suppress the check when that override is present. Must check the
         # global [Software\Wine\DllOverrides] section specifically, not just any occurrence of
         # the string - every Skyrim modlist (NSF or not) also gets a scoped
         # AppDefaults\SkyrimSE.exe\DllOverrides entry with the same value, which a plain
@@ -1133,20 +1143,52 @@ def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
         _nsf_prefix = bool(_global_overrides_match and '"*mscoree"="native"' in _global_overrides_match.group(0))
         sdk_base = pfx / "drive_c" / "Program Files" / "dotnet" / "sdk"
         if _nsf_prefix:
-            r.ok(".NET 9 SDK check skipped (NSF/CSF prefix - global mscoree=native detected)")
+            r.ok(".NET 10 SDK check skipped (NSF/CSF prefix - global mscoree=native detected)")
         elif sdk_base.is_dir():
-            net9_dirs = [d for d in sdk_base.iterdir() if d.is_dir() and d.name.startswith("9.")]
-            if net9_dirs:
-                r.ok(f".NET 9 SDK present: {net9_dirs[0].name}")
+            net10_dirs = [d for d in sdk_base.iterdir() if d.is_dir() and d.name.startswith("10.")]
+            if net10_dirs:
+                r.ok(f".NET 10 SDK present: {net10_dirs[0].name}")
             else:
                 installed = [d.name for d in sdk_base.iterdir() if d.is_dir()]
-                r.warn(f".NET 9 SDK not found under drive_c/Program Files/dotnet/sdk/ (found: {installed or 'none'})")
+                r.warn(f".NET 10 SDK not found under drive_c/Program Files/dotnet/sdk/ (found: {installed or 'none'})")
         else:
-            r.warn(".NET 9 SDK not found (drive_c/Program Files/dotnet/sdk/ missing; run Configure Tool Compatibility)")
+            r.warn(".NET 10 SDK not found (drive_c/Program Files/dotnet/sdk/ missing; run Configure Tool Compatibility)")
 
         if not _nsf_prefix:
             sys_content = system_reg.read_text(errors="replace") if system_reg.exists() else ""
             _check_nuget_signature_config(pfx, content, sys_content, r)
+
+
+_PEM_CERT_RE = re.compile(
+    r"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----", re.DOTALL
+)
+
+
+def _sdk_trusted_root_thumbprints(pfx: Path) -> Optional[set]:
+    """
+    Compute the expected set of trusted-root cert thumbprints from the newest
+    installed .NET SDK's bundled PEM files - the same source
+    nuget_signature_service.install_nuget_cert reads from and imports.
+    """
+    sdk_root = pfx / "drive_c" / "Program Files" / "dotnet" / "sdk"
+    if not sdk_root.is_dir():
+        return None
+
+    for version_dir in sorted(sdk_root.iterdir(), reverse=True):
+        trustedroots = version_dir / "trustedroots"
+        codesign = trustedroots / "codesignctl.pem"
+        timestamp = trustedroots / "timestampctl.pem"
+        if not (codesign.exists() and timestamp.exists()):
+            continue
+        thumbprints = set()
+        for bundle in (codesign, timestamp):
+            text = bundle.read_text(encoding="utf-8", errors="replace")
+            for match in _PEM_CERT_RE.finditer(text):
+                der = base64.b64decode("".join(match.group(1).split()))
+                thumbprints.add(hashlib.sha1(der).hexdigest().upper())
+        return thumbprints
+
+    return None
 
 
 def _check_nuget_signature_config(pfx: Path, user_reg_content: str, system_reg_content: str, r: Results):
@@ -1175,12 +1217,31 @@ def _check_nuget_signature_config(pfx: Path, user_reg_content: str, system_reg_c
     # via a real CachyOS repro (wine-11.0) where the import genuinely succeeded
     # but landed in system.reg while an older Wine build on another machine put
     # it in user.reg. Check both rather than assume one.
-    marker = "SystemCertificates\\\\Root\\\\Certificates\\\\"
-    root_cert_count = user_reg_content.count(marker) + system_reg_content.count(marker)
-    if root_cert_count > 0:
-        r.ok(f".NET SDK trusted-root certs imported into Wine cert store ({root_cert_count} entries)")
+    #
+    # A raw "any entries present" check is not enough: wine regedit has been
+    # observed to exit 0 while silently dropping a single cert out of a ~400
+    # entry batch import - the exact root cause of a long-standing Synthesis
+    # NU3028 failure. Compare against the SDK's own PEM bundles to catch a
+    # partial import, not just an empty one.
+    thumb_re = re.compile(r"SystemCertificates\\\\Root\\\\Certificates\\\\([0-9A-Fa-f]+)")
+    present = set(thumb_re.findall(user_reg_content)) | set(thumb_re.findall(system_reg_content))
+    expected = _sdk_trusted_root_thumbprints(pfx)
+
+    if expected is None:
+        if present:
+            r.ok(f".NET SDK trusted-root certs imported into Wine cert store ({len(present)} entries)")
+        else:
+            r.warn(".NET SDK trusted-root certs not found in Wine cert store")
     else:
-        r.warn(".NET SDK trusted-root certs not found in Wine cert store")
+        missing = expected - present
+        if not missing:
+            r.ok(f".NET SDK trusted-root certs fully imported into Wine cert store ({len(expected)} entries)")
+        else:
+            r.warn(
+                f".NET SDK trusted-root certs incomplete in Wine cert store - "
+                f"{len(missing)} of {len(expected)} missing (Synthesis restore may fail "
+                f"with NU3028/NU3037; re-run Configure Tool Compatibility)"
+            )
 
     if "NUGET_CERT_REVOCATION_MODE" in user_reg_content and "NUGET_EXPERIMENTAL_CHAIN_BUILD_RETRY_POLICY" in user_reg_content:
         r.ok("NuGet offline-revocation/retry-policy env vars set")

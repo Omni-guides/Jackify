@@ -2,6 +2,7 @@
 from PySide6.QtCore import QThread, Signal, Qt
 from PySide6.QtWidgets import QProgressDialog, QApplication
 from jackify.frontends.gui.services.message_service import MessageService
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from pathlib import Path
 import traceback
 import os
@@ -33,6 +34,16 @@ class TTWIntegrationMixin:
         # avoiding the wasteful copy step during integration.
         ttw_target = Path(install_dir) / "mods" / "[NoDelete] Tale of Two Wastelands"
         self.install_dir_edit.setText(str(ttw_target))
+
+        self.status_banner.setText("Please fill in the details above and click Start Install")
+        self.status_banner.setStyleSheet(f"""
+            background-color: #2a2a2a;
+            color: {JACKIFY_COLOR_BLUE};
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 13px;
+        """)
 
         # Reset saved geometry so showEvent can properly collapse from current window size
         self._saved_geometry = None

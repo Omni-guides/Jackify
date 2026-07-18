@@ -13,14 +13,15 @@ class TTWOutputMixin:
         if not hasattr(self, '_ttw_seen_lines'):
             self._ttw_seen_lines = set()
             self._ttw_current_phase = None
-            self._ttw_last_progress = 0
             self._ttw_last_activity_update = 0
+            self._ttw_bsa_total = 0
+            self._ttw_bsa_done = 0
             self.ttw_start_time = time.time()
 
         lines_to_display = []
         html_fragments = []
         show_details_due_to_error = False
-        latest_progress = None
+        bsa_progress_changed = False
 
         for cleaned in messages:
             if not cleaned:
@@ -29,26 +30,30 @@ class TTWOutputMixin:
             lower_cleaned = cleaned.lower()
 
             try:
-                progress_match = re.search(r'\[(\d+)/(\d+)\]', cleaned)
-                if progress_match:
-                    current = int(progress_match.group(1))
-                    total = int(progress_match.group(2))
-                    percent = int((current / total) * 100) if total > 0 else 0
-                    latest_progress = (current, total, percent)
+                if not self._ttw_bsa_total:
+                    bsa_total_match = re.search(r'(\d+)\s+output BSAs', cleaned)
+                    if bsa_total_match:
+                        self._ttw_bsa_total = int(bsa_total_match.group(1))
+                        bsa_progress_changed = True
 
                 if 'loading manifest:' in lower_cleaned:
-                    manifest_match = re.search(r'loading manifest:\s*(\d+)/(\d+)', lower_cleaned)
-                    if manifest_match:
-                        current = int(manifest_match.group(1))
-                        total = int(manifest_match.group(2))
-                        self._ttw_current_phase = "Loading manifest"
+                    self._ttw_current_phase = "Loading manifest"
             except Exception:
                 pass
 
             is_error = 'error:' in lower_cleaned and 'succeeded' not in lower_cleaned and '0 failed' not in lower_cleaned
             is_warning = 'warning:' in lower_cleaned
-            is_milestone = any(kw in lower_cleaned for kw in ['===', 'complete', 'finished', 'validation', 'configuration valid'])
-            is_file_op = any(ext in lower_cleaned for ext in ['.ogg', '.mp3', '.bsa', '.dds', '.nif', '.kf', '.hkx'])
+            is_bsa_progress = cleaned.startswith('[BSA]')
+            is_bsa_done = is_bsa_progress and ('... ok' in lower_cleaned or '... failed' in lower_cleaned)
+            if is_bsa_done:
+                self._ttw_bsa_done += 1
+                bsa_progress_changed = True
+            is_milestone = is_bsa_progress or any(
+                kw in lower_cleaned for kw in ['===', 'complete', 'finished', 'validation', 'configuration valid']
+            )
+            is_file_op = not is_bsa_progress and any(
+                ext in lower_cleaned for ext in ['.ogg', '.mp3', '.bsa', '.dds', '.nif', '.kf', '.hkx']
+            )
             is_noise = cleaned.strip().upper() in ['OK', 'OK.', 'OK!', 'DONE', 'DONE.', 'SUCCESS', 'SUCCESS.']
 
             if is_error and 'cannot get directory path for location type' in lower_cleaned:
@@ -66,12 +71,11 @@ class TTWOutputMixin:
                 else:
                     lines_to_display.append(cleaned)
 
-        if latest_progress:
-            current, total, percent = latest_progress
+        if bsa_progress_changed and self._ttw_bsa_total:
             current_time = time.time()
-            if abs(percent - self._ttw_last_progress) >= 1 or (current_time - self._ttw_last_activity_update) >= 0.5:
-                self._update_ttw_activity(current, total, percent)
-                self._ttw_last_progress = percent
+            if (current_time - self._ttw_last_activity_update) >= 0.3:
+                percent = int(self._ttw_bsa_done / self._ttw_bsa_total * 100)
+                self._update_ttw_phase("Building archives", self._ttw_bsa_done, self._ttw_bsa_total, percent)
                 self._ttw_last_activity_update = current_time
 
         if html_fragments or lines_to_display:
@@ -129,21 +133,13 @@ class TTWOutputMixin:
             pass
 
         try:
-            progress_match = re.search(r'\[(\d+)/(\d+)\]', cleaned)
+            progress_match = re.search(r'Progress:\s*(\d+)%', cleaned)
             if progress_match:
-                current = int(progress_match.group(1))
-                total = int(progress_match.group(2))
-                percent = int((current / total) * 100) if total > 0 else 0
-                self._update_ttw_activity(current, total, percent)
+                percent = int(progress_match.group(1))
+                self._update_ttw_activity(percent, 100, percent)
 
             if 'loading manifest:' in lower_cleaned:
-                manifest_match = re.search(r'loading manifest:\s*(\d+)/(\d+)', lower_cleaned)
-                if manifest_match:
-                    current = int(manifest_match.group(1))
-                    total = int(manifest_match.group(2))
-                    percent = int((current / total) * 100) if total > 0 else 0
-                    self._ttw_current_phase = "Loading manifest"
-                    self._update_ttw_activity(current, total, percent)
+                self._ttw_current_phase = "Loading manifest"
         except Exception:
             pass
 

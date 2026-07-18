@@ -201,35 +201,25 @@ class AdditionalMenuHandler:
                 return
             lower = clean.lower()
             rendered = ""
-            manifest_match = re.search(r'loading manifest:\s*(\d+)/(\d+)', lower)
-            if manifest_match:
-                current = int(manifest_match.group(1))
-                total = int(manifest_match.group(2))
-                phase_state["current"] = "Loading manifest"
-                percent = int((current / total) * 100) if total > 0 else 0
-                rendered = f"[TTW] {phase_state['current']}: {current:,}/{total:,} ({percent}%)"
+            progress_match = re.search(r'progress:\s*(\d+)%', lower)
+            if progress_match:
+                percent = int(progress_match.group(1))
+                rendered = f"[TTW] {phase_state['current']}: {percent}%"
             else:
-                progress_match = re.search(r'\[(\d+)/(\d+)\]', clean)
-                if progress_match:
-                    current = int(progress_match.group(1))
-                    total = int(progress_match.group(2))
-                    percent = int((current / total) * 100) if total > 0 else 0
-                    rendered = f"[TTW] {phase_state['current']}: {current:,}/{total:,} ({percent}%)"
-                else:
-                    if 'manifest' in lower:
-                        phase_state["current"] = "Loading manifest"
-                    elif any(t in lower for t in ('extract', 'decompress', 'installing', 'copying', 'merge')):
-                        phase_state["current"] = clean
-                    is_milestone = any(t in lower for t in ('===', 'complete', 'finished', 'starting', 'valid'))
-                    is_error = 'error:' in lower
-                    is_warning = 'warning:' in lower
-                    if is_milestone or is_error or is_warning:
-                        rendered = f"[TTW] {clean}"
+                if 'manifest' in lower:
+                    phase_state["current"] = "Loading manifest"
+                elif any(t in lower for t in ('extract', 'decompress', 'installing', 'copying', 'merge')):
+                    phase_state["current"] = clean
+                is_milestone = any(t in lower for t in ('===', 'complete', 'finished', 'starting', 'valid'))
+                is_error = 'error:' in lower
+                is_warning = 'warning:' in lower
+                if is_milestone or is_error or is_warning:
+                    rendered = f"[TTW] {clean}"
 
             if not rendered or rendered == phase_state["last_rendered"]:
                 return
             phase_state["last_rendered"] = rendered
-            if re.search(r'^\[TTW\] .+?: [\d,]+/[\d,]+ \(\d+%\)$', rendered):
+            if re.search(r'^\[TTW\] .+?: \d+%$', rendered):
                 print(f"\r{COLOR_INFO}{rendered}{COLOR_RESET}", end="", flush=True)
                 progress_line_active["value"] = True
             else:

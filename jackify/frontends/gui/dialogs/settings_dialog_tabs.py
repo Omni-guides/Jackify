@@ -262,18 +262,29 @@ class SettingsDialogTabsMixin:
         component_layout.addWidget(QLabel("Wine Components Installation:"))
         self.component_method_group = QButtonGroup()
         component_method_layout = QVBoxLayout()
-        current_method = self.config_handler.get('component_installation_method', 'winetricks')
+        current_method = self.config_handler.get('component_installation_method', 'native')
         if current_method == 'bundled_protontricks':
             current_method = 'system_protontricks'
-        self.winetricks_radio = QRadioButton("Winetricks (Default)")
+        self.native_radio = QRadioButton("Native (Default)")
+        self.native_radio.setChecked(current_method == 'native')
+        self.native_radio.setToolTip(
+            "Install components directly, without winetricks or protontricks, falling back to "
+            "bundled winetricks only for the handful of components not yet supported natively."
+        )
+        self.component_method_group.addButton(self.native_radio, 0)
+        component_method_layout.addWidget(self.native_radio)
+        self.winetricks_radio = QRadioButton("Winetricks")
         self.winetricks_radio.setChecked(current_method == 'winetricks')
-        self.winetricks_radio.setToolTip("Use bundled winetricks for component installation. Faster and more reliable.")
-        self.component_method_group.addButton(self.winetricks_radio, 0)
+        self.winetricks_radio.setToolTip("Use bundled winetricks for every component, bypassing the native installer entirely.")
+        self.component_method_group.addButton(self.winetricks_radio, 1)
         component_method_layout.addWidget(self.winetricks_radio)
-        self.protontricks_radio = QRadioButton("Protontricks (Alternative)")
+        self.protontricks_radio = QRadioButton("Protontricks")
         self.protontricks_radio.setChecked(current_method == 'system_protontricks')
-        self.protontricks_radio.setToolTip("Use system-installed protontricks (flatpak or native). Fallback option if winetricks fails.")
-        self.component_method_group.addButton(self.protontricks_radio, 1)
+        self.protontricks_radio.setToolTip(
+            "Use system-installed protontricks (flatpak or native) for every component, "
+            "bypassing the native installer entirely."
+        )
+        self.component_method_group.addButton(self.protontricks_radio, 2)
         component_method_layout.addWidget(self.protontricks_radio)
         component_layout.addLayout(component_method_layout)
 

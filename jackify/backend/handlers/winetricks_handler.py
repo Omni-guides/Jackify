@@ -58,9 +58,24 @@ class WinetricksHandler(
         native_wineprefix = env.get('WINEPREFIX', wineprefix)
         wine_binary = env.get('WINE', '')
 
+        # Check user preference for component installation method
+        from ..handlers.config_handler import ConfigHandler
+        config_handler = ConfigHandler()
+
+        # Get component installation method with migration
+        method = config_handler.get('component_installation_method', 'native')
+
+        # Migrate bundled_protontricks to system_protontricks (no longer supported)
+        if method == 'bundled_protontricks':
+            self.logger.warning("Bundled protontricks no longer supported, migrating to system_protontricks")
+            method = 'system_protontricks'
+            config_handler.set('component_installation_method', 'system_protontricks')
+
         # Native installer tier: direct-source downloads, no winetricks dependency.
+        # Only runs in "native" mode - "winetricks" and "system_protontricks" are explicit
+        # full-bypass modes, e.g. as an escape hatch if a native install regression ships.
         native = None
-        if wine_binary:
+        if method == 'native' and wine_binary:
             try:
                 from .native_component_installer import NativeComponentInstaller
                 native = NativeComponentInstaller(native_wineprefix, wine_binary, env, self.logger)
@@ -109,19 +124,6 @@ class WinetricksHandler(
             return self._install_components_protontricks_only(
                 components_to_install, wineprefix, game_var, status_callback, appid=appid
             )
-
-        # Check user preference for component installation method
-        from ..handlers.config_handler import ConfigHandler
-        config_handler = ConfigHandler()
-        
-        # Get component installation method with migration
-        method = config_handler.get('component_installation_method', 'winetricks')
-
-        # Migrate bundled_protontricks to system_protontricks (no longer supported)
-        if method == 'bundled_protontricks':
-            self.logger.warning("Bundled protontricks no longer supported, migrating to system_protontricks")
-            method = 'system_protontricks'
-            config_handler.set('component_installation_method', 'system_protontricks')
 
         # Choose installation method based on user preference
         if method == 'system_protontricks':

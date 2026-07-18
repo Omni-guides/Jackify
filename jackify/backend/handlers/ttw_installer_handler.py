@@ -26,14 +26,13 @@ logger = logging.getLogger(__name__)
 from jackify.shared.paths import get_jackify_data_dir
 JACKIFY_BASE_DIR = get_jackify_data_dir()
 DEFAULT_TTW_INSTALLER_DIR = JACKIFY_BASE_DIR / "TTW_Linux_Installer"
-TTW_INSTALLER_EXECUTABLE_NAME = "ttw_linux_gui"  # Same executable, runs in CLI mode with args
+TTW_INSTALLER_EXECUTABLE_NAME = "mpi_installer"
 
 # GitHub release info
 TTW_INSTALLER_REPO = "SulfurNitride/TTW_Linux_Installer"
 TTW_INSTALLER_RELEASE_URL = f"https://api.github.com/repos/{TTW_INSTALLER_REPO}/releases/latest"
-# Pin to 0.0.7 - last version with old format (ttw_linux_gui, universal-mpi-installer)
 # Set to None to use latest release
-TTW_INSTALLER_PINNED_VERSION = "0.0.7"
+TTW_INSTALLER_PINNED_VERSION = "0.2.0"
 
 
 class TTWInstallerHandler(TTWInstallerBackendMixin):
@@ -73,25 +72,18 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
         self.ttw_installer_dir.mkdir(parents=True, exist_ok=True)
 
     def _check_installation(self):
-        """Check if TTW_Linux_Installer is installed at expected location.
+        """Check if TTW_Linux_Installer is installed at expected location."""
+        potential_exe_path = self.ttw_installer_dir / TTW_INSTALLER_EXECUTABLE_NAME
+        if potential_exe_path.is_file() and os.access(potential_exe_path, os.X_OK):
+            self.ttw_installer_executable_path = potential_exe_path
+            self.ttw_installer_installed = True
+            self.logger.info(f"Found TTW_Linux_Installer at: {self.ttw_installer_executable_path}")
+            return
 
-        Checks for both old format (ttw_linux_gui) and new format (mpi_installer) executables.
-        """
-        
-        # Check for both old (ttw_linux_gui) and new (mpi_installer) executable names
-        exe_names = [TTW_INSTALLER_EXECUTABLE_NAME, "mpi_installer"]
-        for exe_name in exe_names:
-            potential_exe_path = self.ttw_installer_dir / exe_name
-            if potential_exe_path.is_file() and os.access(potential_exe_path, os.X_OK):
-                self.ttw_installer_executable_path = potential_exe_path
-                self.ttw_installer_installed = True
-                self.logger.info(f"Found TTW_Linux_Installer at: {self.ttw_installer_executable_path}")
-                return
-        
         # Not found
         self.ttw_installer_installed = False
         self.ttw_installer_executable_path = None
-        self.logger.info(f"TTW_Linux_Installer not found (searched for: {', '.join(exe_names)})")
+        self.logger.info(f"TTW_Linux_Installer not found (searched for: {TTW_INSTALLER_EXECUTABLE_NAME})")
 
     def install_ttw_installer(self, install_dir: Optional[Path] = None) -> Tuple[bool, str]:
         """Download and install TTW_Linux_Installer from GitHub releases.
@@ -138,15 +130,14 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
                 data = resp.json()
                 release_tag = data.get("tag_name") or data.get("name")
 
-            # Find Linux asset - universal-mpi-installer pattern (can be .zip or .tar.gz)
+            # Find Linux asset - mpi-installer-linux-* pattern (can be .zip or .tar.gz)
             linux_asset = None
             asset_names = [asset.get("name", "") for asset in data.get("assets", [])]
             self.logger.info(f"Available release assets: {asset_names}")
-            
+
             for asset in data.get("assets", []):
                 name = asset.get("name", "").lower()
-                # Look for universal-mpi-installer pattern
-                if "universal-mpi-installer" in name and name.endswith((".zip", ".tar.gz")):
+                if "linux" in name and "mpi-installer" in name and name.endswith((".zip", ".tar.gz")):
                     linux_asset = asset
                     self.logger.info(f"Found Linux asset: {asset.get('name')}")
                     break
@@ -185,39 +176,19 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
                 except Exception:
                     pass
 
-            # Find executable - support both old (ttw_linux_gui) and new (mpi_installer) names
-            # Try old name first (since we're pinning to 0.0.7)
-            exe_names = [TTW_INSTALLER_EXECUTABLE_NAME, "mpi_installer"]
             exe_path = None
-            
-            for exe_name in exe_names:
-                potential_path = target_dir / exe_name
-                if potential_path.is_file():
-                    exe_path = potential_path
-                    self.logger.info(f"Found executable: {exe_name}")
-                    break
-                # Search recursively
-                for p in target_dir.rglob(exe_name):
+            potential_path = target_dir / TTW_INSTALLER_EXECUTABLE_NAME
+            if potential_path.is_file():
+                exe_path = potential_path
+            else:
+                for p in target_dir.rglob(TTW_INSTALLER_EXECUTABLE_NAME):
                     if p.is_file():
                         exe_path = p
-                        self.logger.info(f"Found executable: {exe_name} at {p}")
                         break
-                if exe_path:
-                    break
 
             if not exe_path or not exe_path.is_file():
-                return False, f"TTW_Linux_Installer executable not found after extraction (searched for: {', '.join(exe_names)})"
-            
-            # Remove any other executable versions to avoid confusion
-            for exe_name in exe_names:
-                if exe_name != exe_path.name:
-                    other_exe = target_dir / exe_name
-                    if other_exe.is_file():
-                        self.logger.info(f"Removing other version executable: {other_exe}")
-                        try:
-                            other_exe.unlink()
-                        except Exception as e:
-                            self.logger.warning(f"Failed to remove {other_exe}: {e}")
+                return False, f"TTW_Linux_Installer executable not found after extraction (searched for: {TTW_INSTALLER_EXECUTABLE_NAME})"
+            self.logger.info(f"Found executable: {exe_path}")
 
             # Set executable permissions
             try:
@@ -259,16 +230,10 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
         # If we have a pinned version, compare against that instead of latest
         if TTW_INSTALLER_PINNED_VERSION:
             if not installed:
-                # No version recorded - check if executable exists to infer version
-                if self.ttw_installer_installed and self.ttw_installer_executable_path:
-                    exe_name = self.ttw_installer_executable_path.name
-                    # If pinned to 0.0.7 but found mpi_installer, it's wrong version
-                    if TTW_INSTALLER_PINNED_VERSION == "0.0.7" and exe_name == "mpi_installer":
-                        return (True, None, TTW_INSTALLER_PINNED_VERSION)
-                    # If pinned to 0.0.7 and found ttw_linux_gui, assume correct
-                    elif TTW_INSTALLER_PINNED_VERSION == "0.0.7" and exe_name == "ttw_linux_gui":
-                        return (False, None, TTW_INSTALLER_PINNED_VERSION)
-                # Not installed - don't show as update available
+                # Installed but no version on record (e.g. pre-upgrade install) - force a
+                # re-download so the recorded version matches the pinned executable.
+                if self.ttw_installer_installed:
+                    return (True, None, TTW_INSTALLER_PINNED_VERSION)
                 return (False, None, TTW_INSTALLER_PINNED_VERSION)
             
             # Compare against pinned version

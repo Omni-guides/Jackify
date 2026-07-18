@@ -52,12 +52,12 @@ class ProgressParserPhaseMixin:
     def _map_section_to_phase(self, section_name: str) -> InstallationPhase:
         """Map section name to InstallationPhase enum."""
         section_lower = section_name.lower()
-        if 'download' in section_lower:
+        if 'hash' in section_lower or 'validate' in section_lower or 'verif' in section_lower:
+            return InstallationPhase.VALIDATE
+        elif 'download' in section_lower:
             return InstallationPhase.DOWNLOAD
         elif 'extract' in section_lower:
             return InstallationPhase.EXTRACT
-        elif 'hash' in section_lower or 'validate' in section_lower or 'verif' in section_lower:
-            return InstallationPhase.VALIDATE
         elif 'install' in section_lower:
             return InstallationPhase.INSTALL
         elif 'bsa' in section_lower or 'building' in section_lower:

@@ -24,6 +24,8 @@ class FilesystemOwnershipMixin:
         for root, dirs, files in os.walk(path):
             for name in dirs + files:
                 full_path = os.path.join(root, name)
+                if os.path.islink(full_path):
+                    continue
                 try:
                     stat = os.stat(full_path)
                     if stat.st_uid != uid or stat.st_gid not in gids:
@@ -93,6 +95,8 @@ class FilesystemOwnershipMixin:
         for root, dirs, files in os.walk(path):
             for name in dirs + files:
                 full = os.path.join(root, name)
+                if os.path.islink(full):
+                    continue
                 try:
                     if os.stat(full).st_mode & 0o777 != 0o755:
                         return False

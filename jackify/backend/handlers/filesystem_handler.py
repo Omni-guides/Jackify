@@ -184,35 +184,6 @@ class FileSystemHandler(
         return None
         
     @staticmethod
-    def set_permissions(path: Path, permissions: int = 0o755, recursive: bool = True) -> bool:
-        """Set file or directory permissions (non-sudo)."""
-        try:
-            if not path.exists():
-                logger.error(f"Cannot set permissions: Path does not exist - {path}")
-                return False
-            
-            if recursive and path.is_dir():
-                for root, dirs, files in os.walk(path):
-                    try:
-                        os.chmod(root, 0o755)
-                    except Exception as dir_e:
-                        logger.warning(f"Failed to chmod dir {root}: {dir_e}")
-                    for file in files:
-                        try:
-                            os.chmod(os.path.join(root, file), 0o644)
-                        except Exception as file_e:
-                            logger.warning(f"Failed to chmod file {os.path.join(root, file)}: {file_e}")
-            elif path.is_file():
-                os.chmod(path, 0o644 if permissions == 0o755 else permissions)
-            elif path.is_dir():
-                os.chmod(path, permissions) # Set specific perm for top-level dir if not recursive
-            logger.debug(f"Set permissions for {path} (recursive={recursive})")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to set permissions for {path}: {e}")
-            return False
-        
-    @staticmethod
     def get_permissions(path: Path) -> Optional[int]:
         """Get file or directory permissions (last 3 octal digits)."""
         try:

@@ -94,6 +94,7 @@ class ToolCard(QFrame):
         self._name_label = QLabel(name_html)
         self._name_label.setTextFormat(Qt.RichText)
         self._name_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self._name_label.setOpenExternalLinks(False)
         self._name_label.linkActivated.connect(self._open_url)
         self._name_label.setStyleSheet("color: #e0e0e0; font-size: 13px; background: transparent; border: none;")
         info_col.addWidget(self._name_label)
