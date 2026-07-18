@@ -102,12 +102,12 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
         display_name="TTW Linux Installer",
         description="Automates Tale of Two Wastelands installation on Linux. Required for the TTW workflow.",
         github_repo="SulfurNitride/TTW_Linux_Installer",
-        asset_patterns=[r"universal-mpi-installer.*\.(zip|tar\.gz)"],
-        executable_names=["mpi_installer", "ttw_linux_gui"],
+        asset_patterns=[r"mpi-installer-linux.*\.(zip|tar\.gz)"],
+        executable_names=["mpi_installer"],
         tier=1,
         can_uninstall=True,
         can_launch=True,
-        pinned_version="0.0.7",  # must match TTW_INSTALLER_PINNED_VERSION in ttw_installer_handler.py
+        pinned_version="0.2.0",  # must match TTW_INSTALLER_PINNED_VERSION in ttw_installer_handler.py
         nexus_mod_id=1657,
         nexus_file_filter="mpi",
     ),
@@ -288,12 +288,11 @@ def _ttw_status_from_config() -> Tuple[bool, Optional[str], Optional[Path]]:
             get_jackify_data_dir() / "TTW_Linux_Installer",  # legacy location
         ]
         for tool_dir in search_dirs:
-            for exe_name in ["ttw_linux_gui", "mpi_installer"]:
-                exe = tool_dir / exe_name
-                if exe.is_file():
-                    manifest = _read_manifest("ttw_installer")
-                    version = manifest.get("installed_version")
-                    return True, version, exe
+            exe = tool_dir / "mpi_installer"
+            if exe.is_file():
+                manifest = _read_manifest("ttw_installer")
+                version = manifest.get("installed_version")
+                return True, version, exe
         return False, None, None
     except Exception as e:
         logger.debug("TTW status check failed: %s", e)

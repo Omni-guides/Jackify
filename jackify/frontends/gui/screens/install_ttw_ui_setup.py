@@ -112,6 +112,7 @@ class TTWUISetupMixin:
         instruction_text.setWordWrap(True)
         instruction_text.setStyleSheet("color: #ccc; font-size: 12px; margin: 0px; padding: 0px; line-height: 1.2;")
         instruction_text.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        instruction_text.setOpenExternalLinks(False)
         instruction_text.linkActivated.connect(open_url)
         user_config_vbox.addWidget(instruction_text)
         

@@ -281,7 +281,19 @@ class PrefixCreationMixin:
                 return False
                 
         except subprocess.TimeoutExpired:
-            logger.warning("Proton timed out; prefix may still be initializing")
+            logger.warning(
+                f"Proton wineboot did not finish within {timeout}s; a cold Proton build can "
+                "still be doing one-time setup in the background. Polling for the prefix "
+                "to appear before giving up."
+            )
+            pfx = compat_dir / 'pfx'
+            poll_deadline = time.monotonic() + timeout
+            while time.monotonic() < poll_deadline:
+                if pfx.exists():
+                    logger.info(f"Proton prefix appeared during extended wait at: {pfx}")
+                    return True
+                time.sleep(5)
+            logger.warning(f"Proton prefix still not found at: {pfx} after extended wait")
             return False
         except Exception as e:
             logger.error(f"Error creating prefix: {e}")

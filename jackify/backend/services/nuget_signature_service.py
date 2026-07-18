@@ -113,10 +113,10 @@ def _hex_reg_value(name: str, data: bytes) -> str:
     return "\n".join(lines)
 
 
-def _build_certs_reg_content(bundles: Tuple[Path, ...]) -> Tuple[str, int]:
+def _build_certs_reg_content(bundles: Tuple[Path, ...]) -> Tuple[str, frozenset]:
     """
     Build a .reg file adding every cert in the given PEM bundles to the Wine
-    prefix's Root store. Returns (reg_content, unique_cert_count). Re-importing
+    prefix's Root store. Returns (reg_content, unique_thumbprints). Re-importing
     is idempotent - regedit overwrites identical keys in place.
     """
     seen = set()
@@ -131,13 +131,36 @@ def _build_certs_reg_content(bundles: Tuple[Path, ...]) -> Tuple[str, int]:
             parts.append(f"[{_ROOT_STORE_KEY}\\{thumbprint}]")
             parts.append(_hex_reg_value("Blob", _cert_registry_blob(der)))
     parts.append("")
-    return "\n".join(parts), len(seen)
+    return "\n".join(parts), frozenset(seen)
+
+
+def _missing_thumbprints(prefix_path: Path, thumbprints: frozenset) -> frozenset:
+    """
+    Check which of the given thumbprints are actually present in the prefix's
+    on-disk system.reg. regedit's exit code alone is not reliable here - large
+    batch imports (~400+ keys) have been observed to silently drop individual
+    entries while exiting 0, with no indication in stdout/stderr.
+
+    system.reg stores hive-relative paths (no HKEY_LOCAL_MACHINE prefix) with
+    each backslash doubled, unlike the .reg file syntax used to write them.
+    """
+    system_reg = prefix_path / "system.reg"
+    if not system_reg.exists():
+        return thumbprints
+
+    text = system_reg.read_text(encoding="utf-8", errors="replace")
+    key_path = _ROOT_STORE_KEY.split("\\", 1)[1]
+    file_literal = key_path.replace("\\", "\\\\")
+    pattern = re.compile(rf"\[{re.escape(file_literal)}\\\\([0-9A-Fa-f]+)\]")
+    present = set(pattern.findall(text))
+    return thumbprints - present
 
 
 def install_nuget_cert(
     prefix_path: Path,
     wine_bin: str,
     log: Callable[[str], None],
+    max_attempts: int = 3,
 ) -> bool:
     """
     Import the .NET SDK's bundled code-signing and timestamp trusted-root
@@ -152,6 +175,14 @@ def install_nuget_cert(
     exits (confirmed on CachyOS + GE-Proton10-14: store reported the add,
     cross-process reg query and the on-disk .reg files never saw it).
 
+    regedit's own exit code is also not trustworthy on a batch this size
+    (~400 keys): it has been observed to exit 0 while silently dropping a
+    single entry, with no trace in stdout/stderr. Confirmed root cause of a
+    long-standing, hard-to-reproduce Synthesis NuGet failure - the one dropped
+    cert was the VeriSign Universal Root, the exact timestamp-chain root
+    NU3028 checks for. So every import is verified against the on-disk
+    registry afterward and retried on a partial result.
+
     Requires the .NET SDK already installed in the prefix - the PEM bundles
     ship inside the SDK and are the exact trust anchors NuGet itself uses for
     package and timestamp signature validation on Linux.
@@ -161,23 +192,30 @@ def install_nuget_cert(
         log(".NET SDK trusted root bundles not found - skipping NuGet certificate import")
         return False
 
-    try:
-        reg_content, cert_count = _build_certs_reg_content(trusted_roots)
+    reg_content, thumbprints = _build_certs_reg_content(trusted_roots)
+    cert_count = len(thumbprints)
 
+    env = os.environ.copy()
+    env["WINEPREFIX"] = str(prefix_path)
+    env["WINEDEBUG"] = "-all"
+    env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d"
+    env["DISPLAY"] = env.get("DISPLAY", ":0")
+    wineserver_bin = os.path.join(os.path.dirname(wine_bin), "wineserver")
+
+    reg_file = None
+    missing = thumbprints
+    try:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".reg", delete=False, encoding="utf-8"
         ) as tf:
             tf.write(reg_content)
             reg_file = tf.name
 
-        log(f"Importing {cert_count} code-signing and timestamp roots into Wine cert store...")
-        env = os.environ.copy()
-        env["WINEPREFIX"] = str(prefix_path)
-        env["WINEDEBUG"] = "-all"
-        env["WINEDLLOVERRIDES"] = "winemenubuilder.exe=d"
-        env["DISPLAY"] = env.get("DISPLAY", ":0")
-
-        try:
+        for attempt in range(1, max_attempts + 1):
+            log(
+                f"Importing {cert_count} code-signing and timestamp roots into "
+                f"Wine cert store (attempt {attempt}/{max_attempts})..."
+            )
             result = subprocess.run(
                 [wine_bin, "regedit", reg_file],
                 env=env,
@@ -185,38 +223,47 @@ def install_nuget_cert(
                 text=True,
                 timeout=120,
             )
-        finally:
-            try:
-                os.unlink(reg_file)
-            except Exception:
-                pass
+            if result.returncode != 0:
+                log(f"Certificate registry import exited with code {result.returncode}")
+                log(f"stderr: {result.stderr[:500]}")
+                continue
 
-        if result.returncode != 0:
-            log(f"Certificate registry import exited with code {result.returncode}")
-            log(f"stderr: {result.stderr[:500]}")
-            return False
+            # wineserver batches registry writes in memory and flushes to the
+            # on-disk .reg files lazily. "wineserver -w" blocks until wineserver
+            # exits, forcing the flush - same pattern used elsewhere for registry
+            # writes (see modlist_wine_ops.py).
+            if os.path.exists(wineserver_bin):
+                try:
+                    subprocess.run(
+                        [wineserver_bin, "-w"], env=env, timeout=60, capture_output=True,
+                    )
+                except Exception as e:
+                    log(f"wineserver flush failed (non-fatal): {e}")
+            else:
+                log(f"wineserver not found at {wineserver_bin}; registry flush may not persist")
 
-        # wineserver batches registry writes in memory and flushes to the
-        # on-disk .reg files lazily. "wineserver -w" blocks until wineserver
-        # exits, forcing the flush - same pattern used elsewhere for registry
-        # writes (see modlist_wine_ops.py).
-        wineserver_bin = os.path.join(os.path.dirname(wine_bin), "wineserver")
-        if os.path.exists(wineserver_bin):
-            try:
-                subprocess.run(
-                    [wineserver_bin, "-w"], env=env, timeout=60, capture_output=True,
-                )
-            except Exception as e:
-                log(f"wineserver flush failed (non-fatal): {e}")
-        else:
-            log(f"wineserver not found at {wineserver_bin}; registry flush may not persist")
+            missing = _missing_thumbprints(prefix_path, thumbprints)
+            if not missing:
+                log(f"Imported {cert_count} certificates into Wine cert store")
+                return True
 
-        log(f"Imported {cert_count} certificates into Wine cert store")
-        return True
+            log(f"{len(missing)} of {cert_count} certificates did not persist - retrying import")
+
+        log(
+            f"Certificate import incomplete after {max_attempts} attempts - "
+            f"{len(missing)} of {cert_count} certificates still missing"
+        )
+        return False
 
     except Exception as e:
         log(f"Failed to install NuGet certificates: {e}")
         return False
+    finally:
+        if reg_file:
+            try:
+                os.unlink(reg_file)
+            except Exception:
+                pass
 
 
 def configure_nuget_signature_policy(
@@ -231,17 +278,26 @@ def configure_nuget_signature_policy(
 
     Steam/Proton prefixes always use "steamuser" as the Windows user.
 
-    Must run before the first dotnet invocation in the prefix: the SDK
-    auto-generates a bare-bones NuGet.Config (no trust policy) as a side
-    effect of any restore if none exists yet, and this function only writes
-    when the file is absent.
+    Ideally runs before the first dotnet invocation in the prefix, since the
+    SDK auto-generates a bare-bones NuGet.Config (no trust policy) as a side
+    effect of any restore if none exists yet. That stub can also predate this
+    fix (an older Jackify version, or a manual restore run in the prefix
+    before configuration), so an existing file is only left alone if it
+    already carries our trust policy - otherwise it's replaced.
     """
     config_dir = prefix_path / "drive_c" / "users" / "steamuser" / "AppData" / "Roaming" / "NuGet"
     config_path = config_dir / "NuGet.Config"
 
     if config_path.exists():
-        log("NuGet.Config already exists - leaving it unchanged")
-        return True
+        try:
+            existing = config_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            log(f"Failed to read existing NuGet.Config: {e}")
+            existing = ""
+        if "trustedSigners" in existing:
+            log("NuGet.Config already has a trust policy - leaving it unchanged")
+            return True
+        log("NuGet.Config exists without a trust policy (SDK-generated stub) - replacing it")
 
     try:
         config_dir.mkdir(parents=True, exist_ok=True)

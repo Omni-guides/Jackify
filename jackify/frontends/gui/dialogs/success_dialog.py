@@ -202,6 +202,7 @@ class SuccessDialog(QDialog):
                 "QLabel { color: #3fd0ea; font-size: 11px; margin-top: 4px; padding: 4px; background-color: transparent; }"
             )
             readme_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            readme_label.setOpenExternalLinks(False)
             readme_label.linkActivated.connect(open_url)
             card_layout.addWidget(readme_label)
 
@@ -218,6 +219,7 @@ class SuccessDialog(QDialog):
             "}"
         )
         kofi_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        kofi_label.setOpenExternalLinks(False)
         kofi_label.linkActivated.connect(open_url)
         card_layout.addWidget(kofi_label)
 

@@ -137,7 +137,7 @@ class TTWWorkflowMixin:
         self._safe_append_text("Starting TTW installation...")
 
         self.file_progress_list.clear()
-        self._update_ttw_phase("Initialising TTW installation", 0, 0, 0)
+        self._update_ttw_phase("Initialising TTW installation")
         QApplication.processEvents()
 
         self.status_banner.setVisible(True)

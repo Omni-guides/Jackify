@@ -404,12 +404,24 @@ https://wiki.scenicroute.games/Somnium/1_Installation.html</i>"""
     
     def reset_screen_to_defaults(self):
         """Reset the screen to default state when navigating back from main menu"""
-        if not getattr(self, '_integration_mode', False):
-            # Reset form fields only when not pre-populated by a caller
-            self.file_edit.setText("")
-            self.install_dir_edit.setText(self.config_handler.get_modlist_install_base_dir())
-            self.console.clear()
-            self.process_monitor.clear()
+        # Clear integration mode first - a caller (e.g. the Begin Again automated TTW
+        # trigger) sets it again immediately after this runs, via set_modlist_integration_mode.
+        # Without this reset it stays True forever once set, so a later standalone TTW
+        # install would silently try to integrate into a stale modlist from a prior run.
+        self._integration_mode = False
+        self.file_edit.setText("")
+        self.install_dir_edit.setText(self.config_handler.get_modlist_install_base_dir())
+        self.console.clear()
+        self.process_monitor.clear()
+        self.status_banner.setText("Ready to install")
+        self.status_banner.setStyleSheet(f"""
+            background-color: #2a2a2a;
+            color: {JACKIFY_COLOR_BLUE};
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 13px;
+        """)
 
         # Re-enable controls (in case they were disabled from previous errors)
         self._enable_controls_after_operation()

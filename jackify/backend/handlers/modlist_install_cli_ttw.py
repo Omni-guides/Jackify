@@ -264,39 +264,28 @@ class ModlistInstallCLITTWMixin:
                 lower = clean.lower()
                 rendered = ""
 
-                # Match GUI behavior: explicit Loading manifest counter line
-                manifest_match = re.search(r'loading manifest:\s*(\d+)/(\d+)', lower)
-                if manifest_match:
-                    current = int(manifest_match.group(1))
-                    total = int(manifest_match.group(2))
-                    phase_state["current"] = "Loading manifest"
-                    percent = int((current / total) * 100) if total > 0 else 0
-                    rendered = f"[TTW] {phase_state['current']}: {current:,}/{total:,} ({percent}%)"
+                # Match GUI behavior: explicit Progress: NN% counter line
+                progress_match = re.search(r'progress:\s*(\d+)%', lower)
+                if progress_match:
+                    percent = int(progress_match.group(1))
+                    rendered = f"[TTW] {phase_state['current']}: {percent}%"
                 else:
-                    # Match GUI behavior: generic [X/Y] counters with current phase name.
-                    progress_match = re.search(r'\[(\d+)/(\d+)\]', clean)
-                    if progress_match:
-                        current = int(progress_match.group(1))
-                        total = int(progress_match.group(2))
-                        percent = int((current / total) * 100) if total > 0 else 0
-                        rendered = f"[TTW] {phase_state['current']}: {current:,}/{total:,} ({percent}%)"
-                    else:
-                        # Update phase state from milestone-like lines, then echo milestones.
-                        if 'manifest' in lower:
-                            phase_state["current"] = "Loading manifest"
-                        elif any(token in lower for token in ('extract', 'decompress', 'installing', 'copying', 'merge')):
-                            phase_state["current"] = clean
+                    # Update phase state from milestone-like lines, then echo milestones.
+                    if 'manifest' in lower:
+                        phase_state["current"] = "Loading manifest"
+                    elif any(token in lower for token in ('extract', 'decompress', 'installing', 'copying', 'merge')):
+                        phase_state["current"] = clean
 
-                        is_milestone = any(token in lower for token in ('===', 'complete', 'finished', 'starting', 'valid'))
-                        is_error = 'error:' in lower
-                        is_warning = 'warning:' in lower
-                        if is_milestone or is_error or is_warning:
-                            rendered = f"[TTW] {clean}"
+                    is_milestone = any(token in lower for token in ('===', 'complete', 'finished', 'starting', 'valid'))
+                    is_error = 'error:' in lower
+                    is_warning = 'warning:' in lower
+                    if is_milestone or is_error or is_warning:
+                        rendered = f"[TTW] {clean}"
 
                 if not rendered or rendered == phase_state["last_rendered"]:
                     return
                 phase_state["last_rendered"] = rendered
-                if rendered.startswith("[TTW] Loading manifest:") or re.search(r'^\[TTW\] .+?: [\d,]+/[\d,]+ \(\d+%\)$', rendered):
+                if re.search(r'^\[TTW\] .+?: \d+%$', rendered):
                     # In-place progress updates for counters/phases.
                     print(f"\r{COLOR_INFO}{rendered}{COLOR_RESET}", end="", flush=True)
                     progress_line_active["value"] = True

@@ -51,11 +51,11 @@ class TTWInstallerBackendMixin:
             return False, "Could not detect Fallout 3 or Fallout New Vegas installation paths"
         cmd = [
             str(self.ttw_installer_executable_path),
+            "install",
             "--fo3", str(fallout3_path),
             "--fnv", str(falloutnv_path),
             "--mpi", str(ttw_mpi_path),
-            "--output", str(ttw_output_path),
-            "--start"
+            "--dest", str(ttw_output_path),
         ]
         self.logger.info("Executing TTW_Linux_Installer: %s", ' '.join(cmd))
         try:
@@ -133,11 +133,11 @@ class TTWInstallerBackendMixin:
             return None, "Could not detect Fallout 3 or Fallout New Vegas installation paths"
         cmd = [
             str(self.ttw_installer_executable_path),
+            "install",
             "--fo3", str(fallout3_path),
             "--fnv", str(falloutnv_path),
             "--mpi", str(ttw_mpi_path),
-            "--output", str(ttw_output_path),
-            "--start"
+            "--dest", str(ttw_output_path),
         ]
         self.logger.info("Executing TTW_Linux_Installer: %s", ' '.join(cmd))
         try:
@@ -220,11 +220,11 @@ class TTWInstallerBackendMixin:
             return False, "Could not detect Fallout 3 or Fallout New Vegas installation paths"
         cmd = [
             str(self.ttw_installer_executable_path),
+            "install",
             "--fo3", str(fallout3_path),
             "--fnv", str(falloutnv_path),
             "--mpi", str(ttw_mpi_path),
-            "--output", str(ttw_output_path),
-            "--start"
+            "--dest", str(ttw_output_path),
         ]
         self.logger.info("Executing TTW_Linux_Installer: %s", ' '.join(cmd))
         try:

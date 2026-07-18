@@ -93,6 +93,24 @@ class NativeComponentInstaller:
         if cb:
             cb(msg)
 
+    def _kill_wineserver_for_prefix(self) -> None:
+        """Kill wineserver for this prefix so the vcrun2022/vcrun2012 installers start against a
+        fresh wineserver instead of whatever state a prior step left behind (matches the same
+        precaution winetricks_handler takes before its own wine invocations)."""
+        wineserver = self.wine_env.get('WINESERVER')
+        if not wineserver or not os.path.exists(wineserver):
+            return
+        try:
+            subprocess.run(
+                [wineserver, '-k'],
+                env=self._wine_env_base(),
+                timeout=10,
+                capture_output=True,
+            )
+            self.logger.debug("Killed wineserver for prefix before native Wine-based installers")
+        except Exception as exc:
+            self.logger.debug("Wineserver -k failed (non-fatal): %s", exc)
+
     def _wine_env_base(self, **extra) -> dict:
         base = {**self.wine_env, 'WINEPREFIX': self.wineprefix}
         parts = []
@@ -116,6 +134,9 @@ class NativeComponentInstaller:
         remaining = []
 
         native_candidates = [c for c in components if c in SUPPORTED_COMPONENTS]
+
+        if any(c in ("vcrun2022", "vcrun2012") for c in native_candidates):
+            self._kill_wineserver_for_prefix()
 
         for component in components:
             if component not in SUPPORTED_COMPONENTS:
@@ -408,7 +429,7 @@ class NativeComponentInstaller:
             # 3010 = reboot required - normal for VC redist, treat as success
             if r.returncode not in (0, 3010):
                 self.logger.error("vcrun2022: x86 installer failed (rc=%d)", r.returncode)
-                self.logger.debug("vcrun2022 x86 stderr: %s", r.stderr.decode(errors='replace'))
+                self.logger.error("vcrun2022 x86 stderr: %s", r.stderr.decode(errors='replace'))
                 return False
 
             # x64: same msvcp140.dll pre-extraction workaround
@@ -436,7 +457,7 @@ class NativeComponentInstaller:
             )
             if r.returncode not in (0, 3010):
                 self.logger.error("vcrun2022: x64 installer failed (rc=%d)", r.returncode)
-                self.logger.debug("vcrun2022 x64 stderr: %s", r.stderr.decode(errors='replace'))
+                self.logger.error("vcrun2022 x64 stderr: %s", r.stderr.decode(errors='replace'))
                 return False
 
         critical = [
@@ -477,7 +498,7 @@ class NativeComponentInstaller:
         )
         if r.returncode not in (0, 3010):
             self.logger.error("vcrun2012: x86 installer failed (rc=%d)", r.returncode)
-            self.logger.debug("vcrun2012 x86 stderr: %s", r.stderr.decode(errors='replace'))
+            self.logger.error("vcrun2012 x86 stderr: %s", r.stderr.decode(errors='replace'))
             return False
 
         self.logger.info("vcrun2012: running x64 installer")
@@ -489,7 +510,7 @@ class NativeComponentInstaller:
         )
         if r.returncode not in (0, 3010):
             self.logger.error("vcrun2012: x64 installer failed (rc=%d)", r.returncode)
-            self.logger.debug("vcrun2012 x64 stderr: %s", r.stderr.decode(errors='replace'))
+            self.logger.error("vcrun2012 x64 stderr: %s", r.stderr.decode(errors='replace'))
             return False
 
         if not (syswow64 / 'msvcr110.dll').is_file():

@@ -16,10 +16,9 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QGroupBox, QTextEdit, QApplication
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QClipboard
 
-from ....backend.services.update_service import UpdateService
 from ....backend.models.configuration import SystemInfo
 from .... import __version__
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
@@ -27,34 +26,13 @@ from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleM
 logger = logging.getLogger(__name__)
 
 
-class UpdateCheckThread(QThread):
-    """Background thread for checking updates."""
-    
-    update_check_finished = Signal(object)  # UpdateInfo or None
-    
-    def __init__(self, update_service: UpdateService):
-        super().__init__()
-        self.update_service = update_service
-    
-    def run(self):
-        """Check for updates in background."""
-        try:
-            update_info = self.update_service.check_for_updates()
-            self.update_check_finished.emit(update_info)
-        except Exception as e:
-            logger.error(f"Error checking for updates: {e}")
-            self.update_check_finished.emit(None)
-
-
 class AboutDialog(ThreadLifecycleMixin, QDialog):
     """About dialog showing system info and app details."""
-    
+
     def __init__(self, system_info: SystemInfo, parent=None):
         super().__init__(parent)
         self.system_info = system_info
-        self.update_service = UpdateService(__version__)
-        self.update_check_thread = None
-        
+
         self.setup_ui()
         self.setup_connections()
         
@@ -117,45 +95,9 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
         
         layout.addWidget(jackify_group)
         
-        # Update status
-        self.update_status_label = QLabel("")
-        self.update_status_label.setStyleSheet("color: #666; font-size: 10pt; margin: 5px;")
-        self.update_status_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.update_status_label)
-        
         # Buttons
         button_layout = QHBoxLayout()
-        
-        # Update check button
-        self.update_button = QPushButton("Check for Updates")
-        self.update_button.clicked.connect(self.check_for_updates)
-        self.update_button.setStyleSheet("""
-            QPushButton {
-                background-color: #23272e;
-                color: #3fd0ea;
-                font-weight: bold;
-                padding: 8px 16px;
-                border-radius: 4px;
-                border: 2px solid #3fd0ea;
-            }
-            QPushButton:hover {
-                background-color: #3fd0ea;
-                color: #23272e;
-            }
-            QPushButton:pressed {
-                background-color: #2bb8d6;
-                color: #23272e;
-            }
-            QPushButton:disabled {
-                background-color: #444;
-                color: #666;
-                border-color: #666;
-            }
-        """)
-        button_layout.addWidget(self.update_button)
-        
-        button_layout.addStretch()
-        
+
         # Copy Info button
         copy_button = QPushButton("Copy Info")
         copy_button.clicked.connect(self.copy_system_info)
@@ -324,36 +266,6 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
             logger.error(f"Error getting engine version: {e}")
             return "Unknown"
     
-    def check_for_updates(self):
-        """Check for updates in background."""
-        if self.update_check_thread and self.update_check_thread.isRunning():
-            return
-        
-        self.update_button.setEnabled(False)
-        self.update_button.setText("Checking...")
-        self.update_status_label.setText("Checking for updates...")
-        
-        self.update_check_thread = UpdateCheckThread(self.update_service)
-        self.update_check_thread.update_check_finished.connect(self.update_check_finished)
-        self.update_check_thread.start()
-    
-    def update_check_finished(self, update_info):
-        """Handle update check completion."""
-        self.update_button.setEnabled(True)
-        self.update_button.setText("Check for Updates")
-        
-        if update_info:
-            self.update_status_label.setText(f"Update available: v{update_info.version}")
-            self.update_status_label.setStyleSheet("color: #3fd0ea; font-size: 10pt; margin: 5px;")
-            
-            # Show update dialog
-            from .update_dialog import UpdateDialog
-            update_dialog = UpdateDialog(update_info, self.update_service, self)
-            update_dialog.exec()
-        else:
-            self.update_status_label.setText("You're running the latest version")
-            self.update_status_label.setStyleSheet("color: #666; font-size: 10pt; margin: 5px;")
-    
     def copy_system_info(self):
         """Copy system information to clipboard."""
         try:
@@ -421,7 +333,4 @@ Python: {platform.python_version()}"""
     
     def closeEvent(self, event):
         """Handle dialog close event."""
-        self.update_check_thread = self._park_thread(
-            self.update_check_thread, ["update_available", "no_update", "check_failed"]
-        )
         event.accept()

@@ -47,7 +47,7 @@ class MainWindowStartupMixin:
 
     def _check_protontricks_on_startup(self):
         try:
-            method = self.config_handler.get('component_installation_method', 'winetricks')
+            method = self.config_handler.get('component_installation_method', 'native')
             if method != 'system_protontricks':
                 logger.debug(f"Skipping protontricks check (current method: {method}).")
                 return

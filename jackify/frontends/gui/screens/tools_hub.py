@@ -11,17 +11,19 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
     QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
+from jackify import __version__ as _JACKIFY_VERSION
 from jackify.backend.services.tool_registry import (
     ToolDefinition, ToolRegistry, ToolStatus,
     apply_remote_manifest, fetch_remote_manifest, fetch_release_list,
     get_active_engine_id, get_effective_definitions,
 )
+from jackify.backend.services.update_service import UpdateInfo, UpdateService
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 from jackify.frontends.gui.screens.tools_hub_card import ToolCard, btn_style, section_header
 from jackify.frontends.gui.services.message_service import MessageService
@@ -113,6 +115,22 @@ class _ReleaseFetchThread(QThread):
         self.releases_ready.emit(self._tool_id, releases)
 
 
+class _JackifyUpdateCheckThread(QThread):
+    update_ready = Signal(object)   # UpdateInfo or None
+
+    def __init__(self, update_service: UpdateService):
+        super().__init__()
+        self._update_service = update_service
+
+    def run(self):
+        try:
+            update_info = self._update_service.check_for_updates()
+        except Exception as e:
+            logger.debug("Jackify update check failed: %s", e)
+            update_info = None
+        self.update_ready.emit(update_info)
+
+
 # -- main screen -------------------------------------------------------------
 class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
     """Tools Hub: engine selection and third-party tool management."""
@@ -128,6 +146,10 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         self._version_thread: Optional[_VersionCheckThread] = None
         self._manifest_thread: Optional[_ManifestFetchThread] = None
         self._release_thread: Optional[_ReleaseFetchThread] = None
+        self._jackify_update_thread: Optional[_JackifyUpdateCheckThread] = None
+        self._jackify_update_info: Optional[UpdateInfo] = None
+        self._jackify_manual_check_pending = False
+        self._update_service = UpdateService(_JACKIFY_VERSION)
         self._active_engine_id = get_active_engine_id()
 
         self._setup_ui()
@@ -139,15 +161,25 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         self.setLayout(root)
 
         header_row = QHBoxLayout()
+
+        jackify_version_label = QLabel(f"Jackify v{_JACKIFY_VERSION}")
+        jackify_version_label.setStyleSheet("color: #888; font-size: 11px;")
+        self._btn_update_jackify = QPushButton("Check for Updates")
+        self._btn_update_jackify.setFixedSize(150, 30)
+        self._btn_update_jackify.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._btn_update_jackify.setStyleSheet(btn_style(_C_UPDATE, width=134))
+        self._btn_update_jackify.clicked.connect(self._on_update_jackify)
+
         self._btn_update_all = QPushButton("Update All")
-        self._btn_update_all.setFixedSize(100, 30)
-        self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, disabled=True))
+        self._btn_update_all.setFixedSize(150, 30)
+        self._btn_update_all.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, disabled=True, width=134))
         self._btn_update_all.setEnabled(False)
         self._btn_update_all.clicked.connect(self._on_update_all)
-        # Left spacer matches button width so title stays centred
-        left_spacer = QWidget()
-        left_spacer.setFixedWidth(100)
-        header_row.addWidget(left_spacer)
+
+        header_row.addWidget(jackify_version_label)
+        header_row.addSpacing(8)
+        header_row.addWidget(self._btn_update_jackify)
         header_row.addStretch()
         title = QLabel("<b>Tools Hub</b>")
         title.setStyleSheet(f"font-size: 20px; color: {JACKIFY_COLOR_BLUE};")
@@ -265,6 +297,47 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         self._rebuild_card_list()
         self._start_manifest_fetch()
         self._start_version_check()
+        self._start_jackify_update_check()
+
+    def _start_jackify_update_check(self):
+        if self._jackify_update_thread and self._jackify_update_thread.isRunning():
+            return
+        self._jackify_update_thread = _JackifyUpdateCheckThread(self._update_service)
+        self._jackify_update_thread.update_ready.connect(self._on_jackify_update_ready)
+        self._jackify_update_thread.start()
+
+    def _on_jackify_update_ready(self, update_info: Optional[UpdateInfo]):
+        self._jackify_update_info = update_info
+        manual = self._jackify_manual_check_pending
+        self._jackify_manual_check_pending = False
+        self._btn_update_jackify.setEnabled(True)
+
+        if update_info:
+            self._btn_update_jackify.setText("Update Jackify")
+            if manual:
+                self._open_jackify_update_dialog()
+        else:
+            self._btn_update_jackify.setText("Up to date" if manual else "Check for Updates")
+            if manual:
+                QTimer.singleShot(
+                    2500, lambda: self._btn_update_jackify.setText("Check for Updates")
+                )
+
+    def _on_update_jackify(self):
+        if self._jackify_update_info:
+            self._open_jackify_update_dialog()
+            return
+        if self._jackify_update_thread and self._jackify_update_thread.isRunning():
+            return
+        self._jackify_manual_check_pending = True
+        self._btn_update_jackify.setEnabled(False)
+        self._btn_update_jackify.setText("Checking...")
+        self._start_jackify_update_check()
+
+    def _open_jackify_update_dialog(self):
+        from jackify.frontends.gui.dialogs.update_dialog import UpdateDialog
+        dialog = UpdateDialog(self._jackify_update_info, self._update_service, self)
+        dialog.exec()
 
     def _start_manifest_fetch(self):
         if self._manifest_thread and self._manifest_thread.isRunning():
@@ -296,7 +369,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             has_update = card.set_latest_version(tag)
             if has_update:
                 self._btn_update_all.setEnabled(True)
-                self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE))
+                self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, width=134))
         any_updates = any(c._status.update_available for c in self._cards.values())
         main_menu = self._get_main_menu()
         if main_menu:
@@ -423,7 +496,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             any_remaining = any(c._status.installed and c._status.update_available for c in self._cards.values())
             self._btn_update_all.setEnabled(any_remaining)
             if not any_remaining:
-                self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, disabled=True))
+                self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, disabled=True, width=134))
 
     def _start_downgrade_flow(self, tool_id: str):
         card = self._cards.get(tool_id)

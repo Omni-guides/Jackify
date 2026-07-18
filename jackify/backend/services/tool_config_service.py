@@ -14,10 +14,14 @@ import os
 import subprocess
 import tempfile
 import urllib.request
-import zipfile
 from pathlib import Path
 from typing import Callable, Optional
 
+from jackify.backend.services.dotnet10_installer import (
+    find_winetricks_bin,
+    install_dotnet10_desktop_runtime as _install_dotnet10_desktop_runtime,
+    install_dotnet_sdk as _install_dotnet_sdk,
+)
 from jackify.backend.services.nuget_signature_service import (
     configure_nuget_signature_policy,
     install_nuget_cert,
@@ -60,7 +64,7 @@ _DLL_OVERRIDES = [
 ]
 
 
-def _build_reg_content() -> str:
+def _build_reg_content(apply_engine_mscoree: bool = True, install_dotnet_sdk: bool = False) -> str:
     lines = ["Windows Registry Editor Version 5.00", ""]
 
     # xEdit WinXP compatibility
@@ -76,10 +80,13 @@ def _build_reg_content() -> str:
 
     # Skyrim SE / SKSE game process needs native mscoree to load dotnet4 correctly.
     # Scoped to SkyrimSE.exe only so it does not interfere with .NET 9/10 tools
-    # (Synthesis, SDK host) that run in the same prefix.
-    lines.append("[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\SkyrimSE.exe\\DllOverrides]")
-    lines.append('"*mscoree"="native"')
-    lines.append("")
+    # (Synthesis, SDK host) that run in the same prefix. Enderal SE also runs as
+    # SkyrimSE.exe under the hood, so this entry must be skipped there - it would
+    # apply to Enderal's own game process and crash it (apply_engine_mscoree=False).
+    if apply_engine_mscoree:
+        lines.append("[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\SkyrimSE.exe\\DllOverrides]")
+        lines.append('"*mscoree"="native"')
+        lines.append("")
 
     # Prevent Wine windows from stealing keyboard focus via WM_TAKE_FOCUS.
     # Without this, each Wine subprocess launched during winetricks installs
@@ -103,6 +110,13 @@ def _build_reg_content() -> str:
     # the registry equivalent of setx, so every process in the prefix (including
     # Synthesis's internal dotnet build calls) inherits these automatically.
     #
+    # MSBUILDDISABLENODEREUSE alone only stops node reuse - it does not cap how
+    # many patcher builds Synthesis fires off at once, which on large lists
+    # (Tuxborn-sized) spawned ~150 concurrent dotnet.exe processes and OOM'd the
+    # host. DOTNET_PROCESSOR_COUNT makes the CLR report 8 logical processors,
+    # which caps Parallel.ForEach/Task-based concurrency that defaults to
+    # Environment.ProcessorCount (including Synthesis's own patcher scheduler).
+    #
     # The two NUGET_* entries are needed for NuGet package signature validation
     # (Synthesis fails to compile patchers without it): offline revocation mode
     # avoids online CRL/OCSP checks that routinely fail or time out under Wine's
@@ -115,115 +129,33 @@ def _build_reg_content() -> str:
     lines.append("[HKEY_CURRENT_USER\\Environment]")
     lines.append('"UseSharedCompilation"="false"')
     lines.append('"MSBUILDDISABLENODEREUSE"="1"')
+    lines.append('"DOTNET_PROCESSOR_COUNT"="8"')
     lines.append('"NUGET_CERT_REVOCATION_MODE"="offline"')
     lines.append('"NUGET_EXPERIMENTAL_CHAIN_BUILD_RETRY_POLICY"="10,1000"')
+
+    # The dotnet SDK/runtime are ZIP-extracted, not installed via the real EXE
+    # installer, which normally adds Program Files\dotnet to the system Path.
+    # Without it, anything that shells out to a bare "dotnet" command (Synthesis
+    # calls `dotnet --info` on startup via Process.Start) fails with
+    # Win32Exception "File not found" even though the SDK is present on disk.
+    # Standard Windows system directories are kept alongside it so nothing else
+    # that relies on PATH lookup regresses.
+    if install_dotnet_sdk:
+        lines.append(
+            '"Path"="C:\\\\Program Files\\\\dotnet;C:\\\\windows\\\\system32;C:\\\\windows;'
+            'C:\\\\windows\\\\System32\\\\Wbem;C:\\\\windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\"'
+        )
+
     lines.append("")
 
     return "\r\n".join(lines)
 
-
-# .NET 9 SDK - ZIP distribution, extracted directly to avoid running an EXE under Wine.
-# Synthesis requires the SDK (not just runtime) for patcher compilation.
-# Versions match Fluorine's confirmed-working prefix configuration.
-_DOTNET9_SDK_URL = "https://builds.dotnet.microsoft.com/dotnet/Sdk/9.0.310/dotnet-sdk-9.0.310-win-x64.zip"
-_DOTNET9_SDK_FILENAME = "dotnet-sdk-9.0.310-win-x64.zip"
-
-# .NET Desktop Runtime 10 - provides NETCore.App + WindowsDesktop.App 10.0.2.
-# Covers Synthesis patchers targeting .NET 10 runtime.
-_DOTNET10_DESKTOP_URL = "https://builds.dotnet.microsoft.com/dotnet/WindowsDesktop/10.0.2/windowsdesktop-runtime-10.0.2-win-x64.exe"
-_DOTNET10_DESKTOP_FILENAME = "windowsdesktop-runtime-10.0.2-win-x64.exe"
 
 # fxc2 build of d3dcompiler_47 - required for Community Shaders shader compilation.
 # The winetricks-provided d3dcompiler_47 lacks support for certain shader models
 # used by Community Shaders, causing "failed shaders" during compilation.
 _FXC2_D3DCOMPILER_URL = "https://github.com/mozilla/fxc2/raw/master/dll/d3dcompiler_47.dll"
 _FXC2_D3DCOMPILER_FILENAME = "fxc2_d3dcompiler_47.dll"
-
-
-def _install_dotnet9_sdk(
-    prefix_path: Path,
-    wine_bin: str,
-    log: Callable[[str], None],
-) -> bool:
-    """
-    Download and extract the .NET 9 SDK ZIP into the Wine prefix.
-    Uses the standalone ZIP distribution to avoid running an EXE under Wine.
-    Synthesis requires the full SDK (Roslyn compiler) for patcher compilation.
-    """
-    try:
-        from jackify.shared.paths import get_jackify_data_dir
-        cache_dir = get_jackify_data_dir() / "cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        sdk_zip = cache_dir / _DOTNET9_SDK_FILENAME
-
-        if not sdk_zip.exists():
-            log(f"Downloading .NET 9 SDK ({_DOTNET9_SDK_FILENAME})...")
-            urllib.request.urlretrieve(_DOTNET9_SDK_URL, sdk_zip)
-            log(".NET 9 SDK downloaded")
-        else:
-            log(".NET 9 SDK already cached, skipping download")
-
-        dest = prefix_path / "drive_c" / "Program Files" / "dotnet"
-        dest.mkdir(parents=True, exist_ok=True)
-        log("Extracting .NET 9 SDK...")
-        with zipfile.ZipFile(sdk_zip) as zf:
-            zf.extractall(dest)
-        log(".NET 9 SDK extracted successfully")
-        return True
-
-    except Exception as e:
-        log(f"Failed to install .NET 9 SDK: {e}")
-        return False
-
-
-
-def _install_dotnet10_desktop_runtime(
-    prefix_path: Path,
-    wine_bin: str,
-    log: Callable[[str], None],
-) -> bool:
-    """
-    Download and install the .NET Desktop Runtime 10 into the Wine prefix.
-    Provides NETCore.App and WindowsDesktop.App 10.x for patchers targeting .NET 10.
-    """
-    try:
-        from jackify.shared.paths import get_jackify_data_dir
-        cache_dir = get_jackify_data_dir() / "cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        installer = cache_dir / _DOTNET10_DESKTOP_FILENAME
-
-        if not installer.exists():
-            log(f"Downloading .NET Desktop Runtime 10 ({_DOTNET10_DESKTOP_FILENAME})...")
-            urllib.request.urlretrieve(_DOTNET10_DESKTOP_URL, installer)
-            log(".NET Desktop Runtime 10 downloaded")
-        else:
-            log(".NET Desktop Runtime 10 already cached, skipping download")
-
-        log("Installing .NET Desktop Runtime 10...")
-        env = os.environ.copy()
-        env["WINEPREFIX"] = str(prefix_path)
-        env["WINEDEBUG"] = "-all"
-        env["WINEDLLOVERRIDES"] = "mshtml=d;winemenubuilder.exe=d"
-        env["DISPLAY"] = env.get("DISPLAY", ":0")
-
-        result = subprocess.run(
-            [wine_bin, str(installer), "/install", "/quiet", "/norestart"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-
-        if result.returncode not in (0, 3010):
-            log(f".NET Desktop Runtime 10 installer exited with code {result.returncode}")
-            return False
-
-        log(".NET Desktop Runtime 10 installed successfully")
-        return True
-
-    except Exception as e:
-        log(f"Failed to install .NET Desktop Runtime 10: {e}")
-        return False
 
 
 def _install_fxc2_d3dcompiler(
@@ -276,14 +208,8 @@ def _set_windows_version_win11(
     correctly. winetricks components may leave the prefix at a lower version.
     """
     try:
-        from pathlib import Path as _Path
-        module_dir = _Path(__file__).parent.parent.parent
-        winetricks_bin = str(module_dir / "tools" / "winetricks")
-        if not os.path.exists(winetricks_bin):
-            appdir = os.environ.get("APPDIR", "")
-            if appdir:
-                winetricks_bin = os.path.join(appdir, "opt", "jackify", "tools", "winetricks")
-        if not os.path.exists(winetricks_bin):
+        winetricks_bin = find_winetricks_bin()
+        if not winetricks_bin:
             log("Bundled winetricks not found - skipping Windows version update")
             return
 
@@ -321,14 +247,15 @@ def apply_tool_config(
     compatdata_path: str,
     wine_bin: str,
     log: Optional[Callable[[str], None]] = None,
-    install_dotnet9_sdk: bool = False,
+    install_dotnet_sdk: bool = False,
     install_fxc2_d3dcompiler: bool = False,
     preserve_global_mscoree: bool = False,
+    apply_engine_mscoree: bool = True,
 ) -> bool:
     """
     Apply tool compatibility settings to the Wine prefix.
 
-    install_dotnet9_sdk=True downloads and installs the .NET 9/10 SDK and flips the
+    install_dotnet_sdk=True downloads and installs the .NET 10 SDK and flips the
     prefix to Windows 11, which are required for Synthesis. Intentionally opt-in -
     the download is ~220MB and the win11 flip has not been verified against NSF/CSF
     prefixes (see preserve_global_mscoree).
@@ -338,6 +265,11 @@ def apply_tool_config(
 
     install_fxc2_d3dcompiler=True replaces d3dcompiler_47.dll with the Mozilla
     fxc2 build. Only appropriate for Skyrim SE/AE modlists using Community Shaders.
+
+    apply_engine_mscoree=False skips the SkyrimSE.exe-scoped native mscoree
+    AppDefaults entry while still applying everything else (xEdit, Pandora, DLL
+    overrides, dotnet SDK/NuGet). Set False for Enderal SE, whose own game process
+    is also SkyrimSE.exe - the entry would apply to Enderal itself and crash it.
 
     Returns True if registry settings applied successfully (dotnet SDK install
     failures are non-fatal since the registry settings still have value).
@@ -355,8 +287,8 @@ def apply_tool_config(
     if install_fxc2_d3dcompiler:
         _install_fxc2_d3dcompiler(prefix_path, _log)
 
-    if install_dotnet9_sdk:
-        _install_dotnet9_sdk(prefix_path, wine_bin, _log)
+    if install_dotnet_sdk:
+        _install_dotnet_sdk(prefix_path, wine_bin, _log)
         _install_dotnet10_desktop_runtime(prefix_path, wine_bin, _log)
         _set_windows_version_win11(prefix_path, wine_bin, _log)
 
@@ -390,7 +322,10 @@ def apply_tool_config(
     # "dotnet run" can hang on VBCSCompiler's named pipe and leave an orphaned
     # dotnet.exe/winedevice.exe spinning at high CPU indefinitely (confirmed
     # reproducible during the original cert-import ordering bug).
-    reg_content = _build_reg_content()
+    reg_content = _build_reg_content(
+        apply_engine_mscoree=apply_engine_mscoree,
+        install_dotnet_sdk=install_dotnet_sdk,
+    )
     regedit_ok = False
 
     try:
@@ -430,16 +365,14 @@ def apply_tool_config(
         except Exception:
             pass
 
-    # Must run before the first dotnet invocation in this prefix: the SDK
-    # auto-generates a bare-bones NuGet.Config (nuget.org source only, no trust
-    # policy) as a side effect of any restore if none exists yet, and
-    # configure_nuget_signature_policy skips writing when the file already
-    # exists - so a stub landing first means our trust policy never applies.
+    # configure_nuget_signature_policy replaces any existing NuGet.Config that
+    # lacks our trust policy (e.g. an SDK-generated stub from a restore that
+    # ran before this step, possibly under an older Jackify version).
     configure_nuget_signature_policy(prefix_path, _log)
 
     # NuGet cert import requires the .NET SDK already present (the trusted-root
     # PEM bundles ship inside the SDK). On NSF/CSF prefixes
-    # (install_dotnet9_sdk=False) the SDK is not installed, so this is skipped
+    # (install_dotnet_sdk=False) the SDK is not installed, so this is skipped
     # there - those modlists don't run Synthesis in the same prefix.
     install_nuget_cert(prefix_path, wine_bin, _log)
 
@@ -489,6 +422,14 @@ def setup_nemesis_compatibility(
 
     if nemesis_engine_src is None:
         _log("Nemesis setup: Nemesis_Engine not found in mods - modlist may not include Nemesis")
+        if stock_game_path:
+            stale_symlink = Path(stock_game_path) / "Data" / "Nemesis_Engine"
+            if stale_symlink.is_symlink():
+                try:
+                    stale_symlink.unlink()
+                    _log(f"Nemesis setup: removed stale symlink at {stale_symlink} (source mod no longer present)")
+                except Exception as e:
+                    _log(f"Nemesis setup: failed to remove stale symlink at {stale_symlink}: {e}")
         return
 
     # Create symlink in Data/ so Nemesis can find its engine at a predictable path
@@ -564,7 +505,7 @@ def setup_nemesis_compatibility(
 def apply_tool_config_for_appid(
     appid: str,
     log: Optional[Callable[[str], None]] = None,
-    install_dotnet9_sdk: bool = True,
+    install_dotnet_sdk: bool = True,
 ) -> bool:
     """
     Resolve compatdata path and wine binary from an AppID, then apply tool config.
@@ -574,6 +515,20 @@ def apply_tool_config_for_appid(
         logger.info(msg)
         if log:
             log(msg)
+
+    apply_engine_mscoree = True
+    modlist_dir: Optional[str] = None
+    try:
+        from jackify.backend.handlers.modlist_handler import ModlistHandler
+        handler = ModlistHandler()
+        for shortcut in handler.discover_executable_shortcuts("ModOrganizer.exe"):
+            if str(shortcut.get("appid", "")) == str(appid):
+                modlist_dir = shortcut.get("path") or None
+                if handler.detect_special_game_type(shortcut.get("path", "")) == "enderal":
+                    apply_engine_mscoree = False
+                break
+    except Exception as e:
+        _log(f"Could not determine game type for AppID {appid}, applying default tool config: {e}")
 
     try:
         from jackify.backend.handlers.wine_utils_proton import WineUtilsProtonMixin
@@ -586,4 +541,15 @@ def apply_tool_config_for_appid(
         _log(f"Could not resolve Wine prefix for AppID {appid}. Is this modlist configured in Steam?")
         return False
 
-    return apply_tool_config(compatdata_path, wine_bin, log, install_dotnet9_sdk=install_dotnet9_sdk, install_fxc2_d3dcompiler=True)
+    result = apply_tool_config(
+        compatdata_path, wine_bin, log,
+        install_dotnet_sdk=install_dotnet_sdk,
+        install_fxc2_d3dcompiler=True,
+        apply_engine_mscoree=apply_engine_mscoree,
+    )
+
+    if modlist_dir:
+        from jackify.backend.services.synthesis_updater import update_synthesis
+        update_synthesis(modlist_dir, log=log)
+
+    return result

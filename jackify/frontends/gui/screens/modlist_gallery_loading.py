@@ -58,6 +58,8 @@ class ModlistGalleryLoadingMixin:
         
         # Position overlay in center of content area
         def position_overlay():
+            if getattr(self, '_loading_overlay', None) is None:
+                return
             if hasattr(self, 'content_area') and self.content_area.isVisible():
                 content_width = self.content_area.width()
                 content_height = self.content_area.height()

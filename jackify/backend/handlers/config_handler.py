@@ -64,7 +64,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
             "modlist_downloads_base_dir": os.path.expanduser("~/Games/Modlist_Downloads"),  # Configurable base directory for downloads
             "jackify_data_dir": None,  # Configurable Jackify data directory (default: ~/Jackify)
             "use_winetricks_for_components": True,  # DEPRECATED: Migrated to component_installation_method. Kept for backward compatibility.
-            "component_installation_method": "winetricks",  # "winetricks" (default) or "system_protontricks"
+            "component_installation_method": "native",  # "native" (default), "winetricks", or "system_protontricks"
             "game_proton_path": None,  # Proton version for game shortcuts (can be any Proton 9+), separate from install proton
             "proton_path": None,  # Install Proton path (for jackify-engine) - None means auto-detect
             "proton_version": None,  # Install Proton version name - None means auto-detect
@@ -140,7 +140,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
         Handles breaking changes and data format updates
         """
         current_version = self.settings.get("version", "0.0.0")
-        target_version = "0.2.0"
+        target_version = "0.7.2"
 
         if current_version == target_version:
             return
@@ -187,6 +187,20 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
                 logger.info(f"Removed {removed_count} obsolete config keys")
 
             # Update version
+            self.settings["version"] = target_version
+            self.save_config()
+            logger.info("Config migration completed")
+
+        # Migration: pre-0.7.2 -> v0.7.2
+        # component_installation_method semantics changed: the old lone "winetricks" value
+        # actually meant "native install, winetricks fallback for unsupported components" -
+        # that behavior is now the "native" option. Explicit full winetricks/protontricks
+        # bypass modes are new in 0.7.2, so old configs must be remapped once rather than
+        # silently reinterpreted as the new bypass meaning.
+        if version.parse(current_version) < version.parse("0.7.2"):
+            if self.settings.get("component_installation_method") == "winetricks":
+                self.settings["component_installation_method"] = "native"
+                logger.info("Migrated component_installation_method 'winetricks' -> 'native'")
             self.settings["version"] = target_version
             self.save_config()
             logger.info("Config migration completed")
@@ -305,6 +319,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
         """Set preferred resolution"""
         resolution = f"{width}x{height}"
         self.settings["resolution"] = resolution
+        self._dirty_keys.add("resolution")
         logger.debug(f"Set resolution to: {resolution}")
         return True
     
@@ -315,6 +330,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
     def set_last_modlist(self, modlist_name):
         """Save the last selected modlist"""
         self.settings["last_selected_modlist"] = modlist_name
+        self._dirty_keys.add("last_selected_modlist")
         logger.debug(f"Set last selected modlist to: {modlist_name}")
         return True
     
@@ -325,6 +341,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
     def set_protontricks_path(self, path):
         """Set the path to protontricks executable"""
         self.settings["protontricks_path"] = path
+        self._dirty_keys.add("protontricks_path")
         logger.debug(f"Set protontricks path to: {path}")
         return True
     
@@ -350,7 +367,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
                 # Clear resolution if 'Leave unchanged' or empty
                 self.settings["resolution"] = None
                 logger.debug("Resolution cleared")
-            
+            self._dirty_keys.add("resolution")
             return self.save_config()
         except Exception as e:
             logger.error(f"Error saving resolution: {e}")
@@ -392,6 +409,7 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
         """
         try:
             self.settings["resolution"] = None
+            self._dirty_keys.add("resolution")
             logger.debug("Resolution cleared from configuration")
             return self.save_config()
         except Exception as e:

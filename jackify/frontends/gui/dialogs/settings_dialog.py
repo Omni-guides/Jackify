@@ -319,14 +319,16 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             # Save component installation method preference
             if self.winetricks_radio.isChecked():
                 method = 'winetricks'
-            else:  # protontricks_radio (alternative)
+            elif self.protontricks_radio.isChecked():
                 method = 'system_protontricks'
+            else:  # native_radio (default)
+                method = 'native'
 
-            old_method = self.config_handler.get('component_installation_method', 'winetricks')
+            old_method = self.config_handler.get('component_installation_method', 'native')
             method_changed = (old_method != method)
 
             self.config_handler.set("component_installation_method", method)
-            self.config_handler.set("use_winetricks_for_components", method == 'winetricks')
+            self.config_handler.set("use_winetricks_for_components", method != 'system_protontricks')
 
             # Force immediate save and verify
             save_result = self.config_handler.save_config()

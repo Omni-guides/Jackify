@@ -45,3 +45,6 @@ requirements-packaging.txt
 # Development logs
 logs/
 
+# Build artifacts (from pyproject.toml / pip install -e .)
+*.egg-info/
+

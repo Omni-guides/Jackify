@@ -1,5 +1,25 @@
 # Jackify Changelog
 
+## v0.7.2 - TTW Linux Installer 0.2.0
+**Release Date:** 2026-07-18
+
+### TTW Linux Installer now uses latest available
+Previously the TTW Linux Installer was locked to v0.0.7 due to the change in output format beyond that version. Now Jackify can make use of the most up to date version of TTW Linux Installer
+
+### Fixes
+- Fixed Proton prefix creation being reported as failed when it was actually still finishing in the background (most likely on the first run of a newly installed Proton build), which could block install/configure entirely even though retrying immediately would work.
+- Moved the "Check for Updates" action out of the About dialog into a dedicated button in the Tools Hub, which now lights up automatically when an update is available.
+- Fixed a rare case where Synthesis's required NuGet security certificate import could silently drop a certificate during setup, causing NU3028/NU3037 signature errors on patcher compilation with no clear cause. Certificate import is now verified after writing and automatically retried if incomplete, and the post-install check will flag it clearly if it ever still happens.
+- Fixed Synthesis still being able to spawn a very large number of concurrent dotnet.exe patcher builds on large modlists, which could exhaust system memory. Patcher build concurrency is now capped.
+- Switched .NET 9 SDK to .NET 10 SDK for compatibility with newer Synthesis and patcher versions.
+- Automatically updates Synthesis version during install - This fixes an issue where Synthesis' patcher list failing to load entirely on any modlist that includes it. The cause of the issue is the list of available patchers is fetched live from a GitHub-hosted directory outside Jackify's or the modlist's control, and a recent update to that directory broke compatibility with older bundled Synthesis versions. Jackify now automatically updates a modlist's bundled Synthesis to a known-compatible version during setup, and defaults its "MO2 Mode" build-safety setting off, since Linux has no equivalent to the "launch outside MO2" step it otherwise asks for.
+- Synthesis's game data path is now filled in automatically during setup, instead of sometimes being left blank until set manually in Synthesis itself.
+- Fixed Enderal Special Edition modlists not receiving xEdit, Pandora, and Synthesis compatibility fixes, and the post-install check incorrectly warning about them as missing.
+- Fixed an occasional crash when the modlist gallery finished loading faster than its loading overlay could appear.
+- Fixed the crash-report dialog itself failing to appear after certain unhandled errors.
+
+---
+
 ## v0.7.1.1 - Synthesis, Starfield, and Stability Fixes
 **Release Date:** 2026-07-08
 

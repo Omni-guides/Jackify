@@ -22,20 +22,21 @@ def _load_verifier():
 
 
 def resolve_pfx_for_appid(appid: str) -> Optional[Path]:
-    """Resolve the Proton prefix path for a Steam AppID."""
+    """Resolve the Proton prefix path for a Steam AppID.
+
+    Delegates to PathHandler.find_compat_data(), which scans all configured
+    Steam library folders, not just the default Steam root - users with
+    custom/secondary libraries (e.g. on other mounts) can have compatdata
+    outside the default install location.
+    """
     if not appid:
         return None
-    steam_roots = [
-        Path.home() / ".steam" / "steam",
-        Path.home() / ".local" / "share" / "Steam",
-        Path.home() / ".steam" / "root",
-        Path.home() / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam",
-    ]
-    for root in steam_roots:
-        pfx = root / "steamapps" / "compatdata" / str(appid) / "pfx"
-        if pfx.is_dir():
-            return pfx
-    return None
+    from jackify.backend.handlers.path_handler import PathHandler
+    compatdata = PathHandler.find_compat_data(str(appid))
+    if compatdata is None:
+        return None
+    pfx = compatdata / "pfx"
+    return pfx if pfx.is_dir() else None
 
 
 def run_install_verification(pfx: Path, modlist_dir: Path, game_type: str, appid: str = "", modlist_name: str = ""):
