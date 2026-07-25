@@ -148,8 +148,9 @@ class InstallVerifierMixin:
         Show 'Verifying...' state, run the verifier in a background thread,
         then show SuccessDialog with results embedded.
 
-        success_params keys: modlist_name, workflow_type, time_taken, game_name, enb_detected
+        success_params keys: modlist_name, workflow_type, time_taken, game_name, enb_detected, game_type
         """
+        success_params["game_type"] = game_type
         self._maybe_apply_jcontainers_fix(install_dir, game_type)
         self._apply_problem_mods_disable(install_dir, game_type, success_params, appid)
         if hasattr(self, "progress_indicator"):
@@ -230,3 +231,18 @@ class InstallVerifierMixin:
                 enb_dialog.exec()
             except Exception as e:
                 logger.warning("Failed to show ENB dialog: %s", e)
+
+        try:
+            from jackify.backend.data.modlist_proton_requirements import get_game_proton_warning
+            _game_warning = get_game_proton_warning(params.get("game_type", ""))
+            if _game_warning:
+                from jackify.frontends.gui.dialogs.game_proton_warning_dialog import GameProtonWarningDialog
+                game_proton_dialog = GameProtonWarningDialog(
+                    modlist_name=params["modlist_name"],
+                    warning=_game_warning,
+                    game_label=params.get("game_name") or "this game",
+                    parent=self,
+                )
+                game_proton_dialog.exec()
+        except Exception as e:
+            logger.warning("Failed to show game Proton warning dialog: %s", e)

@@ -79,8 +79,11 @@ class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegr
                         self._initiate_ttw_workflow(identified_name, install_dir)
                         return
 
-            # Check for VNV post-install automation after configuration
-            if install_dir and self._check_and_run_vnv_automation(modlist_name, install_dir):
+            # Check for VNV/MEW post-install automation after configuration
+            if install_dir and (
+                self._check_and_run_vnv_automation(modlist_name, install_dir)
+                or self._check_and_run_mew_automation(modlist_name, install_dir)
+            ):
                 self._pending_success_dialog_params = {
                     'modlist_name': modlist_name,
                     'workflow_type': 'configure_new',

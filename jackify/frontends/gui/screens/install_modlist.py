@@ -45,6 +45,7 @@ from .install_modlist_automated_prefix import AutomatedPrefixHandlersMixin
 from .install_modlist_configuration import ConfigurationPhaseMixin
 from .install_modlist_ttw import TTWIntegrationMixin
 from .install_modlist_vnv import VNVAutomationMixin
+from .install_modlist_mew import MEWAutomationMixin
 from .install_modlist_workflow import InstallWorkflowMixin
 from .install_modlist_nexus import NexusAuthMixin
 from .install_modlist_selection import ModlistSelectionMixin
@@ -52,7 +53,7 @@ from .screen_back_mixin import ScreenBackMixin
 from .install_verifier_mixin import InstallVerifierMixin
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
-class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifierMixin, InstallModlistUISetupMixin, ConsoleOutputMixin, ProgressHandlersMixin, PostInstallFeedbackMixin, AutomatedPrefixHandlersMixin, ConfigurationPhaseMixin, QWidget, TTWIntegrationMixin, VNVAutomationMixin, InstallWorkflowMixin, NexusAuthMixin, ModlistSelectionMixin):
+class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifierMixin, InstallModlistUISetupMixin, ConsoleOutputMixin, ProgressHandlersMixin, PostInstallFeedbackMixin, AutomatedPrefixHandlersMixin, ConfigurationPhaseMixin, QWidget, TTWIntegrationMixin, VNVAutomationMixin, MEWAutomationMixin, InstallWorkflowMixin, NexusAuthMixin, ModlistSelectionMixin):
     resize_request = Signal(str)  # Signal for expand/collapse like TTW screen
     def _collect_actionable_controls(self):
         """Collect all actionable controls that should be disabled during operations (except Cancel)"""

@@ -13,11 +13,9 @@ Uses native Linux tools (no Wine required) by downloading from Nexus with OAuth.
 
 import logging
 import os
-import json
 import shutil
 import subprocess
 import stat
-import tempfile
 import zipfile
 from pathlib import Path
 from typing import Optional, Callable
@@ -521,6 +519,15 @@ class VNVPostInstallService:
         """
         Download FNV BSA Decompressor MPI and run via TTW_Linux_Installer.
 
+        TTW_Linux_Installer v0.2.0 (the pinned build since Jackify v0.7.2) is a Rust rewrite
+        with a plain `install --mpi ... --fnv ... --dest ...` CLI; the old v0.0.7 C# build's
+        `--start` flag and PascalCase ttw-config.json are gone. `--dest` is passed the game
+        root directly (not a scratch dir) because the installer resolves manifest asset
+        locations relative to it and writes final output there itself - see
+        AssetProcessor::new(..., request.destination_path.clone(), ...) in that project's
+        install_runner.rs. Any scratch subdirectory it creates under `--dest` is cleaned up
+        by the installer itself before it exits.
+
         Args:
             progress_callback: Optional callback for progress updates
             manual_file_callback: Optional callback for manual file selection
@@ -590,171 +597,81 @@ class VNVPostInstallService:
                         return False, f"Failed to prepare BSA Decompressor package: {msg}"
                     logger.info(msg)
 
-            # Create temp output directory
-            with tempfile.TemporaryDirectory() as temp_output:
-                temp_output_path = Path(temp_output)
+            if progress_callback:
+                progress_callback("Running BSA decompressor...")
 
-                # Create config file for TTW_Linux_Installer (handles spaces in paths better)
-                config_file = self.ttw_installer_path.parent / "ttw-config.json"
-                config_data = {
-                    "FalloutNVRoot": str(self.game_root),
-                    "MpiPackagePath": str(mpi_path),
-                    "DestinationPath": str(temp_output_path)
-                }
-                with open(config_file, 'w') as f:
-                    json.dump(config_data, f, indent=2)
-                logger.debug(f"Created MPI config file: {config_file}")
+            cmd = [
+                str(self.ttw_installer_path),
+                "install",
+                "--mpi", str(mpi_path),
+                "--fnv", str(self.game_root),
+                "--dest", str(self.game_root),
+            ]
 
-                # Run via TTW_Linux_Installer
-                if progress_callback:
-                    progress_callback("Ensuring TTW_Linux_Installer is available...")
-                    progress_callback("Running BSA decompressor...")
+            logger.info(f"Running BSA decompressor: {' '.join(cmd)}")
 
-                cmd = [
-                    str(self.ttw_installer_path),
-                    "--start"
-                ]
+            env = get_clean_subprocess_env()
 
-                logger.info(f"Running BSA decompressor: {' '.join(cmd)}")
-                logger.debug(f"Using config file: {config_file}")
-                logger.debug(f"Config: {json.dumps(config_data, indent=2)}")
+            # Stream output and parse progress
+            import re
+            process = subprocess.Popen(
+                cmd,
+                cwd=str(self.ttw_installer_path.parent),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
 
-                env = get_clean_subprocess_env()
+            # Rust installer logs "Progress: NN% - message" lines (see cli.rs run_install)
+            progress_pattern = re.compile(r'Progress:\s*(\d+)%\s*-\s*(.*)')
+            last_percent = None
 
-                # Stream output and parse progress
-                import re
-                process = subprocess.Popen(
-                    cmd,
-                    cwd=str(self.ttw_installer_path.parent),
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1
-                )
+            all_output = []
+            installation_complete = False
 
-                # Pattern to match progress: "Assets processed: 12345/48649"
-                progress_pattern = re.compile(r'Assets processed: (\d+)/(\d+)')
-                last_progress = None
+            for line in process.stdout:
+                line = line.rstrip()
+                all_output.append(line)
 
-                # Capture all output for diagnostics
-                all_output = []
-                already_modified_detected = False
+                if "=== Installation Complete ===" in line:
+                    installation_complete = True
 
-                # Stream output line by line
-                for line in process.stdout:
-                    line = line.rstrip()
-                    all_output.append(line)
+                match = progress_pattern.search(line)
+                if match:
+                    percent = int(match.group(1))
+                    detail = match.group(2)
+                    if last_percent is None or percent != last_percent:
+                        if progress_callback:
+                            progress_callback(f"Decompressing BSA files: {percent}% - {detail}")
+                        last_percent = percent
 
-                    # Check for "already modified" messages
-                    if "already" in line.lower() and ("modified" in line.lower() or "decompressed" in line.lower()):
-                        already_modified_detected = True
-                        logger.info(f"BSA decompressor reports: {line}")
+            return_code = process.wait(timeout=600)
 
-                    # Check for progress updates
-                    match = progress_pattern.search(line)
-                    if match:
-                        current = int(match.group(1))
-                        total = int(match.group(2))
-                        percent = (current / total * 100) if total > 0 else 0
-                        progress_msg = f"Decompressing BSA files: {current}/{total} ({percent:.1f}%)"
+            if return_code != 0:
+                logger.debug("BSA decompressor output:\n" + "\n".join(all_output[-50:]))
 
-                        # Only send update if progress changed significantly
-                        if last_progress is None or current - last_progress >= total // 100:
-                            if progress_callback:
-                                progress_callback(progress_msg)
-                            # Log progress updates (not every single file)
-                            logger.debug(f"BSA decompression progress: {current}/{total} ({percent:.1f}%)")
-                            last_progress = current
+            if return_code == 0 and installation_complete:
+                marker_file = self.game_root / ".jackify_bsa_decompressed"
+                marker_file.touch()
+                logger.info("BSA decompression completed successfully")
+                return True, "BSA decompression completed successfully"
 
-                # Wait for process to complete
-                return_code = process.wait(timeout=600)
+            marker_file = self.game_root / ".jackify_bsa_decompressed"
+            if marker_file.exists():
+                logger.info("BSA decompressor returned an error but marker file exists - assuming already completed")
+                return True, "BSA decompression already completed"
 
-                # Log full output for debugging failures
-                if return_code != 0:
-                    logger.debug(f"BSA decompressor output:\n" + "\n".join(all_output[-50:]))  # Last 50 lines
-
-                # Clean up config file after execution
-                try:
-                    if config_file.exists():
-                        config_file.unlink()
-                        logger.debug(f"Cleaned up config file: {config_file}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up config file: {e}")
-
-                if return_code == 0:
-                    # Check if files were actually extracted to temp directory
-                    extracted_files = list(temp_output_path.rglob("*"))
-                    if extracted_files:
-                        logger.info(f"BSA decompression extracted {len(extracted_files)} files")
-                        
-                        # Copy extracted files back to game Data directory
-                        data_dir = self.game_root / "Data"
-                        copied_count = 0
-                        for extracted_file in extracted_files:
-                            if extracted_file.is_file():
-                                # Preserve relative path structure
-                                relative_path = extracted_file.relative_to(temp_output_path)
-                                dest_file = data_dir / relative_path
-                                dest_file.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(extracted_file, dest_file)
-                                copied_count += 1
-                        
-                        logger.info(f"Copied {copied_count} decompressed files to {data_dir}")
-                        
-                        # Create marker file to indicate completion
-                        marker_file = self.game_root / ".jackify_bsa_decompressed"
-                        marker_file.touch()
-                        logger.info("BSA decompression completed successfully")
-                        return True, "BSA decompression completed successfully"
-                    else:
-                        # No files extracted - might be already decompressed or failed silently
-                        logger.warning("BSA decompressor returned 0 but no files were extracted")
-                        # Check if already decompressed by looking for marker
-                        marker_file = self.game_root / ".jackify_bsa_decompressed"
-                        if marker_file.exists():
-                            logger.info("BSA files already decompressed (marker file exists)")
-                            return True, "BSA files already decompressed"
-                        else:
-                            return False, "BSA decompressor completed but no files were extracted"
-                else:
-                    # Exit code 1 often means "already decompressed" - check output and marker
-                    marker_file = self.game_root / ".jackify_bsa_decompressed"
-
-                    # If output explicitly said "already modified/decompressed", treat as success
-                    if already_modified_detected:
-                        logger.info("BSA decompressor reports files already modified - marking as completed")
-                        marker_file.touch()
-                        return True, "BSA files already decompressed"
-
-                    # Check marker file
-                    if marker_file.exists():
-                        logger.info("BSA decompressor returned error but marker file exists - assuming already completed")
-                        return True, "BSA decompression already completed"
-
-                    # Try to provide helpful error message based on exit code and output
-                    logger.error(f"BSA decompressor failed with exit code {return_code}")
-
-                    error_details = f"BSA decompressor failed with exit code {return_code}."
-
-                    if return_code == 1:
-                        error_details += (
-                            "\n\nThis may indicate the BSA files are already decompressed or modified. "
-                            "If you've run this before, the step may have already completed. "
-                            "Otherwise, try running the decompressor manually from: "
-                            "https://www.nexusmods.com/newvegas/mods/65854"
-                        )
-                    else:
-                        error_details += (
-                            f"\n\nPlease check that:\n"
-                            f"1. Fallout New Vegas is properly installed at: {self.game_root}\n"
-                            f"2. The BSA files exist in the Data directory\n"
-                            f"3. You have write permissions to the game directory\n\n"
-                            f"You can complete this step manually using the guide at:\n"
-                            f"https://vivanewvegas.moddinglinked.com/wabbajack.html"
-                        )
-
-                    return False, error_details
+            logger.error(f"BSA decompressor failed with exit code {return_code}")
+            error_details = (
+                f"BSA decompressor failed with exit code {return_code}.\n\n"
+                f"Please check that:\n"
+                f"1. Fallout New Vegas is properly installed at: {self.game_root}\n"
+                f"2. The BSA files exist in the Data directory\n"
+                f"3. You have write permissions to the game directory"
+            )
+            return False, error_details
 
         except subprocess.TimeoutExpired:
             return False, "BSA decompression timed out after 10 minutes"

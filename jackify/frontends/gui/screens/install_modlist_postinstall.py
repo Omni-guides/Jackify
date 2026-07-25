@@ -152,7 +152,7 @@ class PostInstallFeedbackMixin:
             },
             {
                 'id': 'vnv_root_mods',
-                'label': "VNV: Copying root mods",
+                'label': "Copying root mods",
                 'keywords': [
                     "step 1/3: copying root mods",
                     "copying root mods to game directory",
@@ -161,7 +161,7 @@ class PostInstallFeedbackMixin:
             },
             {
                 'id': 'vnv_4gb_patch',
-                'label': "VNV: Applying 4GB patch",
+                'label': "Applying 4GB patch",
                 'keywords': [
                     "step 2/3: downloading and running 4gb patcher",
                     "downloading fnv4gb",
@@ -173,7 +173,7 @@ class PostInstallFeedbackMixin:
             },
             {
                 'id': 'vnv_bsa_decompress',
-                'label': "VNV: Decompressing BSA files",
+                'label': "Decompressing BSA files",
                 'keywords': [
                     "step 3/3: downloading and running bsa decompressor",
                     "downloading:",
@@ -206,7 +206,7 @@ class PostInstallFeedbackMixin:
                     "configuration complete",
                     "manual steps validation failed",
                     "configuration failed",
-                    "vnv post-install completed successfully"
+                    "post-install completed",
                 ],
             },
         ]
@@ -557,14 +557,14 @@ class PostInstallFeedbackMixin:
 
     def _start_bsa_decompress_pulse(self):
         """Keep the Activity window alive during long BSA decompression runs."""
-        self.file_progress_list.update_or_add_item("__vnv_bsa__", "VNV: Decompressing BSA files...", 0.0)
+        self.file_progress_list.update_or_add_item("__vnv_bsa__", "Decompressing BSA files...", 0.0)
         if not getattr(self, '_bsa_decompress_timer', None):
             self._bsa_decompress_timer = QTimer(self)
             self._bsa_decompress_timer.timeout.connect(self._bsa_decompress_heartbeat)
         self._bsa_decompress_timer.start(250)
 
     def _bsa_decompress_heartbeat(self):
-        self.file_progress_list.update_or_add_item("__vnv_bsa__", "VNV: Decompressing BSA files...", 0.0)
+        self.file_progress_list.update_or_add_item("__vnv_bsa__", "Decompressing BSA files...", 0.0)
 
     def _stop_bsa_decompress_pulse(self):
         if hasattr(self, '_bsa_decompress_timer') and self._bsa_decompress_timer:

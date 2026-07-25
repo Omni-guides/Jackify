@@ -856,6 +856,13 @@ class ModlistOperationsConfigurationCLIMixin:
                         print(f"{COLOR_INFO}  - GE-Proton{COLOR_RESET}")
                         print(f"{COLOR_INFO}  - Proton 9 (Valve){COLOR_RESET}")
                         print(f"{COLOR_WARNING}  Valve Proton 10 has known ENB compatibility issues.{COLOR_RESET}")
+
+                from jackify.backend.data.modlist_proton_requirements import get_game_proton_warning
+                _game_warning = get_game_proton_warning(detected_game or '')
+                if _game_warning:
+                    print(f"\n{COLOR_INFO}Recommended Proton versions for this game (in order of recommendation):{COLOR_RESET}")
+                    for _version in _game_warning['recommended']:
+                        print(f"{COLOR_INFO}  - {_version}{COLOR_RESET}")
                 try:
                     # Ensure CLI install flow gets the same VNV automation behavior as GUI.
                     from jackify.backend.services.vnv_integration_helper import (
@@ -923,6 +930,75 @@ class ModlistOperationsConfigurationCLIMixin:
                 except Exception as vnv_err:
                     self.logger.error("VNV post-install automation failed: %s", vnv_err, exc_info=True)
                     print(f"{COLOR_WARNING}VNV automation could not be completed. Check logs for details.{COLOR_RESET}")
+                try:
+                    # Ensure CLI install flow gets the same MEW automation behavior as GUI.
+                    from jackify.backend.services.mew_integration_helper import (
+                        run_mew_automation_if_applicable,
+                        should_offer_mew_automation,
+                    )
+                    from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
+                    from jackify.backend.services.mew_post_install_service import MEWPostInstallService
+                    from jackify.backend.handlers.path_handler import PathHandler
+                    from jackify.frontends.cli.commands.vnv_manual_downloads import (
+                        build_vnv_cli_manual_file_callback,
+                        create_vnv_cli_progress_callback,
+                        ensure_vnv_cli_manual_downloads,
+                    )
+
+                    modlist_name_for_mew = self.context.get('modlist_name') or shortcut_name or ""
+                    def _confirm_mew(description: str) -> bool:
+                        print(f"\n{description}\n")
+                        try:
+                            user_input = input(f"{COLOR_PROMPT}Run MEW post-install automation now? (Y/n): {COLOR_RESET}").strip().lower()
+                        except (EOFError, KeyboardInterrupt):
+                            return False
+                        return user_input in ("", "y", "yes")
+                    install_path_mew = Path(install_dir_str)
+                    if should_offer_mew_automation(modlist_name_for_mew, install_path_mew):
+                        game_paths = PathHandler().find_vanilla_game_paths()
+                        resolved_game_root = game_paths.get('Fallout New Vegas')
+                        mew_service = MEWPostInstallService(
+                            modlist_install_location=install_path_mew,
+                            game_root=resolved_game_root or install_path_mew,
+                            ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
+                        )
+                        completed = mew_service.check_already_completed()
+                        all_mew_steps_done = (
+                            completed['root_mods']
+                            and completed['4gb_patch']
+                            and completed['bsa_decompressed']
+                            and completed['radio_fix']
+                        )
+                        if all_mew_steps_done:
+                            print(f"{COLOR_INFO}MEW post-install steps are already complete.{COLOR_RESET}")
+                        elif _confirm_mew(mew_service.get_automation_description()):
+                            if not ensure_vnv_cli_manual_downloads(mew_service.fnv_tools, output_callback=print):
+                                print(f"{COLOR_WARNING}MEW manual downloads were not completed. Skipping MEW automation.{COLOR_RESET}")
+                            else:
+                                progress_callback, close_progress = create_vnv_cli_progress_callback(print)
+                                try:
+                                    automation_ran, mew_error = run_mew_automation_if_applicable(
+                                        modlist_name=modlist_name_for_mew,
+                                        modlist_install_location=install_path_mew,
+                                        game_root=None,  # Auto-detect from modlist structure.
+                                        appid=str(app_id) if app_id else None,
+                                        ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
+                                        progress_callback=progress_callback,
+                                        manual_file_callback=build_vnv_cli_manual_file_callback(mew_service.fnv_tools, output_callback=print),
+                                        confirmation_callback=lambda _description: True,
+                                    )
+                                finally:
+                                    close_progress()
+                                if automation_ran and not mew_error:
+                                    print(f"{COLOR_INFO}MEW post-install automation completed.{COLOR_RESET}")
+                                if mew_error:
+                                    print(f"{COLOR_WARNING}MEW automation encountered an error: {mew_error}{COLOR_RESET}")
+                                    print(f"{COLOR_INFO}You can complete these steps manually by following: https://mojaveexpressguide.com/docs/Installation{COLOR_RESET}")
+                        else:
+                            print(f"{COLOR_INFO}MEW automation skipped by user.{COLOR_RESET}")
+                except Exception as mew_err:
+                    self.logger.error("MEW post-install automation failed: %s", mew_err, exc_info=True)
+                    print(f"{COLOR_WARNING}MEW automation could not be completed. Check logs for details.{COLOR_RESET}")
                 try:
                     # v0.4.0 contract: offer TTW flow for eligible FNV lists (e.g., Begin Again).
                     from jackify.backend.handlers.modlist_install_cli_ttw import prompt_ttw_if_eligible

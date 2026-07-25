@@ -1,5 +1,15 @@
 # Jackify Changelog
 
+## v0.7.2.1 - Mojave Express Support, BSA Decompressor Fix
+**Release Date:** 2026-07-25
+
+### Mojave Express Wabbajack (MEW) Automation
+Jackify can now automate MEW's post-install steps the same way it already does for Viva New Vegas - copying root mods, running the 4GB patcher and BSA decompressor, and applying the Radio Fix.
+
+### Fixes
+- Fixed BSA decompression failing for both VNV and MEW since the v0.7.2 TTW Linux Installer update, which changed how the tool is invoked.
+- Fallout New Vegas modlists now get a Proton version recommendation on the success screen, matching the existing ENB recommendation.
+
 ## v0.7.2 - TTW Linux Installer 0.2.0
 **Release Date:** 2026-07-18
 

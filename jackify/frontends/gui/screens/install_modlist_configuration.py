@@ -142,8 +142,10 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                         self._initiate_ttw_workflow(ttw_modlist_name, install_dir)
                         return  # Don't show success dialog yet, will show after TTW completes
 
-                # Check for VNV post-install automation after TTW check
+                # Check for VNV/MEW post-install automation after TTW check
                 vnv_automation_running = self._check_and_run_vnv_automation(modlist_name, install_dir)
+                if not vnv_automation_running:
+                    vnv_automation_running = self._check_and_run_mew_automation(modlist_name, install_dir)
 
                 if vnv_automation_running:
                     self._cleanup_config_thread()

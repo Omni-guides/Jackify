@@ -113,7 +113,7 @@ class NativeSteamOperationsService:
             compatdata_paths = self._find_compatdata_paths()
 
             for compatdata_base in compatdata_paths:
-                prefix_path = compatdata_base / appid / "pfx"
+                prefix_path = compatdata_base / str(appid) / "pfx"
                 logger.debug(f"Checking prefix path: {prefix_path}")
 
                 if prefix_path.exists():
