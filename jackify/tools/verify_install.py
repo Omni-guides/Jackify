@@ -434,6 +434,24 @@ def detect_game_type(modlist_dir: Path) -> str:
     return "unknown"
 
 
+def _pe_machine_type(path: Path) -> Optional[str]:
+    """Return 'x86'/'x64' from a PE file's COFF header machine field, or None if unreadable."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(0x40)
+            if len(data) < 0x40 or data[0:2] != b"MZ":
+                return None
+            pe_offset = int.from_bytes(data[0x3C:0x40], "little")
+            f.seek(pe_offset)
+            pe_header = f.read(6)
+        if pe_header[0:4] != b"PE\x00\x00":
+            return None
+        machine = int.from_bytes(pe_header[4:6], "little")
+        return {0x014C: "x86", 0x8664: "x64"}.get(machine)
+    except OSError:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Checks
 # ---------------------------------------------------------------------------
@@ -1113,6 +1131,20 @@ def check_tool_compat_config(pfx: Path, game_type: str, r: Results):
         r.ok("Global DLL overrides applied")
     else:
         r.warn("Global DLL overrides not found")
+
+    if game_type in ("skyrim", "enderal"):
+        syswow64_dll = pfx / "drive_c" / "windows" / "syswow64" / "d3dcompiler_47.dll"
+        system32_dll = pfx / "drive_c" / "windows" / "system32" / "d3dcompiler_47.dll"
+        if syswow64_dll.exists() and system32_dll.exists():
+            syswow64_arch = _pe_machine_type(syswow64_dll)
+            system32_arch = _pe_machine_type(system32_dll)
+            if syswow64_arch == "x86" and system32_arch == "x64":
+                r.ok("d3dcompiler_47.dll architecture correct (syswow64=x86, system32=x64)")
+            else:
+                r.warn(
+                    f"d3dcompiler_47.dll architecture mismatch "
+                    f"(syswow64={syswow64_arch or 'unknown'}, system32={system32_arch or 'unknown'})"
+                )
 
     # Synthesis/dotnet checks apply to both Skyrim and Enderal SE (same engine and
     # plugin format). The mscoree AppDefaults entry itself is Skyrim-only: it is

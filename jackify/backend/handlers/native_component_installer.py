@@ -5,7 +5,6 @@ Falls back to winetricks -> protontricks for unsupported or failed components.
 """
 
 import datetime
-import hashlib
 import json
 import logging
 import os
@@ -13,11 +12,11 @@ import shutil
 import subprocess
 import tempfile
 import time
-import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from jackify.backend.handlers.native_component_downloader import ComponentDownloadMixin
 from jackify.shared.paths import get_jackify_data_dir
 
 logger = logging.getLogger(__name__)
@@ -27,8 +26,19 @@ _D3DCOMPILER_47_X64_URL = "https://github.com/mozilla/fxc2/raw/master/dll/d3dcom
 _D3DCOMPILER_47_X86_SHA256 = "2ad0d4987fc4624566b190e747c9d95038443956ed816abfd1e2d389b5ec0851"
 _D3DCOMPILER_47_X64_SHA256 = "4432bbd1a390874f3f0a503d45cc48d346abc3a8c0213c289f4b615bf0ee84f3"
 
-_DIRECTX_CAB_URL = "https://files.holarse-linuxgaming.de/mirrors/microsoft/directx_Jun2010_redist.exe"
-_DIRECTX_CAB_SHA256 = "8746ee1a84a083a90e37899d71d50d5c7c015e69688a466aa80447f011780c0d"
+# The holarse mirror this used to point at now returns 403 for the whole
+# /mirrors/microsoft/ path. Microsoft's Download Center entry (id=8109) is the primary
+# source, with the Wayback capture of the old mirror as fallback.
+_DIRECTX_CAB_URLS = (
+    "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe",
+    "https://web.archive.org/web/20260218142109id_/https://files.holarse-linuxgaming.de/mirrors/microsoft/directx_Jun2010_redist.exe",
+)
+# Microsoft re-signed the package in 2024. The Download Center copy and the archived copy
+# differ in the outer signature only; the inner cabinets are identical.
+_DIRECTX_CAB_SHA256 = (
+    "053f76dcbb28802e23341b6a787e3b0791c0fa5c8d4d011b1044172dbf89c73b",
+    "8746ee1a84a083a90e37899d71d50d5c7c015e69688a466aa80447f011780c0d",
+)
 
 _VCRUN2022_X86_URL = "https://aka.ms/vs/17/release/vc_redist.x86.exe"
 _VCRUN2022_X64_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
@@ -79,7 +89,7 @@ SUPPORTED_COMPONENTS = (
 )
 
 
-class NativeComponentInstaller:
+class NativeComponentInstaller(ComponentDownloadMixin):
     """Direct-source Wine component installer. Handles Groups 1-4 from the native install spec."""
 
     def __init__(self, wineprefix: str, wine_binary: str, wine_env: dict, log=None):
@@ -223,56 +233,6 @@ class NativeComponentInstaller:
             self._direct_reg_write(r'Software\Wine\DllOverrides', overrides)
             self.logger.debug("DLL overrides written directly to user.reg (%d entries)", len(overrides))
 
-    def _download_file(self, url: str, dest: Path, sha256: str = "") -> bool:
-        if dest.is_file():
-            if not sha256:
-                return True
-            if self._verify_sha256(dest, sha256):
-                return True
-            self.logger.warning("SHA256 mismatch on cached %s, re-downloading", dest.name)
-            dest.unlink()
-        component = getattr(self, '_current_component', dest.stem)
-        self.logger.info("Downloading %s ...", dest.name)
-        self._emit_status(f"Downloading {dest.name}...")
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Jackify/1.0'})
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                total = int(resp.headers.get('Content-Length', 0) or 0)
-                downloaded = 0
-                start = time.monotonic()
-                last_emit = start
-                chunk_size = 65536
-                with open(dest, 'wb') as f:
-                    while True:
-                        chunk = resp.read(chunk_size)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        now = time.monotonic()
-                        if total > 0 and now - last_emit >= 0.5:
-                            pct = downloaded / total * 100.0
-                            elapsed = now - start
-                            speed = downloaded / elapsed / 1048576.0 if elapsed > 0.05 else 0.0
-                            self._emit_status(f"[NATIVE_DL] {component} {pct:.1f} {speed:.1f}")
-                            last_emit = now
-            return True
-        except Exception as exc:
-            self.logger.error("Download failed for %s: %s", url, exc)
-            if dest.is_file():
-                dest.unlink()
-            return False
-
-    def _verify_sha256(self, path: Path, expected: str) -> bool:
-        h = hashlib.sha256()
-        try:
-            with open(path, 'rb') as f:
-                for chunk in iter(lambda: f.read(65536), b''):
-                    h.update(chunk)
-            return h.hexdigest().lower() == expected.lower()
-        except Exception:
-            return False
-
     def _get_cabextract(self) -> Optional[str]:
         if os.environ.get('APPDIR'):
             candidate = os.path.join(os.environ['APPDIR'], 'opt', 'jackify', 'tools', 'cabextract')
@@ -331,7 +291,7 @@ class NativeComponentInstaller:
         cache_dir = get_jackify_data_dir() / 'component_cache' / 'directx'
         cache_dir.mkdir(parents=True, exist_ok=True)
         redist = cache_dir / 'directx_Jun2010_redist.exe'
-        if not self._download_file(_DIRECTX_CAB_URL, redist, _DIRECTX_CAB_SHA256):
+        if not self._download_file(_DIRECTX_CAB_URLS, redist, _DIRECTX_CAB_SHA256):
             return False
         if not self._verify_sha256(redist, _DIRECTX_CAB_SHA256):
             self.logger.error("SHA256 mismatch on DirectX redistributable")
@@ -430,6 +390,7 @@ class NativeComponentInstaller:
             if r.returncode not in (0, 3010):
                 self.logger.error("vcrun2022: x86 installer failed (rc=%d)", r.returncode)
                 self.logger.error("vcrun2022 x86 stderr: %s", r.stderr.decode(errors='replace'))
+                self._discard_cached_installer(x86)
                 return False
 
             # x64: same msvcp140.dll pre-extraction workaround
@@ -458,6 +419,7 @@ class NativeComponentInstaller:
             if r.returncode not in (0, 3010):
                 self.logger.error("vcrun2022: x64 installer failed (rc=%d)", r.returncode)
                 self.logger.error("vcrun2022 x64 stderr: %s", r.stderr.decode(errors='replace'))
+                self._discard_cached_installer(x64)
                 return False
 
         critical = [
@@ -499,6 +461,7 @@ class NativeComponentInstaller:
         if r.returncode not in (0, 3010):
             self.logger.error("vcrun2012: x86 installer failed (rc=%d)", r.returncode)
             self.logger.error("vcrun2012 x86 stderr: %s", r.stderr.decode(errors='replace'))
+            self._discard_cached_installer(x86)
             return False
 
         self.logger.info("vcrun2012: running x64 installer")
@@ -511,6 +474,7 @@ class NativeComponentInstaller:
         if r.returncode not in (0, 3010):
             self.logger.error("vcrun2012: x64 installer failed (rc=%d)", r.returncode)
             self.logger.error("vcrun2012 x64 stderr: %s", r.stderr.decode(errors='replace'))
+            self._discard_cached_installer(x64)
             return False
 
         if not (syswow64 / 'msvcr110.dll').is_file():

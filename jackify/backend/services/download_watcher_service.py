@@ -13,6 +13,20 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def normalize_download_name(name: str) -> str:
+    """
+    Lax comparison form for matching a browser-saved file against engine metadata.
+
+    Nexus filenames can legitimately begin with dots or spaces, which browsers and
+    file managers silently drop when saving. Engine metadata also sometimes carries
+    a leading numeric prefix (e.g. "1_filename.zip") that the saved file lacks.
+    Applied to both sides of a comparison; hash validation remains the real gate.
+    """
+    normalized = re.sub(r'^[.\s]+', '', (name or "").lower())
+    return re.sub(r'^\d+_', '', normalized)
+
+
 @dataclass
 class WatcherConfig:
     watch_directory: Path
@@ -98,18 +112,10 @@ class DownloadWatcherService:
                 logger.debug(f"Candidate exact match: {path.name}")
                 self._debounce_and_emit(path, item)
                 return
-        # Leading-dot normalisation: browsers strip a leading dot from filenames.
+        candidate_normalized = normalize_download_name(candidate_name)
         for expected_name, item in self._pending_exact:
-            if expected_name.lstrip('.') == candidate_name:
-                logger.debug(f"Candidate dot-normalized match: {path.name} -> {expected_name}")
-                self._debounce_and_emit(path, item)
-                return
-        # Numeric-prefix normalisation: engine metadata may include a leading
-        # numeric prefix (e.g. "1_filename.zip") absent from the downloaded file.
-        for expected_name, item in self._pending_exact:
-            stripped = re.sub(r'^\d+_', '', expected_name)
-            if stripped != expected_name and stripped == candidate_name:
-                logger.debug(f"Candidate numeric-prefix match: {path.name} -> {expected_name}")
+            if normalize_download_name(expected_name) == candidate_normalized:
+                logger.debug(f"Candidate normalized match: {path.name} -> {expected_name}")
                 self._debounce_and_emit(path, item)
                 return
 

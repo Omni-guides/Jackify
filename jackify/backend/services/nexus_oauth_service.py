@@ -13,7 +13,6 @@ import webbrowser
 import urllib.parse
 import requests
 import json
-import threading
 import logging
 import time
 import subprocess
@@ -50,7 +49,6 @@ class NexusOAuthService(NexusOAuthProtocolMixin, NexusOAuthCallbackMixin):
         self._auth_code = None
         self._auth_state = None
         self._auth_error = None
-        self._server_done = threading.Event()
 
         # Ensure jackify:// protocol is registered on first use
         self._ensure_protocol_registered()
@@ -221,7 +219,6 @@ class NexusOAuthService(NexusOAuthProtocolMixin, NexusOAuthCallbackMixin):
         self._auth_code = None
         self._auth_state = None
         self._auth_error = None
-        self._server_done.clear()
 
         # Generate PKCE parameters
         code_verifier, code_challenge, state = self._generate_pkce_params()
@@ -357,4 +354,4 @@ class NexusOAuthService(NexusOAuthProtocolMixin, NexusOAuthCallbackMixin):
 
             return token_data
         finally:
-            self._expected_oauth_state = None
+            self._auth_state = None

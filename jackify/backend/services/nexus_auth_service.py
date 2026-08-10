@@ -7,6 +7,7 @@ Unified service for Nexus authentication using OAuth or API key fallback
 
 import logging
 import os
+import threading
 from typing import Optional, Tuple
 from .nexus_oauth_service import NexusOAuthService
 from ..handlers.oauth_token_handler import OAuthTokenHandler
@@ -20,6 +21,11 @@ class NexusAuthService:
     Unified authentication service for Nexus Mods
     Handles OAuth 2.0 (preferred) with API key fallback (legacy)
     """
+
+    # Class-level: NexusAuthService is instantiated fresh per call site, so the lock
+    # must live on the class to serialise refreshes across instances sharing one token file.
+    _refresh_lock = threading.Lock()
+    _REFRESH_LOCK_TIMEOUT = 30
 
     def __init__(self):
         """Initialize authentication service"""
@@ -63,30 +69,42 @@ class NexusAuthService:
             return None
 
         # Check if token is expired (15 minute buffer for long installs)
-        if self.token_handler.is_token_expired(buffer_minutes=15):
-            logger.info("OAuth token expiring soon, attempting refresh")
+        if not self.token_handler.is_token_expired(buffer_minutes=15):
+            return self.token_handler.get_access_token()
 
-            # Try to refresh
+        logger.info("OAuth token expiring soon, attempting refresh")
+
+        if not self._refresh_lock.acquire(timeout=self._REFRESH_LOCK_TIMEOUT):
+            logger.error("Timed out waiting for OAuth refresh lock")
+            return None
+        try:
+            # Another thread may have already refreshed while we waited for the lock
+            if not self.token_handler.is_token_expired(buffer_minutes=15):
+                return self.token_handler.get_access_token()
+
             refresh_token = self.token_handler.get_refresh_token()
-            if refresh_token:
-                new_token_data = self.oauth_service.refresh_token(refresh_token)
-
-                if new_token_data:
-                    # Save refreshed token
-                    self.token_handler.save_token({'oauth': new_token_data})
-                    logger.info("OAuth token refreshed successfully")
-                    return new_token_data.get('access_token')
-                else:
-                    logger.warning("Token refresh failed, OAuth token invalid")
-                    # Delete invalid token
-                    self.token_handler.delete_token()
-                    return None
-            else:
+            if not refresh_token:
                 logger.warning("No refresh token available")
                 return None
 
-        # Token is valid, return it
-        return self.token_handler.get_access_token()
+            new_token_data = self.oauth_service.refresh_token(refresh_token)
+
+            if new_token_data:
+                self.token_handler.save_token({'oauth': new_token_data})
+                logger.info("OAuth token refreshed successfully")
+                return new_token_data.get('access_token')
+
+            logger.warning("Token refresh failed, OAuth token invalid")
+            # Only delete if the stored refresh token still matches what we attempted with -
+            # a concurrent caller may have already saved a newer token since we started.
+            current_refresh_token = self.token_handler.get_refresh_token()
+            if current_refresh_token == refresh_token:
+                self.token_handler.delete_token()
+            else:
+                logger.info("Refresh token changed during failed attempt, not deleting")
+            return None
+        finally:
+            self._refresh_lock.release()
 
     def is_authenticated(self) -> bool:
         """

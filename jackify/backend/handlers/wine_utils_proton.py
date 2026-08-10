@@ -16,10 +16,13 @@ logger = logging.getLogger(__name__)
 VALVE_PROTON_APPID_MAP = {
     '2805730': 'proton_9',
     '3658110': 'proton_10',
+    '4628710': 'proton_11',
     '1493710': 'proton_experimental',
     '2180100': 'proton_hotfix',
     '1887720': 'proton_8',
 }
+
+VALVE_PROTON_DIR_PATTERN = re.compile(r'^Proton (\d+)\.\d+(?: \(Beta\))?$')
 
 
 class WineUtilsProtonMixin:
@@ -288,6 +291,11 @@ class WineUtilsProtonMixin:
             return name
         if dir_name.startswith('GE-Proton'):
             return dir_name
+        version_match = VALVE_PROTON_DIR_PATTERN.match(dir_name)
+        if version_match:
+            name = f"proton_{version_match.group(1)}"
+            logger.debug(f"Derived Valve Proton name from directory: {dir_name} -> {name}")
+            return name
         logger.warning(f"Could not resolve Steam compat name for: {proton_path}")
         return None
 

@@ -44,6 +44,10 @@ class CLF3ProgressStateManager:
         self._seen_actual_download: bool = False
         # name -> (downloaded, total, speed)
         self._active_downloads: dict = {}
+        # Running totals for files that have already dropped out of _active_downloads,
+        # so data_processed/data_total keep advancing instead of resetting per-file.
+        self._completed_download_bytes: int = 0
+        self._completed_download_total: int = 0
 
     def get_state(self) -> InstallationProgress:
         return self.state
@@ -113,6 +117,12 @@ class CLF3ProgressStateManager:
         total_speed = sum(v[2] for v in self._active_downloads.values())
         speed_mb = total_speed / 1_048_576
         self.state.message = f"Downloading {len(active_files)} file(s) | {speed_mb:.1f} MB/s"
+        self.state.update_speed('download', total_speed)
+
+        active_bytes = sum(v[0] for v in self._active_downloads.values())
+        active_total = sum(v[1] for v in self._active_downloads.values())
+        self.state.data_processed = self._completed_download_bytes + active_bytes
+        self.state.data_total = self._completed_download_total + active_total
 
         if self._total_archives > 0:
             if in_concurrent:
@@ -128,7 +138,11 @@ class CLF3ProgressStateManager:
 
     def _on_download_complete(self, obj: dict) -> bool:
         name = obj.get('name', '')
-        self._active_downloads.pop(name, None)
+        _, dl_total, _ = self._active_downloads.pop(name, (0, 0, 0.0))
+        # Count the file as fully downloaded regardless of the last-seen partial byte count,
+        # so a completed file never regresses the cumulative processed/total running totals.
+        self._completed_download_bytes += dl_total
+        self._completed_download_total += dl_total
         self.state.active_files = [f for f in self.state.active_files if f.filename != name]
         return True
 
@@ -136,8 +150,15 @@ class CLF3ProgressStateManager:
         index = obj.get('index', 0)
         total = obj.get('total', 0)
         if total:
-            self._total_archives = total
-        actual_total = total or self._total_archives
+            # CLF3 can emit ArchiveComplete from more than one counter within the same
+            # phase (e.g. a hash-verify pass followed by the download pass), each with its
+            # own total. Never let the displayed total shrink mid-phase - that produces a
+            # visible back-and-forth in the progress bar (index climbing steadily while the
+            # denominator flips between two values). A larger total mid-phase is simply the
+            # other counter, not a correction, so stick with the largest seen until the next
+            # PhaseChange resets it.
+            self._total_archives = max(self._total_archives, total)
+        actual_total = self._total_archives or total
         self._completed_archives = index
 
         # CLF3 emits a single cumulative ArchiveComplete counter spanning both download
@@ -204,6 +225,10 @@ class CLF3ProgressStateManager:
         self.state.active_files = []
         self._active_downloads.clear()
         self._seen_actual_download = False
+        self._completed_download_bytes = 0
+        self._completed_download_total = 0
+        self._total_archives = 0
+        self._completed_archives = 0
         logger.debug("CLF3 phase: %s -> %s", phase_label, phase)
         return True
 

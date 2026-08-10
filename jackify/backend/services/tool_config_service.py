@@ -154,8 +154,12 @@ def _build_reg_content(apply_engine_mscoree: bool = True, install_dotnet_sdk: bo
 # fxc2 build of d3dcompiler_47 - required for Community Shaders shader compilation.
 # The winetricks-provided d3dcompiler_47 lacks support for certain shader models
 # used by Community Shaders, causing "failed shaders" during compilation.
-_FXC2_D3DCOMPILER_URL = "https://github.com/mozilla/fxc2/raw/master/dll/d3dcompiler_47.dll"
-_FXC2_D3DCOMPILER_FILENAME = "fxc2_d3dcompiler_47.dll"
+# URLs shared with native_component_installer.py, which is the other place this same
+# DLL pair is installed - keep both in sync rather than duplicating the URLs here.
+from jackify.backend.handlers.native_component_installer import (
+    _D3DCOMPILER_47_X86_URL as _FXC2_D3DCOMPILER_X86_URL,
+    _D3DCOMPILER_47_X64_URL as _FXC2_D3DCOMPILER_X64_URL,
+)
 
 
 def _install_fxc2_d3dcompiler(
@@ -165,27 +169,30 @@ def _install_fxc2_d3dcompiler(
     """
     Replace the winetricks-installed d3dcompiler_47.dll with the Mozilla fxc2
     build, which supports shader models required by Community Shaders.
-    Applies to both system32 (64-bit) and syswow64 (32-bit) locations.
+    Applies to both system32 (64-bit) and syswow64 (32-bit) locations, each
+    with the matching architecture's DLL - syswow64 is 32-bit, system32 is 64-bit.
     """
     try:
         from jackify.shared.paths import get_jackify_data_dir
+        import shutil
         cache_dir = get_jackify_data_dir() / "cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cached_dll = cache_dir / _FXC2_D3DCOMPILER_FILENAME
 
-        if not cached_dll.exists():
-            log("Downloading fxc2 d3dcompiler_47.dll...")
-            urllib.request.urlretrieve(_FXC2_D3DCOMPILER_URL, cached_dll)
-            log("fxc2 d3dcompiler_47.dll downloaded")
-        else:
-            log("fxc2 d3dcompiler_47.dll already cached, skipping download")
-
-        import shutil
         targets = [
-            prefix_path / "drive_c" / "windows" / "system32" / "d3dcompiler_47.dll",
-            prefix_path / "drive_c" / "windows" / "syswow64" / "d3dcompiler_47.dll",
+            (_FXC2_D3DCOMPILER_X86_URL, "fxc2_d3dcompiler_47_x86.dll",
+             prefix_path / "drive_c" / "windows" / "syswow64" / "d3dcompiler_47.dll"),
+            (_FXC2_D3DCOMPILER_X64_URL, "fxc2_d3dcompiler_47_x64.dll",
+             prefix_path / "drive_c" / "windows" / "system32" / "d3dcompiler_47.dll"),
         ]
-        for target in targets:
+        for url, cache_name, target in targets:
+            cached_dll = cache_dir / cache_name
+            if not cached_dll.exists():
+                log(f"Downloading fxc2 d3dcompiler_47.dll ({cache_name})...")
+                urllib.request.urlretrieve(url, cached_dll)
+                log("fxc2 d3dcompiler_47.dll downloaded")
+            else:
+                log("fxc2 d3dcompiler_47.dll already cached, skipping download")
+
             if target.parent.exists():
                 shutil.copy2(cached_dll, target)
                 log(f"Installed fxc2 d3dcompiler_47.dll -> {target.parent.name}")

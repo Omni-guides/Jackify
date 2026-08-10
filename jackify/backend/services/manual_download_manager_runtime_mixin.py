@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import subprocess
 import time
 from pathlib import Path
 from typing import Optional
 
+from jackify.backend.services.download_watcher_service import normalize_download_name
 from jackify.backend.services.file_validator_service import ValidationResult
 
 logger = logging.getLogger(__name__)
@@ -382,8 +382,10 @@ class ManualDownloadManagerRuntimeMixin:
             return 0
 
         exact_map: dict[str, Path] = {}
+        normalized_map: dict[str, Path] = {}
         for p in existing_files:
             exact_map.setdefault(p.name.lower(), p)
+            normalized_map.setdefault(normalize_download_name(p.name), p)
 
         with self._lock:
             targets = [
@@ -408,18 +410,7 @@ class ManualDownloadManagerRuntimeMixin:
             name = hint['file_name']
             exact = exact_map.get(name.lower())
             if exact is None:
-                # Leading-dot normalization: browser may strip a leading dot that
-                # the engine uses in its canonical filename.
-                stripped = name.lower().lstrip('.')
-                if stripped != name.lower():
-                    exact = exact_map.get(stripped)
-            if exact is None:
-                # Numeric prefix normalization: engine may store filenames with a
-                # leading numeric prefix (e.g. "1_filename.zip") absent from the
-                # browser-saved file.
-                stripped_num = re.sub(r'^\d+_', '', name.lower())
-                if stripped_num != name.lower():
-                    exact = exact_map.get(stripped_num)
+                exact = normalized_map.get(normalize_download_name(name))
             if exact is None or exact in used_paths:
                 continue
             used_paths.add(exact)

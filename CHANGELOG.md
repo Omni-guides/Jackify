@@ -1,5 +1,16 @@
 # Jackify Changelog
 
+## v0.7.2.2 - DirectX Download and Install Fixes
+**Release Date:** 2026-08-10
+
+### Fixes
+- Fixed DirectX component installation failing after the download mirror Jackify used was taken offline. DirectX is now downloaded from Microsoft directly, with a fallback source.
+- Fixed Jackify not recognising Proton 11 naming.
+- Fixed manually downloaded archives not being recognised when the file name begins with a space, leaving the download stuck as pending.
+- Fixed the Community Shaders d3dcompiler_47 replacement installing the wrong architecture into the 32-bit system folder.
+- Fixed a false "Download Stalled" warning on slow archives, and the archive counter flickering between totals during installs.
+- Fixed a Nexus login race that could log you out mid-install.
+
 ## v0.7.2.1 - Mojave Express Support, BSA Decompressor Fix
 **Release Date:** 2026-07-25
 
