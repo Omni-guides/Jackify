@@ -33,7 +33,6 @@
     "tier": 1,
     "can_uninstall": true,
     "can_launch": true,
-    "pinned_version": "0.0.7",
     "nexus_mod_id": 1657,
     "nexus_game_domain": "site",
     "nexus_file_filter": "mpi"
