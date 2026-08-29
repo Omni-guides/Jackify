@@ -277,7 +277,7 @@ class ModlistWineOpsMixin:
         elif "skyrim" in game or "fallout4" in game or "starfield" in game or "oblivion_remastered" in game or "enderal" in game:
             extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9"]
         elif "falloutnewvegas" in game or "fnv" in game or "fallout3" in game or "fo3" in game or "oblivion" in game:
-            extras += ["d3dx9_43", "d3dx9"]
+            extras += ["d3dx9_43", "d3dx9", "d3dcompiler_43", "d3dcompiler_47"]
         elif "cp2077" in game or "cyberpunk" in game:
             extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9"]
         elif "bg3" in game or "baldursgate" in game:
@@ -297,52 +297,6 @@ class ModlistWineOpsMixin:
         _slow = [c for c in full_list if c in ('dotnet48', 'dotnet40')]
         _rest = [c for c in full_list if c not in ('dotnet48', 'dotnet40')]
         return _slow + _rest
-
-    def _re_enforce_windows_10_mode(self):
-        """
-        Re-enforce the final Windows version after modlist-specific configurations.
-        Re-applies win10 after modlist-specific winetricks components, which can
-        leave the prefix at a lower version.
-        """
-        try:
-            if not hasattr(self, 'appid') or not self.appid:
-                self.logger.warning("Cannot re-enforce Windows 11 mode - no AppID available")
-                return
-
-            from ..handlers.winetricks_handler import WinetricksHandler
-            from ..handlers.path_handler import PathHandler
-
-            # Get prefix path for the AppID - must be compatdata/pfx/, not compatdata/
-            compatdata_path = PathHandler.find_compat_data(str(self.appid))
-            if not compatdata_path:
-                self.logger.warning("Cannot re-enforce Windows 11 mode - prefix path not found")
-                return
-            prefix_path = compatdata_path / "pfx"
-
-            # Use winetricks handler to set Windows 11 mode
-            winetricks_handler = WinetricksHandler()
-            wine_binary = winetricks_handler._get_wine_binary_for_prefix(str(prefix_path))
-            if not wine_binary:
-                self.logger.warning("Cannot re-enforce Windows 11 mode - wine binary not found")
-                return
-
-            env = os.environ.copy()
-            env['WINEPREFIX'] = str(prefix_path)
-            env['WINE'] = wine_binary
-            result = subprocess.run(
-                [winetricks_handler.winetricks_path, '-q', 'win10'],
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-            if result.returncode == 0:
-                self.logger.info("Windows 11 mode re-enforced after modlist-specific configurations")
-            else:
-                self.logger.warning("Could not set Windows 11 mode: %s", result.stderr)
-
-        except Exception as e:
-            self.logger.warning(f"Error re-enforcing Windows 11 mode: {e}")
 
     def _handle_symlinked_downloads(self) -> bool:
         """

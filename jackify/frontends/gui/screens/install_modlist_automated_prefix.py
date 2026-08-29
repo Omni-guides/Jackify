@@ -17,7 +17,7 @@ class AutomatedPrefixHandlersMixin:
 
     def start_automated_prefix_workflow(self):
         """Start the automated prefix creation workflow"""
-        # CRITICAL: Reload config from disk to pick up any settings changes from Settings dialog
+        # Reload config from disk to pick up any settings changes from Settings dialog
         # Refresh Proton version and winetricks settings
         self.config_handler._load_config()
 

@@ -93,10 +93,9 @@ class JackifyCLI:
     
     def _configure_logging_early(self):
         """Configure logging to be quiet during initialization, will be adjusted after arg parsing"""
-        # Set root logger to WARNING level initially to suppress INFO messages during init
-        logging.getLogger().setLevel(logging.WARNING)
-        
-        # Configure basic logging format
+        # Root level is left as shared.logging.setup_application_logging() set it (DEBUG) -
+        # each handler already has its own appropriate level (console quiet, jackify.log at
+        # INFO), and lowering root here would starve every handler before it ever sees a record.
         if not logging.getLogger().handlers:
             handler = logging.StreamHandler()
             formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -137,11 +136,15 @@ class JackifyCLI:
             cli_logger.setLevel(logging.WARNING)
             root_level = logging.ERROR
 
+        # Only the console handler's verbosity changes with --debug/--verbose. Root stays at
+        # DEBUG and file handlers keep the levels shared.logging.setup_application_logging()
+        # gave them - forcing every handler to root_level previously silenced jackify.log's
+        # INFO-level file handler in normal mode, dropping nearly all app logging.
         root_logger = logging.getLogger()
-        root_logger.setLevel(root_level)
         for handler in root_logger.handlers:
-            handler.setLevel(root_level)
-    
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                handler.setLevel(root_level)
+
     def _is_steamdeck(self):
         """Check if running on Steam Deck"""
         try:
@@ -156,7 +159,7 @@ class JackifyCLI:
         except Exception as e:
             logger.error(f"Error detecting Steam Deck: {e}")
             return False
-    
+
     def _apply_resource_limits(self):
         """Apply recommended resource limits for optimal Jackify operation"""
         try:
@@ -184,7 +187,10 @@ class JackifyCLI:
         except Exception as e:
             # Don't block startup on resource management errors
             logger.warning(f"Error applying resource limits: {e}")
-    
+
+        from jackify.backend.services.engine_invoker import ensure_resource_settings_file
+        ensure_resource_settings_file()
+
     def _initialize_backend_services(self):
         """Initialize backend services.
         
@@ -230,6 +236,44 @@ class JackifyCLI:
             logger.debug(f"Error checking for updates on startup: {e}")
             # Continue anyway - don't block startup on update check errors
     
+    def _prefetch_manifests_on_startup(self):
+        """Refresh playbooks/tools/problem-mods manifests in the background, mirroring the GUI."""
+        import threading
+
+        def _run():
+            try:
+                from jackify.backend.services.tool_registry import (
+                    fetch_remote_manifest as fetch_tools,
+                    apply_remote_manifest as apply_tools,
+                )
+                tools = fetch_tools()
+                if tools:
+                    apply_tools(tools)
+                    logger.info("Tools manifest refreshed at startup (%d tools)", len(tools))
+            except Exception as e:
+                logger.info("Tools manifest prefetch failed: %s", e)
+
+            try:
+                from jackify.backend.services.problem_mods_service import (
+                    fetch_remote_manifest as fetch_problems,
+                    apply_remote_manifest as apply_problems,
+                )
+                problems = fetch_problems()
+                if problems:
+                    apply_problems(problems)
+                    logger.info("Problem mods manifest refreshed at startup")
+            except Exception as e:
+                logger.info("Problem mods manifest prefetch failed: %s", e)
+
+            try:
+                from jackify.backend.services.playbook.hook_wiring import get_registry
+                if get_registry().sync():
+                    logger.info("Playbook registry refreshed at startup")
+            except Exception as e:
+                logger.info("Playbook registry prefetch failed: %s", e)
+
+        threading.Thread(target=_run, daemon=True).start()
+
     def _handle_update(self):
         """Handle manual update check and installation"""
         try:
@@ -294,9 +338,11 @@ class JackifyCLI:
         Returns:
             Dictionary of command handler instances
         """
+        from jackify.frontends.cli.commands.modlists import ModlistsCommand
         commands = {
             'configure_modlist': ConfigureModlistCommand(self.backend_services),
             'install_modlist': InstallModlistCommand(self.backend_services, self.system_info),
+            'modlists': ModlistsCommand(),
         }
         return commands
 
@@ -379,7 +425,7 @@ class JackifyCLI:
             logger.debug('Entering update workflow')
             return self._handle_update()
         
-        # Handle legacy restart-steam functionality (temporary)
+        # Handle restart-steam functionality
         if getattr(self.args, 'restart_steam', False):
             logger.debug('Entering restart_steam workflow')
             return self._handle_restart_steam()
@@ -396,8 +442,9 @@ class JackifyCLI:
         
         # Check for updates on startup (non-blocking)
         self._check_for_updates_on_startup()
-        
-        # Run interactive mode (legacy for now)
+        self._prefetch_manifests_on_startup()
+
+        # Run interactive mode
         self._run_interactive()
     
     def _parse_args(self):
@@ -411,19 +458,24 @@ class JackifyCLI:
         parser.add_argument('--restart-steam', action='store_true', help='Restart Steam (native, for GUI integration)')
         parser.add_argument('--dev', action='store_true', help='Enable development features (show hidden menu items)')
         parser.add_argument('--update', action='store_true', help='Check for and install updates')
+        parser.add_argument('--no-playbooks', action='store_true',
+                             help='Disable community modlist fixes for this run (see Settings for the persistent toggle)')
         # Add command-specific arguments
         self.commands['install_modlist'].add_top_level_args(parser)
-        
+
         # Add subcommands
         subparsers = parser.add_subparsers(dest="command", help="Command to run")
         self.commands['configure_modlist'].add_parser(subparsers)
         self.commands['install_modlist'].add_parser(subparsers)
-        
+        self.commands['modlists'].add_parser(subparsers)
+
         args = parser.parse_args()
         if args.version:
             print(f"Jackify version {jackify_version}")
             sys.exit(0)
-        
+        if args.no_playbooks:
+            os.environ['JACKIFY_DISABLE_PLAYBOOKS'] = '1'
+
         return parser, subparsers, args
     
     def _run_command(self, command, args):
@@ -432,6 +484,8 @@ class JackifyCLI:
             return self.commands['install_modlist'].execute_subcommand(args)
         elif command == "configure-modlist":
             return self.commands['configure_modlist'].execute(args)
+        elif command == "modlists":
+            return self.commands['modlists'].execute(args)
         elif command == "install-wabbajack":
             print("Wabbajack installation is available through the interactive menu:")
             print("  Run: jackify --cli")
@@ -450,6 +504,18 @@ class JackifyCLI:
             print(f"Unknown command: {command}")
             return 1
     
+    def _execute_modlist_management(self):
+        """List installed modlists and their status, reusing the `jackify modlists` command."""
+        import types
+        args = types.SimpleNamespace(json=False)
+        self.commands['modlists'].execute(args)
+        input("\nPress Enter to return to menu...")
+
+    def _execute_settings(self):
+        """Open the Settings menu."""
+        from jackify.frontends.cli.menus.settings_menu import SettingsMenuHandler
+        SettingsMenuHandler().show_settings_menu(self)
+
     def _run_interactive(self):
         """Run the CLI interface interactively using the new menu system"""
         try:
@@ -462,11 +528,15 @@ class JackifyCLI:
                     return 0
                 elif choice == "wabbajack":
                     self.menus['wabbajack'].show_wabbajack_tasks_menu(self)
+                elif choice == "modlist_management":
+                    self._execute_modlist_management()
                 # HIDDEN FOR FIRST RELEASE - UNCOMMENT WHEN READY
                 elif choice == "additional":
                     self.menus['additional'].show_additional_tasks_menu(self)
                 elif choice == "tools_hub":
                     self.menus['additional']._execute_tools_hub(self)
+                elif choice == "settings":
+                    self._execute_settings()
                 else:
                     logger.warning(f"Invalid choice '{choice}' received from show_main_menu.")
                     

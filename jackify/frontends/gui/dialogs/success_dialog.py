@@ -304,6 +304,15 @@ class SuccessDialog(QDialog):
             )
         elif self.workflow_type == "tuxborn":
             base_message = f"You can now launch Tuxborn from Steam and enjoy your modded {game_display} experience!"
+        elif self.workflow_type == "game_downgrade":
+            base_message = "Steam has been restarted. The game is ready to use with modlists built for this version."
+        elif self.workflow_type == "game_downgrade_restore":
+            base_message = "Steam has been restarted. The game has been restored to its previous version."
+        elif self.workflow_type == "game_downgrade_dry_run":
+            base_message = (
+                "No game files or Steam settings were changed - this was a preview only. "
+                "Uncheck \"Dry run\" and run it again to actually apply the downgrade."
+            )
         elif self.workflow_type == "install" and self.modlist_name == "Wabbajack":
             base_message = "You can now launch Wabbajack from Steam and install modlists. Once the modlist install is complete, you can run \"Configure New Modlist\" in Jackify to complete the configuration for running the modlist on Linux."
         else:

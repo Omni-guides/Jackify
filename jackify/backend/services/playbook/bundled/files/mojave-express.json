@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "playbook_id": "mojave-express",
+  "revision": 2,
+  "display_name": "Mojave Express",
+  "summary": "Post-install steps for the Mojave Express Wabbajack modlist.",
+  "maintainer": "omni",
+  "created": "2026-07-27",
+  "match": {
+    "name_contains": ["mojave express", "mew"],
+    "mo2_profiles": ["Mojave Express", "MEW"],
+    "game_types": ["Fallout New Vegas"]
+  },
+  "confirm": {
+    "type": "dir_exists",
+    "path": "{modlist_dir}/__GOG or STEAM ONLY Files Requiring Manual Install"
+  },
+  "hook": "post_configure",
+  "intro": "Jackify can automatically perform the following post-install steps:",
+  "outro": "Jackify will download the required tools automatically where possible.\nIf you are not a Nexus Premium member, you will be prompted to\nmanually download any tools that cannot be fetched automatically.",
+  "steps": [
+    {
+      "id": "root-mods",
+      "label": "Copy root mods to game directory",
+      "type": "copy_files",
+      "source": "{modlist_dir}/__GOG or STEAM ONLY Files Requiring Manual Install",
+      "dest": "{game_root}",
+      "merge": true,
+      "completed_when": { "type": "file_exists", "path": "{game_root}/FNVpatch.exe" },
+      "on_failure": "abort_playbook"
+    },
+    {
+      "id": "4gb-patch",
+      "label": "Download and run Linux 4GB patcher",
+      "type": "run_catalog_tool",
+      "tool": "fnv-4gb-patcher",
+      "cwd": "{game_root}",
+      "completed_when": { "type": "file_exists", "path": "{game_root}/FalloutNV_backup.exe" },
+      "on_failure": "abort_playbook"
+    },
+    {
+      "id": "bsa-decompress",
+      "label": "Download and run BSA decompressor (reduces loading times)",
+      "type": "run_catalog_tool",
+      "tool": "fnv-bsa-decompressor",
+      "write_marker": "{game_root}/.jackify_bsa_decompressed",
+      "completed_when": { "type": "file_exists", "path": "{game_root}/.jackify_bsa_decompressed" },
+      "on_failure": "abort_playbook"
+    },
+    {
+      "id": "radio-fix",
+      "label": "Run the Radio Fix (adds new radio songs to in-game radios)",
+      "type": "run_modlist_script",
+      "script": "{modlist_dir}/__Radio Fix/Run This.bat",
+      "timeout_seconds": 1800,
+      "success_when": { "type": "output_contains", "text": "conversion complete", "ignore_case": true },
+      "write_marker": "{game_root}/.jackify_mew_radio_fixed",
+      "completed_when": { "type": "file_exists", "path": "{game_root}/.jackify_mew_radio_fixed" },
+      "on_failure": "continue",
+      "failure_message": "Radio Fix ran but did not report success - it may need to be run manually"
+    }
+  ]
+}

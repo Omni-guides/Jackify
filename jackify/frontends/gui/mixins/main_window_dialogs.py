@@ -188,7 +188,8 @@ class MainWindowDialogsMixin:
                 elif hasattr(screen, 'cleanup'):
                     screen.cleanup()
             try:
-                subprocess.run(['pkill', '-f', 'jackify-engine'], timeout=5, capture_output=True)
+                from jackify.backend.handlers.subprocess_utils import kill_all_registered_process_groups
+                kill_all_registered_process_groups()
             except Exception:
                 pass
         except Exception as e:

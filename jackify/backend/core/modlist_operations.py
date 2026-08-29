@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional, Dict, List, Any, Union
 from ..handlers.protontricks_handler import ProtontricksHandler
 from ..handlers.shortcut_handler import ShortcutHandler
-from ..handlers.menu_handler import MenuHandler, ModlistMenuHandler
+from ..handlers.menu_handler import MenuHandler
 from jackify.shared.colors import COLOR_PROMPT, COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_SUCCESS, COLOR_WARNING, COLOR_SELECTION
 import logging
 from ..handlers.wabbajack_parser import WabbajackParser
@@ -21,7 +21,6 @@ from jackify.backend.handlers.config_handler import ConfigHandler
 
 from .modlist_operations_discovery import ModlistOperationsDiscoveryMixin
 from .modlist_operations_configuration_cli import ModlistOperationsConfigurationCLIMixin
-from .modlist_operations_configuration_gui import ModlistOperationsConfigurationGUIMixin
 from .modlist_operations_game_detection import ModlistOperationsGameDetectionMixin
 from .modlist_operations_nexus import ModlistOperationsNexusMixin
 from jackify.backend.services.update_detection import (
@@ -145,7 +144,6 @@ def get_jackify_engine_path():
 class ModlistInstallCLI(
     ModlistOperationsDiscoveryMixin,
     ModlistOperationsConfigurationCLIMixin,
-    ModlistOperationsConfigurationGUIMixin,
     ModlistOperationsGameDetectionMixin,
     ModlistOperationsNexusMixin,
 ):
@@ -205,12 +203,24 @@ class ModlistInstallCLI(
         return _svc_find_appid(modlist_name, install_dir)
 
     def cleanup(self):
-        """Clean up any running jackify-engine process"""
+        """Clean up any running jackify-engine process, including its process group
+        so tools it spawned (wine, hash utilities, etc.) don't survive it."""
         if self._current_process and self._current_process.poll() is None:
+            import signal
+            try:
+                pgid = os.getpgid(self._current_process.pid)
+                os.killpg(pgid, signal.SIGTERM)
+            except Exception:
+                pass
             try:
                 self._current_process.terminate()
                 self._current_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
+                try:
+                    pgid = os.getpgid(self._current_process.pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                except Exception:
+                    pass
                 self._current_process.kill()
             except Exception:
                 # Process may have already died

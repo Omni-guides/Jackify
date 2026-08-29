@@ -139,6 +139,40 @@ def _read_resource_settings() -> dict:
         return {}
 
 
+_RESOURCE_SETTINGS_KEYS = (
+    "Web Requests", "Wabbajack Client", "File Hashing", "Downloads",
+    "File Extractor", "VFS", "Installer",
+)
+
+
+def ensure_resource_settings_file() -> None:
+    """Create resource_settings.json with default values if it does not already exist.
+
+    jackify-engine writes this file itself once it actually runs, but only entry-by-entry
+    as each resource is first used, and CLF3 never writes it at all - so a CLF3-only user or
+    anyone who has never completed a jackify-engine install never sees the Settings dialog's
+    Resource Limits section populate. Call once at startup so the file (and therefore the
+    Settings UI and CLF3's own concurrency flags) is always available regardless of engine.
+    """
+    try:
+        from jackify.shared.paths import get_jackify_config_dir
+        import json
+        path = get_jackify_config_dir() / "resource_settings.json"
+        if path.exists():
+            return
+        default = _clf3_default_workers()
+        settings = {
+            key: {"MaxTasks": default, "MaxThroughput": 0}
+            for key in _RESOURCE_SETTINGS_KEYS
+        }
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+        logger.info("Created default resource_settings.json")
+    except Exception as e:
+        logger.warning("Failed to create default resource_settings.json: %s", e)
+
+
 def _clf3_default_workers() -> int:
     """Default worker count matching jackify-engine: full cpu_count."""
     import multiprocessing

@@ -1,5 +1,90 @@
 # Jackify Changelog
 
+## v0.8 - Modding Platform Release
+**Release Date:** 2026-08-29
+
+### UI Rework (first pass)
+A pretty comprehensive rework of the Jackify UI, with more changes to come. Interested in
+feedback on the new look! Things were getting rather menu/button heavy with the number of
+functions now available.
+
+The GUI now opens on a Modlist Dashboard rather than a main menu, with a tab bar (Modlists,
+Additional Tasks, Tools Hub) replacing menu-diving for the app's main sections of the app.
+
+The Dashboard shows every modlist installed on the system - status, version (where possible),
+and Launch/Configure/Update actions on each - picked up automatically from your Steam shortcuts.
+It can manage a modlist for its whole life: install a new one, add one you already have,
+reconfigure it, or uninstall it. Removing a modlist clears up everything Jackify set up for it
+- the Steam shortcut, the Proton prefix, and the install directory - rather than leaving pieces
+behind for you to find (or not). Does not touch Modlist Downloads.
+
+Clicking a modlist opens its Details, which lists the information Jackify has on it: install
+directory, Proton prefix path, Proton version, installed version, when it was installed and last
+configured, its Steam AppID, and whether Jackify installed it or found it in your Steam library.
+Paths that no longer exist are marked, so a modlist on a disconnected drive (or SD Card) is
+obvious at a glance. Long paths are shortened to fit - hover to see the whole thing, or click any
+value to copy it.
+
+An "Add a Modlist" tile sits alongside your modlists, this is now the way to install a new modlist
+or configure one already on your system. The same card-grid layout now carries through Tools Hub
+and Additional Tasks too, so navigation reads as one consistent app rather than a set of separate
+screens bolted together.
+
+There will be further UI work to come in the next updates. Feedback welcome. This also means that
+the wiki/user guide screenshots need updated, but that's probably the same for various aspects of
+the documentation - work on that will start soon.
+
+### Modlist Playbook System
+Modlist-specific post-install steps are now driven by playbooks rather than being built into
+Jackify one modlist at a time. Viva New Vegas, Mojave Express Wabbajack, and Begin Again
+all run through the new system, and support for further modlists no longer requires a Jackify
+update. This will allow modlist-specific steps to be added or modified without needing to publish
+a complete new version of Jackify.
+
+### Faster Modlist Loading (USVFS)
+Jackify now applies my patched USVFS dll, matched to the version each modlist actually ships with,
+during a modlist install or configure. Test results show this can cut MO2's initial load time by
+roughly 12-45%, depending on system hardware and modlist size/content. The original dll is backed
+up, and this replacement can be turned off in Settings. Currently limited to Skyrim Special
+Edition, Skyrim VR, Fallout 4, and Fallout 4 VR modlists.
+
+The Github repo for this patched USVFS is available here: https://github.com/Omni-guides/usvfs
+
+### Crash Log Browser
+A new Additional Tasks entry lists the crash logs for an installed modlist, newest first, and
+opens the one you pick. Covers Skyrim Special Edition and Fallout 4 so far.
+
+### Game Version Downgrader
+A new Additional Tasks/Tool downgrades a Steam install of Skyrim Special Edition or Fallout 4
+to an older version - useful when a Bethesda update breaks your modlist before its author has
+had a chance to update it. Requires your Steam login - your password and Steam Guard code go
+straight to Valve's own steamcmd tool and are never stored or logged by Jackify. An optional
+backup of the existing directory can be taken, and used to restore from the same Downgrader
+tool.
+
+A dry-run option previews what would change without touching anything.
+
+### Fixes
+- Skyrim VR and Fallout 4 VR modlists now receive the same xEdit, Pandora, and Synthesis
+  compatibility fixes as their non-VR counterparts.
+- Jackify now returns to the foreground after restarting Steam when configuring an existing
+  modlist, and during the configuration phase of a new install (unless you have another window open).
+- Jackify no longer offers prerelease engine versions as automatic updates. They remain
+  available to choose deliberately in Change Version.
+- Fixed choosing an older TTW Linux Installer version in the Tools Hub silently installing the
+  latest one instead.
+- Interrupted NXM downloads no longer leave a partial archive that looks like a completed one.
+- Manually downloaded archives are now recognised even when the browser or Nexus saved them under
+  a different file name, as long as the file itself is the right one.
+- Reduced Jackify's memory use during large installs, where the install console could grow
+  without limit even while hidden.
+- The Dashboard now offers a "Remove from List" action alongside Uninstall - drops a modlist
+  from Jackify's tracked list without touching its Steam shortcut, Proton prefix, or files.
+- Fixed Fallout New Vegas modlists configured via Configure Existing Modlist not being offered
+  Tale of Two Wastelands installation.
+- Fallout New Vegas modlists now install d3dcompiler_43/d3dcompiler_47 by default, matching what
+  other Wabbajack Linux tools already do for this game.
+
 ## v0.7.2.2 - DirectX Download and Install Fixes
 **Release Date:** 2026-08-10
 

@@ -33,7 +33,8 @@ class MainMenuHandler:
             cli_instance: Reference to main CLI instance for access to handlers
             
         Returns:
-            str: Menu choice ("wabbajack", "hoolamike", "additional", "exit", "tuxborn")
+            str: Menu choice ("wabbajack", "modlist_management", "additional", "tools_hub",
+                 "settings", "exit")
         """
         while True:
             self._clear_screen()
@@ -42,21 +43,29 @@ class MainMenuHandler:
             print(f"{COLOR_SELECTION}{'-'*22}{COLOR_RESET}")  # Standard separator
             print(f"{COLOR_SELECTION}1.{COLOR_RESET} Modlist Tasks")
             print(f"   {COLOR_ACTION}→ Install & Configure Modlists{COLOR_RESET}")
-            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Additional Tasks & Tools")
+            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Modlist Management")
+            print(f"   {COLOR_ACTION}→ View installed modlists and update status{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}3.{COLOR_RESET} Additional Tasks & Tools")
             print(f"   {COLOR_ACTION}→ Verifier, Diagnostics, Nexus OAuth & more{COLOR_RESET}")
-            print(f"{COLOR_SELECTION}3.{COLOR_RESET} Tools Hub")
+            print(f"{COLOR_SELECTION}4.{COLOR_RESET} Tools Hub")
             print(f"   {COLOR_ACTION}→ Install, update, or switch engines and tools{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}5.{COLOR_RESET} Settings")
+            print(f"   {COLOR_ACTION}→ Proton, automation, and data preferences{COLOR_RESET}")
             print(f"{COLOR_SELECTION}0.{COLOR_RESET} Exit Jackify")
-            choice = input(f"\n{COLOR_PROMPT}Enter your selection (0-3): {COLOR_RESET}").strip()
+            choice = input(f"\n{COLOR_PROMPT}Enter your selection (0-5): {COLOR_RESET}").strip()
 
             if choice.lower() == 'q':  # Allow 'q' to re-display menu
                 continue
             if choice == "1":
                 return "wabbajack"
             elif choice == "2":
-                return "additional"
+                return "modlist_management"
             elif choice == "3":
+                return "additional"
+            elif choice == "4":
                 return "tools_hub"
+            elif choice == "5":
+                return "settings"
             elif choice == "0":
                 return "exit"
             else:

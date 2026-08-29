@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QTextEdit, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtCore import Qt, Signal, QSize, QEvent
 from PySide6.QtGui import QPixmap, QFont, QPainter, QColor
 from jackify.backend.models.modlist_metadata import ModlistMetadata
 from ..shared_theme import JACKIFY_COLOR_BLUE
@@ -58,34 +58,30 @@ class ModlistDetailDialog(QDialog):
         self.banner_label.setText("Loading image...")
         banner_layout.addWidget(self.banner_label)
 
-        # Full-width transparent container with opaque card inside (only as wide as text)
-        overlay_container = QWidget()
-        overlay_container.setStyleSheet("background: transparent;")
-        overlay_layout = QHBoxLayout()
-        overlay_layout.setContentsMargins(24, 0, 24, 24)
-        overlay_layout.setSpacing(0)
-        overlay_container.setLayout(overlay_layout)
-        
-        # Opaque text card - only as wide as content needs (where red lines are)
-        self.banner_text_panel = QFrame()
-        self.banner_text_panel.setFrameShape(QFrame.StyledPanel)
-        # Opaque background, rounded corners, sized to content only
-        self.banner_text_panel.setStyleSheet("""
-            QFrame {
-                background-color: rgba(0, 0, 0, 180);
-                border: 1px solid rgba(255, 255, 255, 30);
-                border-radius: 8px;
-            }
-        """)
-        self.banner_text_panel.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        # Gradient scrim across the full width rather than a bounded card. A rounded box with
+        # its own border read as a panel pasted onto the artwork; the gradient darkens into the
+        # image, so there is no edge to notice.
+        #
+        # Child of the banner label, positioned by hand, not placed in the layout: the label is
+        # given a 16:9 height that exceeds the row the layout allots it, so anything the layout
+        # positions "under" the image lands part-way up it instead of at its foot.
+        self.banner_text_panel = QFrame(self.banner_label)
+        self.banner_text_panel.setFrameShape(QFrame.NoFrame)
+        self.banner_text_panel.setStyleSheet(
+            "QFrame { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 rgba(0, 0, 0, 0), stop:0.35 rgba(0, 0, 0, 140), stop:1 rgba(0, 0, 0, 225)); "
+            "border: none; }"
+        )
+        self.banner_text_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         banner_text_layout = QVBoxLayout()
-        banner_text_layout.setContentsMargins(20, 12, 20, 14)
+        banner_text_layout.setContentsMargins(24, 40, 24, 20)
         banner_text_layout.setSpacing(6)
         self.banner_text_panel.setLayout(banner_text_layout)
-        
-        # Add card to container (left-aligned, rest stays transparent)
-        overlay_layout.addWidget(self.banner_text_panel, alignment=Qt.AlignBottom | Qt.AlignLeft)
-        overlay_layout.addStretch()  # Push card left, rest transparent
+        # Panel height now exceeds the text's own sizeHint (grows with the banner);
+        # push the text to the bottom of that extra space instead of letting it float.
+        banner_text_layout.addStretch(1)
+
+        self.banner_label.installEventFilter(self)
 
         # Title only (badges moved to tags section below)
         title = QLabel(self.metadata.title)
@@ -106,7 +102,6 @@ class ModlistDetailDialog(QDialog):
             banner_text_layout.addWidget(sizes_label)
 
         # Add full-width transparent container at bottom of banner
-        banner_layout.addWidget(overlay_container, alignment=Qt.AlignBottom)
         main_layout.addWidget(banner_container)
 
         # Content area with padding (tags + description + bottom bar)
@@ -371,6 +366,28 @@ class ModlistDetailDialog(QDialog):
         if pixmap and not pixmap.isNull():
             self._display_banner(pixmap)
     
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, 'banner_label', None) and event.type() == QEvent.Resize:
+            self._position_banner_scrim()
+        return super().eventFilter(obj, event)
+
+    def _position_banner_scrim(self):
+        """Pin the scrim to the foot of the banner image, full width.
+
+        Height scales with the banner itself (not just the text content) so the
+        gradient still reads on tall/bright images instead of being confined to a
+        thin band the text barely needs.
+        """
+        if not hasattr(self, 'banner_text_panel'):
+            return
+        height = max(
+            self.banner_text_panel.sizeHint().height(),
+            int(self.banner_label.height() * 0.4),
+        )
+        self.banner_text_panel.setGeometry(
+            0, max(0, self.banner_label.height() - height), self.banner_label.width(), height
+        )
+
     def resizeEvent(self, event):
         """Handle dialog resize to maintain 16:9 aspect ratio for banner"""
         super().resizeEvent(event)

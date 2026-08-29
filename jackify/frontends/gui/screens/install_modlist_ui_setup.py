@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QTabWidget, QDialog, QListWidget, QListWidgetItem, QMessageBox, QProgressDialog, QApplication, QCheckBox, QStyledItemDelegate, QStyle, QTableWidget, QTableWidgetItem, QHeaderView, QMainWindow
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer, QProcess, QMetaObject, QUrl
 from PySide6.QtGui import QPixmap, QTextCursor, QColor, QPainter, QFont
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import ansi_to_html, set_responsive_minimum
 from jackify.backend.handlers.wabbajack_parser import WabbajackParser
 from jackify.backend.handlers.progress_parser import ProgressStateManager
@@ -23,7 +23,6 @@ class InstallModlistUISetupMixin:
         self.main_menu_index = main_menu_index
         from jackify.backend.models.configuration import SystemInfo
         self.system_info = system_info or SystemInfo(is_steamdeck=False)
-        self.debug = DEBUG_BORDERS
         # Remember original main window geometry/min-size to restore on expand (like TTW screen)
         self._saved_geometry = None
         self._saved_min_size = None
@@ -63,7 +62,6 @@ class InstallModlistUISetupMixin:
         # Initialize Wabbajack parser for game detection
         self.wabbajack_parser = WabbajackParser()
         
-        # R&D: Initialize progress reporting components
         self.progress_state_manager = ProgressStateManager()
         self.progress_indicator = OverallProgressIndicator(show_progress_bar=True)
         self.file_progress_list = FileProgressList()  # Shows all active files (scrolls if needed)
@@ -81,12 +79,13 @@ class InstallModlistUISetupMixin:
         self._post_install_total_steps = len(self._post_install_sequence)
         self._post_install_current_step = 0
         self._post_install_active = False
+        self._post_install_playbook_mode = False
         self._post_install_last_label = ""
         self._bsa_hold_deadline = 0.0
 
         # No throttling needed - render loop handles smooth updates at 60fps
 
-        # R&D: Create "Show Details" checkbox (reuse TTW pattern)
+        # Reuses the TTW screen's Show Details pattern
         self.show_details_checkbox = QCheckBox("Show details")
         self.show_details_checkbox.setChecked(False)  # Start collapsed
         self.show_details_checkbox.setToolTip("Toggle between activity summary and detailed console output")
@@ -97,8 +96,6 @@ class InstallModlistUISetupMixin:
         main_overall_vbox.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         main_overall_vbox.setContentsMargins(50, 50, 50, 0)  # No bottom margin
         main_overall_vbox.setSpacing(0)  # No spacing between widgets to eliminate gaps
-        if self.debug:
-            self.setStyleSheet("border: 2px solid magenta;")
 
         # --- Header (title, description) ---
         header_layout = QVBoxLayout()
@@ -122,9 +119,6 @@ class InstallModlistUISetupMixin:
         header_widget = QWidget()
         header_widget.setLayout(header_layout)
         header_widget.setMaximumHeight(75)  # Increase header height by 25% (60 + 15)
-        if self.debug:
-            header_widget.setStyleSheet("border: 2px solid pink;")
-            header_widget.setToolTip("HEADER_SECTION")
         main_overall_vbox.addWidget(header_widget)
 
         # --- Upper section: user-configurables (left) + process monitor (right) ---
@@ -143,9 +137,6 @@ class InstallModlistUISetupMixin:
         self.source_tabs.setContentsMargins(0, 0, 0, 0)  # Ensure no margins for alignment
         self.source_tabs.setDocumentMode(False)  # Keep frame for consistency
         self.source_tabs.setTabPosition(QTabWidget.North)  # Ensure tabs are at top
-        if self.debug:
-            self.source_tabs.setStyleSheet("border: 2px solid cyan;")
-            self.source_tabs.setToolTip("SOURCE_TABS")
         # --- Online List Tab ---
         online_tab = QWidget()
         online_tab_vbox = QVBoxLayout()
@@ -329,9 +320,6 @@ class InstallModlistUISetupMixin:
         # Let form section size naturally to its content
         # Don't force a fixed height - let it calculate based on grid content
         form_section_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        if self.debug:
-            form_section_widget.setStyleSheet("border: 2px solid blue;")
-            form_section_widget.setToolTip("FORM_SECTION")
         user_config_vbox.addWidget(form_section_widget)
         # --- Buttons ---
         btn_row = QHBoxLayout()
@@ -352,20 +340,13 @@ class InstallModlistUISetupMixin:
         self.cancel_install_btn.setVisible(False)  # Hidden by default
         btn_row.addWidget(self.cancel_install_btn)
         
-        # Wrap button row in widget for debug borders
         btn_row_widget = QWidget()
         btn_row_widget.setLayout(btn_row)
         btn_row_widget.setMaximumHeight(50)  # Limit height to make it more compact
-        if self.debug:
-            btn_row_widget.setStyleSheet("border: 2px solid red;")
-            btn_row_widget.setToolTip("BUTTON_ROW")
         user_config_widget = QWidget()
         self.user_config_widget = user_config_widget  # Store reference for height calculation
         user_config_widget.setLayout(user_config_vbox)
         user_config_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)  # Fixed height - don't expand unnecessarily
-        if self.debug:
-            user_config_widget.setStyleSheet("border: 2px solid orange;")
-            user_config_widget.setToolTip("USER_CONFIG_WIDGET")
         # Right: Tabbed interface with Activity and Process Monitor
         # Both tabs are always available, user can switch between them
         self.process_monitor = QTextEdit()
@@ -385,9 +366,6 @@ class InstallModlistUISetupMixin:
         process_monitor_widget.setLayout(process_vbox)
         # Match size policy - Process Monitor should expand to fill available space
         process_monitor_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        if self.debug:
-            process_monitor_widget.setStyleSheet("border: 2px solid purple;")
-            process_monitor_widget.setToolTip("PROCESS_MONITOR")
         # Store reference
         self.process_monitor_widget = process_monitor_widget
         
@@ -403,10 +381,7 @@ class InstallModlistUISetupMixin:
         self.activity_tabs.setContentsMargins(0, 0, 0, 0)  # Ensure no margins for alignment
         self.activity_tabs.setDocumentMode(False)  # Match left tabs
         self.activity_tabs.setTabPosition(QTabWidget.North)  # Ensure tabs are at top
-        if self.debug:
-            self.activity_tabs.setStyleSheet("border: 2px solid cyan;")
-            self.activity_tabs.setToolTip("ACTIVITY_TABS")
-        
+
         # Add both widgets as tabs
         self.activity_tabs.addTab(self.file_progress_list, "Activity")
         self.activity_tabs.addTab(process_monitor_widget, "Process Monitor")
@@ -422,15 +397,12 @@ class InstallModlistUISetupMixin:
         upper_section_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         # Calculate height based on LEFT side (user_config_widget) only
         self._upper_section_fixed_height = None  # Will be set in showEvent based on left side
-        if self.debug:
-            upper_section_widget.setStyleSheet("border: 2px solid green;")
-            upper_section_widget.setToolTip("UPPER_SECTION")
         main_overall_vbox.addWidget(upper_section_widget)
         
         # Add spacing between upper section and progress banner
         main_overall_vbox.addSpacing(8)
         
-        # R&D: Progress indicator banner row (similar to TTW screen)
+        # Mirrors the TTW screen's progress banner layout
         banner_row = QHBoxLayout()
         banner_row.setContentsMargins(0, 0, 0, 0)
         banner_row.setSpacing(8)
@@ -447,24 +419,23 @@ class InstallModlistUISetupMixin:
         # Add spacing between progress banner and console/details area
         main_overall_vbox.addSpacing(8)
         
-        # R&D: File progress list is now in the upper section (replacing Process Monitor)
-        # Console shows below when "Show details" is checked
-        # File progress list is already added to upper_hbox above
+        # File progress list lives in the upper section above (replacing the old Process
+        # Monitor) and is already added to upper_hbox; console shows below when checked
         
         # Remove spacing - console should expand to fill available space
         # --- Console output area (full width, placeholder for now) ---
         self.console = QTextEdit()
         self.console.setReadOnly(True)
         self.console.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
-        # R&D: Console starts hidden (only shows when "Show details" is checked)
+        # Cap scrollback so a large install's engine output can't grow this
+        # QTextDocument unbounded - full output still goes to the log file.
+        self.console.document().setMaximumBlockCount(2000)
+        # Zero height plus hidden, not just hidden - keeps it from claiming layout space
         self.console.setMinimumHeight(0)
         self.console.setMaximumHeight(0)
         self.console.setVisible(False)
         self.console.setFontFamily('monospace')
-        if self.debug:
-            self.console.setStyleSheet("border: 2px solid yellow;")
-            self.console.setToolTip("CONSOLE")
-        
+
         # Set up scroll tracking for professional auto-scroll behavior
         self._setup_scroll_tracking()
         
@@ -486,9 +457,6 @@ class InstallModlistUISetupMixin:
         # Constrain height to button row only when console is hidden - match button row height exactly
         # Button row is 50px max, so container should be exactly that when collapsed
         console_and_buttons_widget.setFixedHeight(50)  # Lock to exact button row height when console is hidden
-        if self.debug:
-            console_and_buttons_widget.setStyleSheet("border: 2px solid lightblue;")
-            console_and_buttons_widget.setToolTip("CONSOLE_AND_BUTTONS_CONTAINER")
         # Add without stretch - let it size naturally to content
         main_overall_vbox.addWidget(console_and_buttons_widget)
         self.setLayout(main_overall_vbox)

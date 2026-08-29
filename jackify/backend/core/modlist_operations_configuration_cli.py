@@ -22,6 +22,24 @@ logger = logging.getLogger(__name__)
 class ModlistOperationsConfigurationCLIMixin:
     """Mixin providing CLI configuration phase methods."""
 
+    def _record_install_failure(self, failure_reason: str) -> None:
+        """JackifyDB failure record - isolated try/except since a data-collection call must
+        never affect the (already failing) install flow."""
+        try:
+            from jackify import __version__ as _jackify_version
+            from jackify.backend.services.jackify_db import gather_environment_fields, record_event
+            record_event(
+                "install_completed", "failure",
+                modlist_name=self.context.get('modlist_name', ''),
+                game_type=self.context.get('detected_game') or self.context.get('special_game_type'),
+                install_mode=self.context.get('install_mode', 'online'),
+                jackify_version=_jackify_version, failure_phase="install",
+                failure_reason=failure_reason,
+                **gather_environment_fields(),
+            )
+        except Exception as e:
+            self.logger.debug("JackifyDB failure record skipped: %s", e)
+
     def _clf3_fetch_wabbajack(self, engine_path: str, machine_name: str, engine_dir: str) -> "str | None":
         """
         Resolve a gallery machine name to a local .wabbajack file for CLF3.
@@ -30,8 +48,8 @@ class ModlistOperationsConfigurationCLIMixin:
         `clf3 fetch` to download the file.  Returns the local path on success,
         or None (with an error printed) on failure.
         """
-        from jackify.shared.paths import get_jackify_data_dir, get_jackify_downloads_dir
-        import json as _json
+        from jackify.shared.paths import get_jackify_downloads_dir
+        from jackify.backend.services.modlist_download_url import get_modlist_download_url
 
         list_id = machine_name.split('/')[-1] if '/' in machine_name else machine_name
         local_path = str(get_jackify_downloads_dir() / f"{list_id}.wabbajack")
@@ -40,17 +58,7 @@ class ModlistOperationsConfigurationCLIMixin:
             self.logger.info("CLF3: using cached wabbajack file at %s", local_path)
             return local_path
 
-        download_url = None
-        cache_file = get_jackify_data_dir() / "modlist-cache" / "metadata" / "modlist_metadata.json"
-        if cache_file.is_file():
-            try:
-                data = _json.loads(cache_file.read_text(encoding="utf-8"))
-                for entry in data.get("modlists", []):
-                    if entry.get("namespacedName") == machine_name or entry.get("machineURL") == list_id:
-                        download_url = (entry.get("links") or {}).get("download")
-                        break
-            except Exception as e:
-                self.logger.warning("CLF3: could not read metadata cache: %s", e)
+        download_url = get_modlist_download_url(machine_name)
 
         if not download_url:
             print(
@@ -76,7 +84,7 @@ class ModlistOperationsConfigurationCLIMixin:
         print(f"{COLOR_INFO}Modlist file ready.{COLOR_RESET}")
         return local_path
 
-    def configuration_phase(self):
+    def configuration_phase(self, gui_mode: bool = False):
         """
         Run the configuration phase: execute the active install engine.
         """
@@ -160,7 +168,7 @@ class ModlistOperationsConfigurationCLIMixin:
             engine_dir = os.path.dirname(engine_path)
             clf3_mode = is_clf3_active()
 
-            if os.environ.get('JACKIFY_GUI_MODE') == '1':
+            if gui_mode:
                 if not self.context.get('modlist_source'):
                     self.context['modlist_source'] = 'identifier'
                 if not self.context.get('modlist_value'):
@@ -206,36 +214,27 @@ class ModlistOperationsConfigurationCLIMixin:
             if debug_mode and not clf3_mode:
                 self.logger.info("Adding --debug flag to jackify-engine")
             writeback_path = str(auth_service.get_token_writeback_path()) if not clf3_mode else None
-            original_env_values = {
-                'NEXUS_API_KEY': os.environ.get('NEXUS_API_KEY'),
-                'NEXUS_OAUTH_TOKEN': os.environ.get('NEXUS_OAUTH_TOKEN'),
-                'NEXUS_OAUTH_INFO': os.environ.get('NEXUS_OAUTH_INFO'),
-                'JACKIFY_TOKEN_WRITEBACK': os.environ.get('JACKIFY_TOKEN_WRITEBACK'),
-                'DOTNET_SYSTEM_GLOBALIZATION_INVARIANT': os.environ.get('DOTNET_SYSTEM_GLOBALIZATION_INVARIANT')
-            }
+            extra_env = {}
+            _registered_pgids = []
 
             try:
                 if clf3_mode:
                     if api_key:
-                        os.environ['NEXUS_OAUTH_TOKEN'] = api_key
+                        extra_env['NEXUS_OAUTH_TOKEN'] = api_key
                 else:
                     if writeback_path:
-                        os.environ['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
+                        extra_env['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
                     if api_key:
-                        os.environ['NEXUS_API_KEY'] = api_key
+                        extra_env['NEXUS_API_KEY'] = api_key
                     if oauth_info:
-                        os.environ['NEXUS_OAUTH_INFO'] = oauth_info
+                        extra_env['NEXUS_OAUTH_INFO'] = oauth_info
                         from jackify.backend.services.nexus_oauth_service import NexusOAuthService
-                        os.environ['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
+                        extra_env['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
                         self.logger.debug("Set NEXUS_OAUTH_INFO and NEXUS_OAUTH_CLIENT_ID for engine")
-                    elif not api_key:
-                        for key in ('NEXUS_API_KEY', 'NEXUS_OAUTH_INFO', 'NEXUS_OAUTH_CLIENT_ID'):
-                            os.environ.pop(key, None)
-                        self.logger.debug("No Nexus auth available, cleared inherited env vars")
-                    os.environ['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = "1"
+                    extra_env['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = "1"
 
                 self.logger.info("Environment prepared for %s install process.", engine_id)
-                self.logger.debug(f"NEXUS_API_KEY in os.environ (pre-call): {'[SET]' if os.environ.get('NEXUS_API_KEY') else '[NOT SET]'}")
+                self.logger.debug(f"NEXUS_API_KEY for engine call: {'[SET]' if extra_env.get('NEXUS_API_KEY') else '[NOT SET]'}")
 
                 pretty_cmd = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in cmd])
                 engine_label = "CLF3" if clf3_mode else "Jackify Install Engine"
@@ -249,12 +248,13 @@ class ModlistOperationsConfigurationCLIMixin:
                     self.logger.warning(f"File descriptor limit: {message}")
 
                 from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
-                clean_env = get_clean_subprocess_env()
+                clean_env = get_clean_subprocess_env(extra_env)
 
                 if clf3_mode:
                     import threading as _threading
                     from jackify.backend.handlers.progress_parser_clf3 import CLF3ProgressStateManager
                     clf3_parser = CLF3ProgressStateManager()
+                    from jackify.backend.handlers.subprocess_utils import register_process_group
                     self._current_process = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
@@ -262,8 +262,12 @@ class ModlistOperationsConfigurationCLIMixin:
                         text=False,
                         env=clean_env,
                         cwd=engine_dir,
+                        start_new_session=True,
                     )
                     proc = self._current_process
+                    _pgid = os.getpgid(proc.pid)
+                    register_process_group(_pgid)
+                    _registered_pgids.append(_pgid)
 
                     def _drain_stderr():
                         for _ in proc.stderr:
@@ -314,6 +318,7 @@ class ModlistOperationsConfigurationCLIMixin:
                     self.logger.info("CLF3 completed successfully.")
 
                 if not clf3_mode:
+                    from jackify.backend.handlers.subprocess_utils import register_process_group
                     self._current_process = subprocess.Popen(
                         cmd,
                         stdin=subprocess.PIPE,
@@ -322,8 +327,12 @@ class ModlistOperationsConfigurationCLIMixin:
                         text=False,
                         env=clean_env,
                         cwd=engine_dir,
+                        start_new_session=True,
                     )
                     proc = self._current_process
+                    _pgid = os.getpgid(proc.pid)
+                    register_process_group(_pgid)
+                    _registered_pgids.append(_pgid)
 
                 def _write_stdin(payload: str) -> bool:
                     if not proc.stdin or proc.poll() is not None:
@@ -433,6 +442,7 @@ class ModlistOperationsConfigurationCLIMixin:
                     if proc.returncode != 0:
                         print(f"{COLOR_ERROR}Jackify Install Engine exited with code {proc.returncode}.{COLOR_RESET}")
                         self.logger.error(f"Engine exited with code {proc.returncode}.")
+                        self._record_install_failure("engine_crash")
                         return
                     self.logger.info(f"Engine completed with code {proc.returncode}.")
             except Exception as e:
@@ -457,24 +467,12 @@ class ModlistOperationsConfigurationCLIMixin:
                 except Exception as resource_error:
                     self.logger.debug(f"Error checking for resource limit issues: {resource_error}")
 
+                self._record_install_failure("engine_crash")
                 return
             finally:
-                for key, original_value in original_env_values.items():
-                    current_value_in_os_environ = os.environ.get(key)
-
-                    display_original_value = f"'[REDACTED]'" if key == 'NEXUS_API_KEY' else f"'{original_value}'"
-
-                    if original_value is not None:
-                        if current_value_in_os_environ != original_value:
-                            os.environ[key] = original_value
-                            self.logger.debug(f"Restored os.environ['{key}'] to its original value: {display_original_value}.")
-                        else:
-                            os.environ[key] = original_value
-                            self.logger.debug(f"os.environ['{key}'] ('{display_original_value}') matched original value. Ensured restoration.")
-                    else:
-                        if key in os.environ:
-                            self.logger.debug(f"Original os.environ['{key}'] was not set. Removing current value ('{'[REDACTED]' if os.environ.get(key) and key == 'NEXUS_API_KEY' else os.environ.get(key)}') that was set for the call.")
-                            del os.environ[key]
+                from jackify.backend.handlers.subprocess_utils import unregister_process_group
+                for _pgid in _registered_pgids:
+                    unregister_process_group(_pgid)
 
         except Exception as e:
             error_message = str(e)
@@ -498,6 +496,7 @@ class ModlistOperationsConfigurationCLIMixin:
             except Exception as resource_error:
                 self.logger.debug(f"Error checking for resource limit issues: {resource_error}")
 
+            self._record_install_failure("unknown")
             return
         finally:
             sys.stdout = orig_stdout
@@ -516,6 +515,21 @@ class ModlistOperationsConfigurationCLIMixin:
                 self.context.get('modlist_name', ''),
                 _meta_game_type,
                 install_mode=self.context.get('install_mode', 'online'),
+            )
+            from jackify.backend.services.install_registry import register_install
+            register_install(
+                install_dir_str,
+                self.context.get('modlist_name', ''),
+                game_type=_meta_game_type,
+            )
+            from jackify import __version__ as _jackify_version
+            from jackify.backend.services.jackify_db import gather_environment_fields, record_event
+            record_event(
+                "install_completed", "success",
+                modlist_name=self.context.get('modlist_name', ''), game_type=_meta_game_type,
+                install_mode=self.context.get('install_mode', 'online'),
+                jackify_version=_jackify_version, duration_seconds=elapsed,
+                **gather_environment_fields(),
             )
         except Exception as _meta_err:
             self.logger.debug("Modlist meta write skipped: %s", _meta_err)
@@ -576,15 +590,16 @@ class ModlistOperationsConfigurationCLIMixin:
 
             self.logger.debug(f"configuration_phase: Final shortcut_name: '{shortcut_name}'")
 
-            is_gui_mode = os.environ.get('JACKIFY_GUI_MODE') == '1'
+            is_gui_mode = gui_mode
             self.logger.debug(f"configuration_phase: is_gui_mode={is_gui_mode}")
 
             if not is_gui_mode:
                 self.logger.debug("configuration_phase: Not in GUI mode, prompting user for configuration...")
+                from jackify.shared.messages import STEAM_RESTART_WARNING
                 print("\n" + "-" * 28)
                 print(
                     f"{COLOR_PROMPT}Would you like to add '{shortcut_name}' to Steam and configure it now? "
-                    f"Steam will restart and close any running game.{COLOR_RESET}"
+                    f"{STEAM_RESTART_WARNING}{COLOR_RESET}"
                 )
                 configure_choice = input(f"{COLOR_PROMPT}Configure now? (Y/n): {COLOR_RESET}").strip().lower()
                 self.logger.debug(f"configuration_phase: User choice: '{configure_choice}'")
@@ -864,141 +879,23 @@ class ModlistOperationsConfigurationCLIMixin:
                     for _version in _game_warning['recommended']:
                         print(f"{COLOR_INFO}  - {_version}{COLOR_RESET}")
                 try:
-                    # Ensure CLI install flow gets the same VNV automation behavior as GUI.
-                    from jackify.backend.services.vnv_integration_helper import (
-                        run_vnv_automation_if_applicable,
-                        should_offer_vnv_automation,
+                    from jackify.backend.services.playbook.hook_wiring import (
+                        build_gui_configuration_context, get_registry, playbooks_disabled,
                     )
-                    from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
-                    from jackify.backend.services.vnv_post_install_service import VNVPostInstallService
-                    from jackify.backend.handlers.path_handler import PathHandler
-                    from jackify.frontends.cli.commands.vnv_manual_downloads import (
-                        build_vnv_cli_manual_file_callback,
-                        create_vnv_cli_progress_callback,
-                        ensure_vnv_cli_manual_downloads,
-                    )
+                    from jackify.frontends.cli.commands.playbook_automation import run_playbook_automation_cli
 
                     modlist_name_for_automation = self.context.get('modlist_name') or shortcut_name or ""
-                    def _confirm_vnv(description: str) -> bool:
-                        print(f"\n{description}\n")
-                        try:
-                            user_input = input(f"{COLOR_PROMPT}Run VNV post-install automation now? (Y/n): {COLOR_RESET}").strip().lower()
-                        except (EOFError, KeyboardInterrupt):
-                            return False
-                        return user_input in ("", "y", "yes")
-                    install_path = Path(install_dir_str)
-                    if should_offer_vnv_automation(modlist_name_for_automation, install_path):
-                        game_paths = PathHandler().find_vanilla_game_paths()
-                        resolved_game_root = game_paths.get('Fallout New Vegas')
-                        vnv_service = VNVPostInstallService(
-                            modlist_install_location=install_path,
-                            game_root=resolved_game_root or install_path,
-                            ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
+                    if not playbooks_disabled():
+                        identity, step_ctx, install_key = build_gui_configuration_context(
+                            modlist_name_for_automation, install_dir_str,
+                            appid=str(app_id) if app_id else None, game_type_full=detected_game,
                         )
-                        completed = vnv_service.check_already_completed()
-                        all_vnv_steps_done = (
-                            completed['root_mods']
-                            and completed['4gb_patch']
-                            and completed['bsa_decompressed']
+                        run_playbook_automation_cli(
+                            "post_configure", get_registry(), identity, step_ctx, install_key, output=print,
                         )
-                        if all_vnv_steps_done:
-                            print(f"{COLOR_INFO}VNV post-install steps are already complete.{COLOR_RESET}")
-                        elif _confirm_vnv(vnv_service.get_automation_description()):
-                            if not ensure_vnv_cli_manual_downloads(vnv_service, output_callback=print):
-                                print(f"{COLOR_WARNING}VNV manual downloads were not completed. Skipping VNV automation.{COLOR_RESET}")
-                            else:
-                                progress_callback, close_progress = create_vnv_cli_progress_callback(print)
-                                try:
-                                    automation_ran, vnv_error = run_vnv_automation_if_applicable(
-                                        modlist_name=modlist_name_for_automation,
-                                        modlist_install_location=install_path,
-                                        game_root=None,  # Auto-detect from modlist structure.
-                                        ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                                        progress_callback=progress_callback,
-                                        manual_file_callback=build_vnv_cli_manual_file_callback(vnv_service, output_callback=print),
-                                        confirmation_callback=lambda _description: True,
-                                    )
-                                finally:
-                                    close_progress()
-                                if automation_ran and not vnv_error:
-                                    print(f"{COLOR_INFO}VNV post-install automation completed.{COLOR_RESET}")
-                                if vnv_error:
-                                    print(f"{COLOR_WARNING}VNV automation encountered an error: {vnv_error}{COLOR_RESET}")
-                                    print(f"{COLOR_INFO}You can complete these steps manually by following: https://vivanewvegas.moddinglinked.com/wabbajack.html{COLOR_RESET}")
-                        else:
-                            print(f"{COLOR_INFO}VNV automation skipped by user.{COLOR_RESET}")
-                except Exception as vnv_err:
-                    self.logger.error("VNV post-install automation failed: %s", vnv_err, exc_info=True)
-                    print(f"{COLOR_WARNING}VNV automation could not be completed. Check logs for details.{COLOR_RESET}")
-                try:
-                    # Ensure CLI install flow gets the same MEW automation behavior as GUI.
-                    from jackify.backend.services.mew_integration_helper import (
-                        run_mew_automation_if_applicable,
-                        should_offer_mew_automation,
-                    )
-                    from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
-                    from jackify.backend.services.mew_post_install_service import MEWPostInstallService
-                    from jackify.backend.handlers.path_handler import PathHandler
-                    from jackify.frontends.cli.commands.vnv_manual_downloads import (
-                        build_vnv_cli_manual_file_callback,
-                        create_vnv_cli_progress_callback,
-                        ensure_vnv_cli_manual_downloads,
-                    )
-
-                    modlist_name_for_mew = self.context.get('modlist_name') or shortcut_name or ""
-                    def _confirm_mew(description: str) -> bool:
-                        print(f"\n{description}\n")
-                        try:
-                            user_input = input(f"{COLOR_PROMPT}Run MEW post-install automation now? (Y/n): {COLOR_RESET}").strip().lower()
-                        except (EOFError, KeyboardInterrupt):
-                            return False
-                        return user_input in ("", "y", "yes")
-                    install_path_mew = Path(install_dir_str)
-                    if should_offer_mew_automation(modlist_name_for_mew, install_path_mew):
-                        game_paths = PathHandler().find_vanilla_game_paths()
-                        resolved_game_root = game_paths.get('Fallout New Vegas')
-                        mew_service = MEWPostInstallService(
-                            modlist_install_location=install_path_mew,
-                            game_root=resolved_game_root or install_path_mew,
-                            ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                        )
-                        completed = mew_service.check_already_completed()
-                        all_mew_steps_done = (
-                            completed['root_mods']
-                            and completed['4gb_patch']
-                            and completed['bsa_decompressed']
-                            and completed['radio_fix']
-                        )
-                        if all_mew_steps_done:
-                            print(f"{COLOR_INFO}MEW post-install steps are already complete.{COLOR_RESET}")
-                        elif _confirm_mew(mew_service.get_automation_description()):
-                            if not ensure_vnv_cli_manual_downloads(mew_service.fnv_tools, output_callback=print):
-                                print(f"{COLOR_WARNING}MEW manual downloads were not completed. Skipping MEW automation.{COLOR_RESET}")
-                            else:
-                                progress_callback, close_progress = create_vnv_cli_progress_callback(print)
-                                try:
-                                    automation_ran, mew_error = run_mew_automation_if_applicable(
-                                        modlist_name=modlist_name_for_mew,
-                                        modlist_install_location=install_path_mew,
-                                        game_root=None,  # Auto-detect from modlist structure.
-                                        appid=str(app_id) if app_id else None,
-                                        ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                                        progress_callback=progress_callback,
-                                        manual_file_callback=build_vnv_cli_manual_file_callback(mew_service.fnv_tools, output_callback=print),
-                                        confirmation_callback=lambda _description: True,
-                                    )
-                                finally:
-                                    close_progress()
-                                if automation_ran and not mew_error:
-                                    print(f"{COLOR_INFO}MEW post-install automation completed.{COLOR_RESET}")
-                                if mew_error:
-                                    print(f"{COLOR_WARNING}MEW automation encountered an error: {mew_error}{COLOR_RESET}")
-                                    print(f"{COLOR_INFO}You can complete these steps manually by following: https://mojaveexpressguide.com/docs/Installation{COLOR_RESET}")
-                        else:
-                            print(f"{COLOR_INFO}MEW automation skipped by user.{COLOR_RESET}")
-                except Exception as mew_err:
-                    self.logger.error("MEW post-install automation failed: %s", mew_err, exc_info=True)
-                    print(f"{COLOR_WARNING}MEW automation could not be completed. Check logs for details.{COLOR_RESET}")
+                except Exception as playbook_err:
+                    self.logger.error("Playbook automation failed: %s", playbook_err, exc_info=True)
+                    print(f"{COLOR_WARNING}Modlist post-install fixes could not be completed. Check logs for details.{COLOR_RESET}")
                 try:
                     # v0.4.0 contract: offer TTW flow for eligible FNV lists (e.g., Begin Again).
                     from jackify.backend.handlers.modlist_install_cli_ttw import prompt_ttw_if_eligible

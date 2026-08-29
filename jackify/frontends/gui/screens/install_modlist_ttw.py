@@ -26,9 +26,9 @@ class TTWIntegrationMixin:
             if game_type.lower() not in ['falloutnv', 'fallout new vegas', 'fallout_new_vegas']:
                 return False
 
-            # Check 2: Must be on whitelist
-            from jackify.backend.data.ttw_compatible_modlists import is_ttw_compatible
-            if not is_ttw_compatible(modlist_name):
+            # Check 2: Must be eligible per a matching playbook's offer_tool_flow step
+            from jackify.backend.services.playbook.hook_wiring import modlist_offers_tool_flow
+            if not modlist_offers_tool_flow(install_dir, modlist_name, "ttw_install"):
                 return False
 
             # Check 3: TTW must not already be installed
@@ -124,6 +124,21 @@ class TTWIntegrationMixin:
                 except Exception:
                     pass
 
+                # TTW needs the user to supply the installer file and destination - without an
+                # explicit interruption here, a user who has alt-tabbed away has no way to know
+                # Jackify is waiting on them, and installs have sat idle for an hour because of
+                # it. Deliberate focus steal, matching the existing Steam-restart pattern.
+                if hasattr(self, '_start_focus_reclaim_retries'):
+                    self._start_focus_reclaim_retries()
+                from jackify.frontends.gui.services.message_service import MessageService
+                MessageService.information(
+                    self,
+                    "Tale of Two Wastelands Setup Required",
+                    f"'{modlist_name}' requires Tale of Two Wastelands.\n\n"
+                    "Jackify needs you to provide the TTW installer file and installation "
+                    "directory on the screen behind this dialog before it can continue.",
+                )
+
         except Exception as e:
             logger.debug(f"ERROR: Failed to initiate TTW workflow: {e}")
             from jackify.frontends.gui.services.message_service import MessageService
@@ -167,10 +182,13 @@ class TTWIntegrationMixin:
             modlist_name = getattr(self, '_ttw_modlist_name', 'Unknown')
             game_name = "Fallout New Vegas"
 
-            # Check for VNV post-install automation after TTW installation
+            # Check for modlist post-install fixes (playbooks - VNV, etc.) after TTW installation
             vnv_automation_running = False
             if hasattr(self, '_ttw_install_dir') and hasattr(self, '_ttw_modlist_name'):
-                vnv_automation_running = self._check_and_run_vnv_automation(self._ttw_modlist_name, self._ttw_install_dir)
+                vnv_automation_running = self._check_and_run_playbook_automation(
+                    self._ttw_modlist_name, self._ttw_install_dir,
+                    appid=getattr(self, '_current_appid', None), game_type='falloutnv',
+                )
 
             if vnv_automation_running:
                 self._pending_success_dialog_params = {
@@ -198,6 +216,7 @@ class TTWIntegrationMixin:
                     'time_taken': time_str,
                     'game_name': game_name,
                     'enb_detected': False,
+                    'playbook_warnings': list(getattr(self._playbook_controller, 'last_failure_notices', None) or []) if hasattr(self, '_playbook_controller') else [],
                 },
             )
 

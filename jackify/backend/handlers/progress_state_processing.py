@@ -42,6 +42,7 @@ class ProgressStateProcessingMixin:
                 self._download_files_seen = {}
                 self._download_total_bytes = 0
                 self._download_processed_bytes = 0
+                self.parser._reset_download_totals()
 
             if previous_phase == InstallationPhase.VALIDATE and not parsed.data_info:
                 if self.state.data_total > 0:

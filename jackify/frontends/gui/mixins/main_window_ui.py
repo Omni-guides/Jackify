@@ -3,8 +3,15 @@ Main window UI setup mixin.
 Stacked widget, screens, bottom bar, screen change handling.
 
 Screens 1-9 are lazy-initialised: placeholder QWidgets are inserted at startup
-and swapped for real screens on first navigation.  Only index 0 (MainMenu) is
-created eagerly because it is always visible first.
+and swapped for real screens on first navigation. The Modlist Dashboard (index 12) is the
+app's home screen, shown on startup; MainMenu (index 0) is still built but no longer
+navigated to from anywhere - kept in place rather than deleted while the tabbed-navigation
+change beds in.
+
+A persistent AppHeader (logo banner + tab bar + separator, see widgets/app_header.py) sits
+above the stacked widget itself, visible only across the three tabbed destinations
+(Modlists/Additional Tasks/Tools Hub) so switching between them doesn't read as a full screen
+change - only the body below the header's separator line changes.
 """
 
 import logging
@@ -16,7 +23,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from jackify import __version__
-from jackify.frontends.gui.shared_theme import DEBUG_BORDERS
 from jackify.frontends.gui.widgets.feature_placeholder import FeaturePlaceholder
 
 logger = logging.getLogger(__name__)
@@ -38,8 +44,8 @@ class MainWindowUIMixin:
         self.main_menu = MainMenu(stacked_widget=self.stacked_widget, dev_mode=dev_mode)
         self.stacked_widget.addWidget(self.main_menu)          # index 0
 
-        # Indexes 1-11: insert lightweight placeholders now; real screens on demand.
-        for _ in range(11):
+        # Indexes 1-13: insert lightweight placeholders now; real screens on demand.
+        for _ in range(13):
             self.stacked_widget.addWidget(_LazyPlaceholder())
 
         # Factory map: index -> callable that creates and caches the real screen.
@@ -55,11 +61,17 @@ class MainWindowUIMixin:
             9: self._make_install_mo2_screen,
             10: self._make_third_party_tools_screen,
             11: self._make_configure_tool_config_screen,
+            12: self._make_modlist_dashboard_screen,
+            13: self._make_game_downgrade_screen,
         }
+
+        from jackify.frontends.gui.widgets.app_header import AppHeader
+        self._app_header = AppHeader(self.stacked_widget)
 
         self.stacked_widget.currentChanged.connect(self._lazy_init_screen)
         self.stacked_widget.currentChanged.connect(self._debug_screen_change)
         self.stacked_widget.currentChanged.connect(self._maintain_fullscreen_on_deck)
+        self.stacked_widget.currentChanged.connect(self._sync_app_header)
 
         bottom_bar = QWidget()
         bottom_bar_layout = QHBoxLayout()
@@ -67,10 +79,7 @@ class MainWindowUIMixin:
         bottom_bar_layout.setSpacing(0)
         bottom_bar.setLayout(bottom_bar_layout)
         bottom_bar.setFixedHeight(32)
-        bottom_bar_style = "background-color: #181818; border-top: 1px solid #222;"
-        if DEBUG_BORDERS:
-            bottom_bar_style += " border: 2px solid lime;"
-        bottom_bar.setStyleSheet(bottom_bar_style)
+        bottom_bar.setStyleSheet("background-color: #181818; border-top: 1px solid #222;")
 
         # Three-zone layout (left / center / right) with equal stretch factors on the
         # outer zones, so the center zone (Ko-fi) stays visually centered on the bar
@@ -114,13 +123,59 @@ class MainWindowUIMixin:
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+        main_layout.addWidget(self._app_header)
         main_layout.addWidget(self.stacked_widget)
         main_layout.addWidget(bottom_bar)
         self.stacked_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         central_widget.setLayout(main_layout)
         self.setCentralWidget(central_widget)
-        self.stacked_widget.setCurrentIndex(0)
+        self.stacked_widget.setCurrentIndex(12)  # Modlist Dashboard - the app's home screen
         self._check_protontricks_on_startup()
+        self._start_tools_update_check()
+
+    def _sync_app_header(self, index: int) -> None:
+        """Keep the persistent header visible only across the three tabbed destinations
+        (Modlists/Additional Tasks/Tools Hub), hidden on deeper workflow screens reached
+        from within them - and update which tab reads as active."""
+        from jackify.frontends.gui.widgets.app_header import AppHeader
+        if AppHeader.is_tabbed_index(index):
+            self._app_header.set_active(index)
+            self._app_header.setVisible(True)
+        else:
+            self._app_header.setVisible(False)
+
+    def _start_tools_update_check(self) -> None:
+        """Check installed tools/engines for updates at startup, independent of whether the
+        user has ever visited Tools Hub (that screen is lazily created on first visit) - so
+        the tab's attention dot is accurate from first launch rather than only appearing
+        after the user happens to open Tools Hub once."""
+        from jackify.backend.services.tool_registry import ToolRegistry
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+        from jackify.frontends.gui.screens.tools_hub_threads import VersionCheckThread
+
+        self._startup_tool_statuses = {
+            s.definition.tool_id: s for s in ToolRegistry().get_all_statuses()
+        }
+        logger.info(
+            "Startup tools update check: %s",
+            {tid: s.installed_version for tid, s in self._startup_tool_statuses.items()},
+        )
+        self._startup_version_thread = VersionCheckThread()
+        self._startup_version_thread.version_ready.connect(self._on_startup_tool_version_ready)
+        register_managed_thread(self._startup_version_thread)
+        self._startup_version_thread.start()
+
+    def _on_startup_tool_version_ready(self, tool_id: str, tag: str) -> None:
+        status = self._startup_tool_statuses.get(tool_id)
+        logger.info(
+            "Startup tools update check: %s latest=%s installed=%s",
+            tool_id, tag, status.installed_version if status else None,
+        )
+        if not status or not status.installed or not status.installed_version or tag == "unknown":
+            return
+        if tag.lstrip("v") != status.installed_version.lstrip("v"):
+            logger.info("Startup tools update check: flagging Tools Hub tab (%s has an update)", tool_id)
+            self._app_header.set_needs_attention(10, True)
 
     def _lazy_init_screen(self, index: int) -> None:
         """Swap placeholder at *index* for the real screen on first visit."""
@@ -163,10 +218,17 @@ class MainWindowUIMixin:
     def _make_additional_tasks_screen(self):
         from jackify.frontends.gui.screens import AdditionalTasksScreen
         screen = AdditionalTasksScreen(
-            stacked_widget=self.stacked_widget, main_menu_index=0,
+            stacked_widget=self.stacked_widget,
             system_info=self.system_info, install_mo2_screen_index=9,
+            game_downgrade_screen_index=13,
         )
         self.additional_tasks_screen = screen
+        return screen
+
+    def _make_game_downgrade_screen(self):
+        from jackify.frontends.gui.screens.game_downgrade_screen import GameDowngradeScreen
+        screen = GameDowngradeScreen(stacked_widget=self.stacked_widget, additional_tasks_index=3)
+        self.game_downgrade_screen = screen
         return screen
 
     def _make_install_modlist_screen(self):
@@ -244,9 +306,10 @@ class MainWindowUIMixin:
     def _make_third_party_tools_screen(self):
         from jackify.frontends.gui.screens.tools_hub import ToolsHubScreen
         screen = ToolsHubScreen(
-            stacked_widget=self.stacked_widget, main_menu_index=0, ttw_screen_index=5,
+            stacked_widget=self.stacked_widget, ttw_screen_index=5,
         )
         self.third_party_tools_screen = screen
+        self._app_header.add_action_widget(screen.update_all_button, tab_index=10)
         return screen
 
     def _make_configure_tool_config_screen(self):
@@ -255,6 +318,17 @@ class MainWindowUIMixin:
             stacked_widget=self.stacked_widget, additional_tasks_index=3,
         )
         self.configure_tool_config_screen = screen
+        return screen
+
+    def _make_modlist_dashboard_screen(self):
+        from jackify.frontends.gui.screens.modlist_dashboard import ModlistDashboardScreen
+        screen = ModlistDashboardScreen(
+            stacked_widget=self.stacked_widget, configure_existing_index=8,
+            dashboard_index=12, install_modlist_index=4, configure_new_index=6,
+        )
+        self.modlist_dashboard_screen = screen
+        self._app_header.add_action_widget(screen.refresh_button, tab_index=12)
+        self._app_header.add_action_widget(screen.check_updates_button, tab_index=12)
         return screen
 
     def _debug_screen_change(self, index):

@@ -226,7 +226,7 @@ class UlimitGuidanceDialog(QDialog):
             "Make sure you understand what each command does before running it."
         )
         warning_label.setWordWrap(True)
-        warning_label.setStyleSheet("background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 8px; border-radius: 4px; color: #856404;")
+        warning_label.setStyleSheet("background-color: #2d2323; border: 1px solid #f0c040; padding: 8px; border-radius: 4px; color: #f0c040;")
         commands_layout.addWidget(warning_label)
         
         # Command text

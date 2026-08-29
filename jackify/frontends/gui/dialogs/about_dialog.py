@@ -13,17 +13,31 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QGroupBox, QTextEdit, QApplication
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QGroupBox, QTextEdit, QApplication, QSizePolicy
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QClipboard
 
 from ....backend.models.configuration import SystemInfo
+from ....backend.services.update_service import UpdateInfo, UpdateService
 from .... import __version__
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
+from jackify.frontends.gui.screens.tools_hub_threads import JackifyUpdateCheckThread
+from jackify.frontends.gui.shared_theme import (
+    COLOR_BTN_BACK, COLOR_BTN_UPDATE as _C_UPDATE, GROUP_BOX_STYLE, JACKIFY_COLOR_BLUE, btn_style,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _update_btn_style() -> str:
+    return (
+        f"QPushButton {{ background-color: {_C_UPDATE}; color: white; border: none; "
+        f"border-radius: 4px; font-size: 12px; font-weight: bold; padding: 8px; }}"
+        f"QPushButton:hover {{ background-color: #5a6578; }}"
+        f"QPushButton:disabled {{ background-color: #333; color: #666; }}"
+    )
 
 
 class AboutDialog(ThreadLifecycleMixin, QDialog):
@@ -32,6 +46,11 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
     def __init__(self, system_info: SystemInfo, parent=None):
         super().__init__(parent)
         self.system_info = system_info
+        # Reuse the main window's UpdateService instance where available rather than
+        # creating a second one - it's the same one the launch-time auto-check already uses.
+        self._update_service = getattr(parent, "update_service", None) or UpdateService(__version__)
+        self._update_thread: Optional[JackifyUpdateCheckThread] = None
+        self._update_info: Optional[UpdateInfo] = None
 
         self.setup_ui()
         self.setup_connections()
@@ -40,7 +59,7 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
         """Set up the dialog UI."""
         self.setWindowTitle("About Jackify")
         self.setModal(True)
-        self.setFixedSize(520, 520)
+        self.setFixedSize(520, 560)
         
         layout = QVBoxLayout(self)
         
@@ -54,7 +73,7 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("color: #3fd0ea; margin: 10px;")
+        title_label.setStyleSheet(f"color: {JACKIFY_COLOR_BLUE}; margin: 10px;")
         header_layout.addWidget(title_label)
         
         subtitle_label = QLabel(f"v{__version__}")
@@ -74,6 +93,7 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
         
         # System Information Group
         system_group = QGroupBox("System Information")
+        system_group.setStyleSheet(GROUP_BOX_STYLE)
         system_layout = QVBoxLayout(system_group)
         
         system_info_text = self._get_system_info_text()
@@ -86,6 +106,7 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
         
         # Jackify Information Group
         jackify_group = QGroupBox("Jackify Information")
+        jackify_group.setStyleSheet(GROUP_BOX_STYLE)
         jackify_layout = QVBoxLayout(jackify_group)
         
         jackify_info_text = self._get_jackify_info_text()
@@ -94,30 +115,47 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
         jackify_layout.addWidget(jackify_info_label)
         
         layout.addWidget(jackify_group)
-        
+
+        layout.addSpacing(8)
+
+        # Jackify already checks for updates on launch and prompts automatically if one is
+        # found - this is a manual re-check, not a duplicate of that, so it doesn't fire on
+        # dialog open (that would mean an extra GitHub API call every time About is opened).
+        self.check_updates_button = QPushButton("Check for Updates")
+        self.check_updates_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.check_updates_button.setStyleSheet(_update_btn_style())
+        self.check_updates_button.clicked.connect(self._on_check_updates_clicked)
+        layout.addWidget(self.check_updates_button)
+
+        layout.addSpacing(8)
+
         # Buttons
         button_layout = QHBoxLayout()
 
         # Copy Info button
         copy_button = QPushButton("Copy Info")
+        copy_button.setStyleSheet(btn_style(COLOR_BTN_BACK, width=90))
         copy_button.clicked.connect(self.copy_system_info)
         button_layout.addWidget(copy_button)
-        
+
         # External links
         github_button = QPushButton("GitHub")
+        github_button.setStyleSheet(btn_style(COLOR_BTN_BACK, width=90))
         github_button.clicked.connect(self.open_github)
         button_layout.addWidget(github_button)
-        
+
         nexus_button = QPushButton("Nexus")
+        nexus_button.setStyleSheet(btn_style(COLOR_BTN_BACK, width=90))
         nexus_button.clicked.connect(self.open_nexus)
         button_layout.addWidget(nexus_button)
-        
+
         layout.addLayout(button_layout)
-        
+
         # Close button
         close_layout = QHBoxLayout()
         close_layout.addStretch()
         close_button = QPushButton("Close")
+        close_button.setStyleSheet(btn_style(COLOR_BTN_BACK, width=90))
         close_button.setDefault(True)
         close_button.clicked.connect(self.accept)
         close_layout.addWidget(close_button)
@@ -126,7 +164,34 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
     def setup_connections(self):
         """Set up signal connections."""
         pass
-    
+
+    def _on_check_updates_clicked(self):
+        if self._update_info:
+            self._open_update_dialog()
+            return
+        if self._update_thread and self._update_thread.isRunning():
+            return
+        self.check_updates_button.setEnabled(False)
+        self.check_updates_button.setText("Checking...")
+        self._update_thread = JackifyUpdateCheckThread(self._update_service)
+        self._update_thread.update_ready.connect(self._on_update_check_ready)
+        self._update_thread.start()
+
+    def _on_update_check_ready(self, update_info: Optional[UpdateInfo]):
+        self._update_info = update_info
+        self.check_updates_button.setEnabled(True)
+        if update_info:
+            self.check_updates_button.setText("Update Jackify")
+            self._open_update_dialog()
+        else:
+            self.check_updates_button.setText("Up to date")
+            QTimer.singleShot(2500, lambda: self.check_updates_button.setText("Check for Updates"))
+
+    def _open_update_dialog(self):
+        from jackify.frontends.gui.dialogs.update_dialog import UpdateDialog
+        dialog = UpdateDialog(self._update_info, self._update_service, self)
+        dialog.exec()
+
     def _get_system_info_text(self) -> str:
         """Get formatted system information."""
         try:
@@ -245,13 +310,13 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
             return "Unknown"
     
     def _get_engine_version(self) -> str:
-        """Get jackify-engine version."""
+        """Get the active install engine's version (jackify-engine or CLF3)."""
         try:
-            # Try to execute jackify-engine --version
-            engine_path = Path(__file__).parent.parent.parent.parent / "engine" / "jackify-engine"
-            if engine_path.exists():
+            from jackify.backend.services.engine_invoker import get_active_engine_path
+            engine_path_str = get_active_engine_path()
+            if engine_path_str and Path(engine_path_str).is_file():
                 from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
-                result = subprocess.run([str(engine_path), "--version"],
+                result = subprocess.run([engine_path_str, "--version"],
                                       capture_output=True, text=True, timeout=5, env=get_clean_subprocess_env())
                 if result.returncode == 0:
                     version = result.stdout.strip()
@@ -259,9 +324,9 @@ class AboutDialog(ThreadLifecycleMixin, QDialog):
                     if '+' in version:
                         version = version.split('+')[0]
                     return f"v{version}"
-            
+
             return "Unknown"
-            
+
         except Exception as e:
             logger.error(f"Error getting engine version: {e}")
             return "Unknown"

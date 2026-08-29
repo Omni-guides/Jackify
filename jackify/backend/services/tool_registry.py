@@ -12,7 +12,7 @@ import os
 import re
 import tarfile
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -95,7 +95,6 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
         tier=1,
         can_uninstall=True,
         is_engine=True,
-        include_prereleases=True,
     ),
     ToolDefinition(
         tool_id="ttw_installer",
@@ -107,7 +106,6 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
         tier=1,
         can_uninstall=True,
         can_launch=True,
-        pinned_version="0.2.0",  # must match TTW_INSTALLER_PINNED_VERSION in ttw_installer_handler.py
         nexus_mod_id=1657,
         nexus_file_filter="mpi",
     ),
@@ -180,13 +178,43 @@ def _load_disk_cache() -> Optional[List[ToolDefinition]]:
         with open(path, "r", encoding="utf-8") as fh:
             entries = json.load(fh)
         if isinstance(entries, list):
-            return _parse_manifest_entries(entries)
-    except Exception:
-        pass
+            return _parse_manifest_entries(entries, source="disk cache")
+    except FileNotFoundError:
+        logger.debug("No tool manifest disk cache at %s", path)
+    except Exception as e:
+        logger.warning("Tool manifest disk cache unreadable (%s): %s", path, e)
     return None
 
 
-def _parse_manifest_entries(entries: list) -> Optional[List[ToolDefinition]]:
+def _log_definition_overrides(definitions: List[ToolDefinition], source: str) -> None:
+    """Report where a manifest's definitions differ from the ones compiled into the code.
+
+    Overriding is the whole point of the manifest system, so a difference is not an error and
+    this is INFO, not a warning. Without it the override is completely invisible: a stale
+    remote value silently beats a corrected code value, and the only symptom is the Tools Hub
+    displaying something inexplicable. TTW's pinned_version sat wrong this way for months.
+    """
+    code_defs = {d.tool_id: d for d in TOOL_DEFINITIONS}
+    for defn in definitions:
+        base = code_defs.get(defn.tool_id)
+        if base is None:
+            logger.info("Tool manifest (%s) defines a tool absent from code: %s",
+                        source, defn.tool_id)
+            continue
+        for f in dataclass_fields(ToolDefinition):
+            manifest_value = getattr(defn, f.name)
+            code_value = getattr(base, f.name)
+            if manifest_value != code_value:
+                logger.info(
+                    "Tool manifest (%s) overrides %s.%s: code=%r manifest=%r",
+                    source, defn.tool_id, f.name, code_value, manifest_value,
+                )
+    missing = set(code_defs) - {d.tool_id for d in definitions}
+    for tool_id in sorted(missing):
+        logger.info("Tool manifest (%s) omits tool defined in code: %s", source, tool_id)
+
+
+def _parse_manifest_entries(entries: list, source: str = "unknown") -> Optional[List[ToolDefinition]]:
     definitions = []
     for entry in entries:
         try:
@@ -210,7 +238,10 @@ def _parse_manifest_entries(entries: list) -> Optional[List[ToolDefinition]]:
             ))
         except (KeyError, TypeError) as e:
             logger.warning("Skipping malformed manifest entry: %s", e)
-    return definitions if definitions else None
+    if not definitions:
+        return None
+    _log_definition_overrides(definitions, source)
+    return definitions
 
 
 def _load_bundled_manifest() -> Optional[List[ToolDefinition]]:
@@ -219,9 +250,9 @@ def _load_bundled_manifest() -> Optional[List[ToolDefinition]]:
             entries = json.load(fh)
         if not isinstance(entries, list):
             return None
-        return _parse_manifest_entries(entries)
+        return _parse_manifest_entries(entries, source="bundled")
     except Exception as e:
-        logger.debug("Bundled manifest load failed: %s", e)
+        logger.warning("Bundled tool manifest load failed, falling back to code definitions: %s", e)
         return None
 
 
@@ -237,9 +268,9 @@ def fetch_remote_manifest() -> Optional[List[ToolDefinition]]:
         if not isinstance(entries, list):
             return None
         _save_disk_cache(entries)
-        return _parse_manifest_entries(entries)
+        return _parse_manifest_entries(entries, source="remote")
     except Exception as e:
-        logger.debug("Tool manifest fetch failed: %s", e)
+        logger.warning("Tool manifest fetch failed, using cached or bundled definitions: %s", e)
         return None
 
 
@@ -619,7 +650,7 @@ class ToolRegistry:
         if defn.hidden:
             return False, f"{defn.display_name} is not available for install"
         if tool_id == "ttw_installer":
-            return self._install_ttw()
+            return self._install_ttw(version)
 
         install_dir = TOOLS_BASE_DIR / tool_id
         install_dir.mkdir(parents=True, exist_ok=True)
@@ -876,7 +907,7 @@ class ToolRegistry:
             binary_path=binary_path,
         )
 
-    def _install_ttw(self) -> Tuple[bool, str]:
+    def _install_ttw(self, version: Optional[str] = None) -> Tuple[bool, str]:
         """Delegate TTW install to the existing handler, installing into the tools directory."""
         try:
             from jackify.backend.handlers.ttw_installer_handler import TTWInstallerHandler
@@ -890,7 +921,7 @@ class ToolRegistry:
             )
             install_dir = TOOLS_BASE_DIR / "ttw_installer"
             install_dir.mkdir(parents=True, exist_ok=True)
-            ok, msg = handler.install_ttw_installer(install_dir=install_dir)
+            ok, msg = handler.install_ttw_installer(install_dir=install_dir, version=version)
             if ok:
                 version = cfg.get("ttw_installer_version") or "unknown"
                 exe_path = _find_executable(_TOOL_MAP["ttw_installer"], install_dir)

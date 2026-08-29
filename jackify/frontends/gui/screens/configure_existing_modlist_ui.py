@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, QTimer
 import os
 import subprocess
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import set_responsive_minimum
 from jackify.frontends.gui.widgets.progress_indicator import OverallProgressIndicator
 from jackify.frontends.gui.widgets.file_progress_list import FileProgressList
@@ -24,7 +24,6 @@ class ConfigureExistingModlistUIMixin:
         self.main_menu_index = main_menu_index
         from jackify.backend.models.configuration import SystemInfo
         self.system_info = system_info or SystemInfo(is_steamdeck=False)
-        self.debug = DEBUG_BORDERS
         self.refresh_paths()
         
         # --- Detect Steam Deck ---
@@ -46,6 +45,7 @@ class ConfigureExistingModlistUIMixin:
         self.mo2_shortcuts = []
         self._shortcuts_loaded = False
         self._shortcut_loader = None  # Thread for async shortcut loading
+        self._pending_appid_to_select = None  # Set by request_select_appid() (Dashboard prefill)
 
         # Initialize progress reporting components
         self.progress_indicator = OverallProgressIndicator(show_progress_bar=True)
@@ -68,8 +68,6 @@ class ConfigureExistingModlistUIMixin:
         main_overall_vbox = QVBoxLayout(self)
         main_overall_vbox.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         main_overall_vbox.setContentsMargins(50, 50, 50, 0)  # No bottom margin
-        if self.debug:
-            self.setStyleSheet("border: 2px solid magenta;")
         # --- Header (title, description) ---
         header_layout = QVBoxLayout()
         header_layout.setSpacing(1)  # Reduce spacing between title and description
@@ -90,9 +88,6 @@ class ConfigureExistingModlistUIMixin:
         header_widget = QWidget()
         header_widget.setLayout(header_layout)
         header_widget.setMaximumHeight(75)  # Match other screens
-        if self.debug:
-            header_widget.setStyleSheet("border: 2px solid pink;")
-            header_widget.setToolTip("HEADER_SECTION")
         main_overall_vbox.addWidget(header_widget)
         # --- Upper section: shortcut selector (left) + process monitor (right) ---
         upper_hbox = QHBoxLayout()
@@ -136,9 +131,12 @@ class ConfigureExistingModlistUIMixin:
         form_grid.addWidget(shortcut_label, 0, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
         form_grid.addLayout(shortcut_hbox, 0, 1)
         # --- Info message under shortcut selector ---
-        info_label = QLabel("<span style='color:#aaa'>If you don't see your modlist entry in this list, please ensure you have added it to Steam as a non-steam game, set a proton version in properties, and have started the modlist Steam entry at least once. You can also click the refresh button (↻) to update the list.</span>")
-        info_label.setWordWrap(True)
-        form_grid.addWidget(info_label, 1, 0, 1, 2)
+        # Numbered guidance when empty, short one-liner once modlists are listed - text is
+        # kept in sync with self.mo2_shortcuts by _update_shortcut_info_label().
+        self.shortcut_info_label = QLabel()
+        self.shortcut_info_label.setWordWrap(True)
+        form_grid.addWidget(self.shortcut_info_label, 1, 0, 1, 2)
+        self._update_shortcut_info_label()
         # --- Resolution selector ---
         resolution_label = QLabel("Resolution:")
         self.resolution_combo = QComboBox()
@@ -176,22 +174,16 @@ class ConfigureExistingModlistUIMixin:
         form_section_widget.setLayout(form_grid)
         form_section_widget.setMinimumHeight(160)  # Reduced to match compact form
         form_section_widget.setMaximumHeight(240)  # Increased to show resolution dropdown
-        if self.debug:
-            form_section_widget.setStyleSheet("border: 2px solid blue;")
-            form_section_widget.setToolTip("FORM_SECTION")
         user_config_vbox.addWidget(form_section_widget)
         btn_row = QHBoxLayout()
         btn_row.setAlignment(Qt.AlignHCenter)
         self.start_btn = QPushButton("Start Configuration")
         btn_row.addWidget(self.start_btn)
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.cancel_and_cleanup)
-        btn_row.addWidget(cancel_btn)
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.cancel_and_cleanup)
+        btn_row.addWidget(self.cancel_btn)
         user_config_widget = QWidget()
         user_config_widget.setLayout(user_config_vbox)
-        if self.debug:
-            user_config_widget.setStyleSheet("border: 2px solid orange;")
-            user_config_widget.setToolTip("USER_CONFIG_WIDGET")
         # Right: Tabbed interface with Activity and Process Monitor
         # Both tabs are always available, user can switch between them
         self.process_monitor = QTextEdit()
@@ -210,9 +202,6 @@ class ConfigureExistingModlistUIMixin:
         process_monitor_widget = QWidget()
         process_monitor_widget.setLayout(process_vbox)
         process_monitor_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        if self.debug:
-            process_monitor_widget.setStyleSheet("border: 2px solid purple;")
-            process_monitor_widget.setToolTip("PROCESS_MONITOR")
         self.process_monitor_widget = process_monitor_widget
 
         # Set up File Progress List (Activity tab)
@@ -225,9 +214,6 @@ class ConfigureExistingModlistUIMixin:
         self.activity_tabs.setContentsMargins(0, 0, 0, 0)
         self.activity_tabs.setDocumentMode(False)
         self.activity_tabs.setTabPosition(QTabWidget.North)
-        if self.debug:
-            self.activity_tabs.setStyleSheet("border: 2px solid cyan;")
-            self.activity_tabs.setToolTip("ACTIVITY_TABS")
 
         # Add both widgets as tabs
         self.activity_tabs.addTab(self.file_progress_list, "Activity")
@@ -241,9 +227,6 @@ class ConfigureExistingModlistUIMixin:
         # Use Fixed size policy for consistent height
         upper_section_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         upper_section_widget.setMaximumHeight(280)  # Increased to show resolution dropdown
-        if self.debug:
-            upper_section_widget.setStyleSheet("border: 2px solid green;")
-            upper_section_widget.setToolTip("UPPER_SECTION")
         main_overall_vbox.addWidget(upper_section_widget)
 
         # Status banner with progress indicator and "Show details" toggle
@@ -267,20 +250,13 @@ class ConfigureExistingModlistUIMixin:
         self.console.setMaximumHeight(1000)
         self.console.setFontFamily('monospace')
         self.console.setVisible(False)  # Hidden by default (compact mode)
-        if self.debug:
-            self.console.setStyleSheet("border: 2px solid yellow;")
-            self.console.setToolTip("CONSOLE")
 
         # Set up scroll tracking for professional auto-scroll behavior
         self._setup_scroll_tracking()
 
-        # Wrap button row in widget for debug borders
         btn_row_widget = QWidget()
         btn_row_widget.setLayout(btn_row)
         btn_row_widget.setMaximumHeight(50)
-        if self.debug:
-            btn_row_widget.setStyleSheet("border: 2px solid red;")
-            btn_row_widget.setToolTip("BUTTON_ROW")
 
         # Create a container that holds console + button row with proper spacing
         console_and_buttons_widget = QWidget()
@@ -294,9 +270,6 @@ class ConfigureExistingModlistUIMixin:
         console_and_buttons_widget.setLayout(console_and_buttons_layout)
         console_and_buttons_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         console_and_buttons_widget.setFixedHeight(50)  # Lock to button row height when console is hidden
-        if self.debug:
-            console_and_buttons_widget.setStyleSheet("border: 2px solid lightblue;")
-            console_and_buttons_widget.setToolTip("CONSOLE_AND_BUTTONS_CONTAINER")
         # Add without stretch to prevent squashing upper section
         main_overall_vbox.addWidget(console_and_buttons_widget)
 

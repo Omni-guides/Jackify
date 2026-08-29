@@ -510,6 +510,7 @@ class InstallerThread(QThread):
                     env_vars['NEXUS_OAUTH_CLIENT_ID'] = NexusOAuthService.CLIENT_ID
                 if writeback_path:
                     env_vars['JACKIFY_TOKEN_WRITEBACK'] = writeback_path
+                env_vars['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = "1"
             env = get_clean_subprocess_env(env_vars)
 
             # Install-time resource preflight: keep this visible in workflow output so

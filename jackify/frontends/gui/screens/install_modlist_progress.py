@@ -9,6 +9,7 @@ from jackify.backend.utils.nexus_premium_detector import is_non_premium_indicato
 import time
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 class ProgressHandlersMixin:
@@ -109,7 +110,7 @@ class ProgressHandlersMixin:
             bsa_percent = (progress_state.bsa_building_current / progress_state.bsa_building_total) * 100.0
             progress_state.overall_percent = min(99.0, bsa_percent)  # Cap at 99% until fully complete
 
-        # CRITICAL: Detect stalled downloads (0.0MB/s for extended period)
+        # Detect stalled downloads (0.0MB/s for extended period)
         # Catch silent token refresh failures or network issues
         # IMPORTANT: Only check during DOWNLOAD phase, not during VALIDATE phase
         # Validation checks existing files and shows 0.0MB/s, which is expected behavior
@@ -324,10 +325,6 @@ class ProgressHandlersMixin:
             return
         elif progress_state.active_files:
             self._stop_clf3_decompress_pulse()
-            if self.debug:
-                logger.debug(f"Updating file progress list with {len(progress_state.active_files)} files")
-                for fp in progress_state.active_files:
-                    logger.debug(f"  - {fp.filename}: {fp.percent:.1f}% ({fp.operation.value})")
             # Pass phase label to update header (e.g., "[Activity - Downloading]")
             # Explicitly clear summary_info when showing file list
             try:
@@ -335,14 +332,10 @@ class ProgressHandlersMixin:
             except RuntimeError as e:
                 # Widget was deleted - ignore to prevent coredump
                 if "already deleted" in str(e):
-                    if self.debug:
-                        logger.debug(f"Ignoring widget deletion error: {e}")
                     return
                 raise
             except Exception as e:
                 # Catch any other exceptions to prevent coredump
-                if self.debug:
-                    logger.debug(f"Error updating file progress list: {e}")
                 import logging
                 logging.getLogger(__name__).error(f"Error updating file progress list: {e}", exc_info=True)
         else:
@@ -383,6 +376,25 @@ class ProgressHandlersMixin:
             self._clf3_decompress_timer = None
         self._clf3_decompress_label = None
 
+    def _record_install_failure(self, failure_reason: str) -> None:
+        """JackifyDB failure record - isolated try/except since a data-collection call must
+        never affect the (already failing) install flow."""
+        try:
+            thread = getattr(self, 'install_thread', None)
+            from jackify import __version__ as _jackify_version
+            from jackify.backend.services.jackify_db import gather_environment_fields, record_event
+            event = "update_completed" if getattr(self, "_is_update_install", False) else "install_completed"
+            record_event(
+                event, "failure",
+                game_type=getattr(self, '_current_game_type', None),
+                install_mode=getattr(thread, 'install_mode', 'online') if thread else None,
+                jackify_version=_jackify_version, failure_phase="install",
+                failure_reason=failure_reason,
+                **gather_environment_fields(),
+            )
+        except Exception as e:
+            logger.debug(f"JackifyDB failure record skipped: {e}")
+
     def on_installation_finished(self, success, message):
         """Handle installation completion"""
         self._stop_clf3_decompress_pulse()
@@ -416,15 +428,64 @@ class ProgressHandlersMixin:
                 thread = getattr(self, 'install_thread', None)
                 if thread and getattr(thread, 'install_dir', None) and getattr(thread, 'modlist_name', None):
                     modlist_version = None
+                    machine_url = None
+                    gallery_image_path = None
                     if getattr(thread, 'install_mode', 'online') == 'online':
                         info = getattr(self, 'selected_modlist_info', None) or {}
                         modlist_version = info.get('version')
+                        machine_url = info.get('machine_url')
+                        gallery_image_path = info.get('gallery_image_path')
+                        if not modlist_version:
+                            logger.warning(
+                                "No version in selected_modlist_info for %r at install "
+                                "completion (keys present: %s) - Dashboard will show Unknown "
+                                "Version for this install.",
+                                thread.modlist_name, list(info.keys()),
+                            )
+                    else:
+                        # File-mode install: thread.modlist is the exact local .wabbajack path
+                        # the user selected, so its own declared Version is ground truth -
+                        # unlike a gallery lookup, which only ever knows the current public
+                        # release, not what this specific archive was actually built from.
+                        wabbajack_path = getattr(thread, 'modlist', None)
+                        if wabbajack_path and str(wabbajack_path).endswith('.wabbajack') and os.path.isfile(wabbajack_path):
+                            from jackify.backend.handlers.wabbajack_parser import WabbajackParser
+                            modlist_version = WabbajackParser().parse_wabbajack_version(Path(wabbajack_path))
                     write_modlist_meta(
                         thread.install_dir,
                         thread.modlist_name,
                         getattr(self, '_current_game_type', None),
                         install_mode=getattr(thread, 'install_mode', 'online'),
                         modlist_version=modlist_version,
+                    )
+                    from jackify.backend.services.install_registry import register_install, compute_install_id
+                    import datetime as _datetime
+                    from jackify import __version__ as _jackify_version_for_registry
+                    register_install(
+                        thread.install_dir,
+                        thread.modlist_name,
+                        game_type=getattr(self, '_current_game_type', None),
+                        installed_version=modlist_version,
+                        machine_url=machine_url,
+                        install_date=_datetime.datetime.now().isoformat(timespec="seconds"),
+                        jackify_version=_jackify_version_for_registry,
+                    )
+                    if gallery_image_path:
+                        try:
+                            from jackify.backend.services.dashboard_images import save_image_from_path
+                            save_image_from_path(compute_install_id(thread.install_dir), gallery_image_path)
+                        except Exception as _img_err:
+                            logger.debug(f"Dashboard image save skipped: {_img_err}")
+                    from jackify import __version__ as _jackify_version
+                    from jackify.backend.services.jackify_db import gather_environment_fields, record_event
+                    event = "update_completed" if getattr(self, "_is_update_install", False) else "install_completed"
+                    record_event(
+                        event, "success",
+                        modlist_name=thread.modlist_name, modlist_version=modlist_version,
+                        game_type=getattr(self, '_current_game_type', None),
+                        install_mode=getattr(thread, 'install_mode', 'online'),
+                        jackify_version=_jackify_version,
+                        **gather_environment_fields(),
                     )
             except Exception as _meta_err:
                 logger.debug(f"Modlist meta write skipped: {_meta_err}")
@@ -452,6 +513,7 @@ class ProgressHandlersMixin:
                 logger.info("Installation cancelled by user")
                 if self.show_details_checkbox.isChecked():
                     self._safe_append_text("\nInstallation cancelled by user.")
+                self._record_install_failure("user_cancelled")
                 # Use a distinct non-success code and let process_finished route this
                 # through the cancellation UX path (not failure path).
                 self.process_finished(130, QProcess.NormalExit)
@@ -469,6 +531,13 @@ class ProgressHandlersMixin:
             logger.error(f"Installation failed: {message}")
             if self.show_details_checkbox.isChecked():
                 self._safe_append_text(f"\nError: {message}")
+            if self._premium_failure_active:
+                failure_reason = "download_failed"
+            elif getattr(self.install_thread, 'last_error', None):
+                failure_reason = "engine_crash"
+            else:
+                failure_reason = "unknown"
+            self._record_install_failure(failure_reason)
             self.process_finished(1, QProcess.CrashExit)  # Simulate error
 
     def process_finished(self, exit_code, exit_status):
@@ -535,9 +604,10 @@ class ProgressHandlersMixin:
                     reply = QMessageBox.Yes  # Simulate user clicking Yes
                 else:
                     # Show the normal install complete dialog for supported games
+                    from jackify.shared.messages import STEAM_RESTART_WARNING
                     reply = MessageService.question(
                         self, "Modlist Install Complete!",
-                        "Modlist install complete!\n\nWould you like to add this modlist to Steam and configure it now? Steam will restart, closing any game you have open!",
+                        f"Modlist install complete!\n\nWould you like to add this modlist to Steam and configure it now? {STEAM_RESTART_WARNING}",
                         critical=False,  # Non-critical, won't steal focus
                         safety_level="medium",
                     )

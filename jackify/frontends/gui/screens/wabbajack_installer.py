@@ -24,7 +24,7 @@ from jackify.backend.services.automated_prefix_service import AutomatedPrefixSer
 from jackify.shared.errors import wabbajack_install_failed
 from ..dialogs.existing_setup_dialog import prompt_existing_setup_dialog
 from ..services.message_service import MessageService
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from .screen_focus_reclaim import FocusReclaimMixin, STEAM_RESTART_SENTINEL
 from ..utils import set_responsive_minimum, browse_directory
 from ..widgets.file_progress_list import FileProgressList
@@ -101,7 +101,6 @@ class WabbajackInstallerScreen(ThreadLifecycleMixin, ScreenBackMixin, FocusRecla
         self.main_menu_index = additional_tasks_index
         self.additional_tasks_index = additional_tasks_index
         self.system_info = system_info or SystemInfo(is_steamdeck=False)
-        self.debug = DEBUG_BORDERS
 
         self.install_folder = None
         self.shortcut_name = "Wabbajack"
@@ -133,8 +132,6 @@ class WabbajackInstallerScreen(ThreadLifecycleMixin, ScreenBackMixin, FocusRecla
         main_layout.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         main_layout.setContentsMargins(50, 50, 50, 0)
         main_layout.setSpacing(12)
-        if self.debug:
-            self.setStyleSheet("border: 2px solid magenta;")
 
         # Header
         self._setup_header(main_layout)
@@ -301,8 +298,6 @@ class WabbajackInstallerScreen(ThreadLifecycleMixin, ScreenBackMixin, FocusRecla
         self.console.setMaximumHeight(1000)
         self.console.setFontFamily('monospace')
         self.console.setVisible(False)
-        if self.debug:
-            self.console.setStyleSheet("border: 2px solid yellow;")
 
         # Set up scroll tracking for professional auto-scroll behavior
         self._setup_scroll_tracking()

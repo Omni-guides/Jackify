@@ -465,7 +465,7 @@ def run_cli_manual_download_phase(
     concurrent_limit: int = 2,
 ) -> bool:
     """
-    Entry point called from modlist_service_installation when the engine emits
+    Entry point called from modlist_operations_configuration_cli when the engine emits
     a manual_download_list_complete event. Blocks until done.
     """
     flow = CliManualDownloadFlow(

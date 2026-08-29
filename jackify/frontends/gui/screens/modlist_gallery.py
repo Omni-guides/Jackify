@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QFrame, QSizePolicy, QDialog, QTextEdit, QTextBrowser, QMessageBox, QListWidget
 )
 from PySide6.QtCore import Qt, Signal, QSize, QThread, QUrl, QTimer, QObject
-from PySide6.QtGui import QPixmap, QFont, QPainter, QColor, QTextOption, QPalette
+from PySide6.QtGui import QPixmap, QFont, QPainter, QTextOption
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from pathlib import Path
 from typing import List, Optional, Dict
@@ -37,11 +37,7 @@ class ModlistGalleryDialog(ModlistGalleryFiltersMixin, ModlistGalleryLoadingMixi
         super().__init__(parent)
         self.setWindowTitle("Select Modlist")
         self.setModal(True)
-        self.setAutoFillBackground(True)
-        palette = self.palette()
-        palette.setColor(QPalette.Window, QColor("#111111"))
-        self.setPalette(palette)
-        
+
         # Detect Steam Deck
         from jackify.backend.services.platform_detection_service import PlatformDetectionService
         platform_service = PlatformDetectionService.get_instance()
@@ -141,7 +137,7 @@ class ModlistGalleryDialog(ModlistGalleryFiltersMixin, ModlistGalleryLoadingMixi
 
     def _update_grid(self):
         """Update grid by removing all cards and re-adding only visible ones"""
-        # CRITICAL: Guard against race condition - don't update if cards aren't ready yet
+        # Guard against race condition - don't update if cards aren't ready yet
         if not self.all_cards:
             return
         
@@ -150,7 +146,7 @@ class ModlistGalleryDialog(ModlistGalleryFiltersMixin, ModlistGalleryLoadingMixi
         
         try:
             # Remove all cards from layout
-            # CRITICAL FIX: Properly remove all widgets to prevent overlapping
+            # Properly remove all widgets to prevent overlapping
             # Iterate backwards to avoid index shifting issues
             for i in range(self.grid_layout.count() - 1, -1, -1):
                 item = self.grid_layout.takeAt(i)

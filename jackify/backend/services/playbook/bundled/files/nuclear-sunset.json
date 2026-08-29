@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "playbook_id": "nuclear-sunset",
+  "revision": 1,
+  "display_name": "Nuclear Sunset",
+  "summary": "Post-install steps from the Nuclear Sunset Linux guide.",
+  "reference_url": "https://nuclearsunset.com/docs/main/linux/",
+  "maintainer": "omni",
+  "created": "2026-08-27",
+  "match": {
+    "name_contains": ["nuclear sunset"],
+    "game_types": ["Fallout New Vegas"]
+  },
+  "confirm": {
+    "any": [
+      { "type": "file_exists", "path": "{modlist_dir}/ModOrganizer.exe" },
+      { "type": "file_exists", "path": "{modlist_dir}/files/ModOrganizer.exe" }
+    ]
+  },
+  "hook": "post_configure",
+  "intro": "Jackify can automatically perform the following post-install steps:",
+  "outro": "Jackify will download the required tools automatically where possible.\nIf you are not a Nexus Premium member, you will be prompted to\nmanually download any tools that cannot be fetched automatically.",
+  "steps": [
+    {
+      "id": "stock-copy",
+      "label": "Copy vanilla New Vegas files into a clean Stock folder",
+      "type": "copy_files",
+      "source": "{game_root}",
+      "dest": "{modlist_dir}/[NoDelete] Stock New Vegas",
+      "merge": true,
+      "completed_when": { "type": "file_exists", "path": "{modlist_dir}/[NoDelete] Stock New Vegas/FalloutNV.exe" },
+      "on_failure": "abort_playbook"
+    },
+    {
+      "id": "remove-d3d9",
+      "label": "Remove bundled DXVK d3d9.dll from the Stock folder",
+      "type": "delete_file",
+      "path": "{modlist_dir}/[NoDelete] Stock New Vegas/d3d9.dll",
+      "completed_when": { "type": "file_absent", "path": "{modlist_dir}/[NoDelete] Stock New Vegas/d3d9.dll" }
+    },
+    {
+      "id": "remove-dxvk-conf",
+      "label": "Remove dxvk.conf from the Stock folder",
+      "type": "delete_file",
+      "path": "{modlist_dir}/[NoDelete] Stock New Vegas/dxvk.conf",
+      "completed_when": { "type": "file_absent", "path": "{modlist_dir}/[NoDelete] Stock New Vegas/dxvk.conf" }
+    },
+    {
+      "id": "offer-ttw",
+      "label": "Offer Tale of Two Wastelands installation",
+      "type": "offer_tool_flow",
+      "flow": "ttw_install",
+      "hook": "post_install"
+    },
+    {
+      "id": "4gb-patch",
+      "label": "Download and run Linux 4GB patcher",
+      "type": "run_catalog_tool",
+      "tool": "fnv-4gb-patcher-stock-copy",
+      "cwd": "{modlist_dir}/[NoDelete] Stock New Vegas",
+      "completed_when": { "type": "file_exists", "path": "{modlist_dir}/[NoDelete] Stock New Vegas/FalloutNV_backup.exe" },
+      "on_failure": "abort_playbook"
+    }
+  ]
+}

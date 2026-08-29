@@ -1,5 +1,5 @@
 """
-Settings dialog tab creation: General and Advanced tabs.
+Settings dialog tab creation: General, Nexus Account, Install Engine, Automation & Data tabs.
 """
 
 import os
@@ -9,23 +9,25 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox,
     QComboBox, QGroupBox, QFormLayout, QGridLayout, QSpinBox, QRadioButton, QButtonGroup,
-    QToolButton
+    QToolButton, QDialog
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
+
+from jackify.frontends.gui.shared_theme import COLOR_BTN_BACK, GROUP_BOX_STYLE, btn_style
 
 logger = logging.getLogger(__name__)
 
 
 class SettingsDialogTabsMixin:
-    """Mixin providing _create_general_tab and _create_advanced_tab for SettingsDialog."""
+    """Mixin providing tab-creation methods for SettingsDialog."""
 
     def _create_general_tab(self):
         general_tab = QWidget()
         general_layout = QVBoxLayout(general_tab)
 
         dir_group = QGroupBox("Directory Paths")
-        dir_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        dir_group.setStyleSheet(GROUP_BOX_STYLE)
         dir_layout = QFormLayout()
         dir_group.setLayout(dir_layout)
         self.install_dir_edit = QLineEdit(self.config_handler.get("modlist_install_base_dir", ""))
@@ -72,44 +74,26 @@ class SettingsDialogTabsMixin:
         general_layout.addWidget(dir_group)
         general_layout.addSpacing(12)
 
-        proton_group = QGroupBox("Proton Version Settings")
-        proton_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-        proton_layout = QVBoxLayout()
-        proton_group.setLayout(proton_layout)
-        install_proton_layout = QHBoxLayout()
-        self.install_proton_dropdown = QComboBox()
-        self.install_proton_dropdown.setToolTip("Proton version for modlist installation and texture processing (requires fast Proton)")
-        self.install_proton_dropdown.setMinimumWidth(200)
-        install_refresh_btn = QPushButton("\u21BB")
-        install_refresh_btn.setFixedSize(30, 30)
-        install_refresh_btn.setToolTip("Refresh install Proton version list")
-        install_refresh_btn.clicked.connect(self._refresh_install_proton_dropdown)
-        install_proton_layout.addWidget(QLabel("Install Proton:"))
-        install_proton_layout.addWidget(self.install_proton_dropdown)
-        install_proton_layout.addWidget(install_refresh_btn)
-        install_proton_layout.addStretch()
-        game_proton_layout = QHBoxLayout()
-        self.game_proton_dropdown = QComboBox()
-        self.game_proton_dropdown.setToolTip("Proton version for game shortcuts (can be any Proton 9+)")
-        self.game_proton_dropdown.setMinimumWidth(200)
-        game_refresh_btn = QPushButton("\u21BB")
-        game_refresh_btn.setFixedSize(30, 30)
-        game_refresh_btn.setToolTip("Refresh game Proton version list")
-        game_refresh_btn.clicked.connect(self._refresh_game_proton_dropdown)
-        game_proton_layout.addWidget(QLabel("Game Proton:"))
-        game_proton_layout.addWidget(self.game_proton_dropdown)
-        game_proton_layout.addWidget(game_refresh_btn)
-        game_proton_layout.addStretch()
-        proton_layout.addLayout(install_proton_layout)
-        proton_layout.addLayout(game_proton_layout)
-        self._populate_install_proton_dropdown()
-        self._populate_game_proton_dropdown()
-        general_layout.addWidget(proton_group)
-        general_layout.addSpacing(12)
+        debug_group = QGroupBox("Enable Debug")
+        debug_group.setStyleSheet(GROUP_BOX_STYLE)
+        debug_layout = QVBoxLayout()
+        debug_group.setLayout(debug_layout)
+        self.debug_checkbox = QCheckBox("Enable debug mode (requires restart)")
+        self.debug_checkbox.setChecked(self.config_handler.get('debug_mode', False))
+        self.debug_checkbox.setToolTip("Enable verbose debug logging. Requires Jackify restart to take effect.")
+        self.debug_checkbox.setStyleSheet("color: #fff;")
+        debug_layout.addWidget(self.debug_checkbox)
+        general_layout.addWidget(debug_group)
+        general_layout.addStretch()
+        self.tab_widget.addTab(general_tab, "General")
+
+    def _create_nexus_tab(self):
+        nexus_tab = QWidget()
+        nexus_layout = QVBoxLayout(nexus_tab)
 
         from jackify.frontends.gui.services.message_service import MessageService
-        oauth_group = QGroupBox("Nexus Authentication")
-        oauth_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        oauth_group = QGroupBox("OAuth Authentication")
+        oauth_group.setStyleSheet(GROUP_BOX_STYLE)
         oauth_layout = QVBoxLayout()
         oauth_group.setLayout(oauth_layout)
         oauth_status_layout = QHBoxLayout()
@@ -124,27 +108,11 @@ class SettingsDialogTabsMixin:
         oauth_status_layout.addStretch()
         oauth_layout.addLayout(oauth_status_layout)
         self._update_oauth_status()
-        general_layout.addWidget(oauth_group)
-        general_layout.addSpacing(12)
+        nexus_layout.addWidget(oauth_group)
+        nexus_layout.addSpacing(12)
 
-        debug_group = QGroupBox("Enable Debug")
-        debug_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-        debug_layout = QVBoxLayout()
-        debug_group.setLayout(debug_layout)
-        self.debug_checkbox = QCheckBox("Enable debug mode (requires restart)")
-        self.debug_checkbox.setChecked(self.config_handler.get('debug_mode', False))
-        self.debug_checkbox.setToolTip("Enable verbose debug logging. Requires Jackify restart to take effect.")
-        self.debug_checkbox.setStyleSheet("color: #fff;")
-        debug_layout.addWidget(self.debug_checkbox)
-        general_layout.addWidget(debug_group)
-        general_layout.addStretch()
-        self.tab_widget.addTab(general_tab, "General")
-
-    def _create_advanced_tab(self):
-        advanced_tab = QWidget()
-        advanced_layout = QVBoxLayout(advanced_tab)
-        auth_group = QGroupBox("Nexus Authentication")
-        auth_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        auth_group = QGroupBox("API Key (Legacy)")
+        auth_group.setStyleSheet(GROUP_BOX_STYLE)
         auth_layout = QVBoxLayout()
         auth_group.setLayout(auth_layout)
         api_layout = QHBoxLayout()
@@ -167,15 +135,104 @@ class SettingsDialogTabsMixin:
         api_layout.addWidget(self.api_show_btn)
         api_layout.addWidget(clear_api_btn)
         auth_layout.addLayout(api_layout)
-        advanced_layout.addWidget(auth_group)
-        advanced_layout.addSpacing(12)
+        nexus_layout.addWidget(auth_group)
+        nexus_layout.addStretch()
+        self.tab_widget.addTab(nexus_tab, "Nexus Account")
 
+    def _create_engine_tab(self):
+        engine_tab = QWidget()
+        engine_layout = QVBoxLayout(engine_tab)
+
+        proton_group = QGroupBox("Proton Version Settings")
+        proton_group.setStyleSheet(GROUP_BOX_STYLE)
+        proton_layout = QVBoxLayout()
+        proton_group.setLayout(proton_layout)
+        install_proton_layout = QHBoxLayout()
+        self.install_proton_dropdown = QComboBox()
+        self.install_proton_dropdown.setToolTip("Proton version for modlist installation and texture processing (requires fast Proton)")
+        self.install_proton_dropdown.setMinimumWidth(200)
+        install_refresh_btn = QPushButton("↻")
+        install_refresh_btn.setFixedSize(30, 30)
+        install_refresh_btn.setToolTip("Refresh install Proton version list")
+        install_refresh_btn.clicked.connect(self._refresh_install_proton_dropdown)
+        install_proton_layout.addWidget(QLabel("Install Proton:"))
+        install_proton_layout.addWidget(self.install_proton_dropdown)
+        install_proton_layout.addWidget(install_refresh_btn)
+        install_proton_layout.addStretch()
+        game_proton_layout = QHBoxLayout()
+        self.game_proton_dropdown = QComboBox()
+        self.game_proton_dropdown.setToolTip("Proton version for game shortcuts (can be any Proton 9+)")
+        self.game_proton_dropdown.setMinimumWidth(200)
+        game_refresh_btn = QPushButton("↻")
+        game_refresh_btn.setFixedSize(30, 30)
+        game_refresh_btn.setToolTip("Refresh game Proton version list")
+        game_refresh_btn.clicked.connect(self._refresh_game_proton_dropdown)
+        game_proton_layout.addWidget(QLabel("Game Proton:"))
+        game_proton_layout.addWidget(self.game_proton_dropdown)
+        game_proton_layout.addWidget(game_refresh_btn)
+        game_proton_layout.addStretch()
+        proton_layout.addLayout(install_proton_layout)
+        proton_layout.addLayout(game_proton_layout)
+        self._populate_install_proton_dropdown()
+        self._populate_game_proton_dropdown()
+        engine_layout.addWidget(proton_group)
+        engine_layout.addSpacing(12)
+
+        install_engine_group = QGroupBox("Install Engine")
+        install_engine_group.setStyleSheet(GROUP_BOX_STYLE)
+        install_engine_layout = QVBoxLayout()
+        install_engine_group.setLayout(install_engine_layout)
+
+        self.clf3_default_checkbox = QCheckBox("Use CLF3 as default install engine")
+        self.clf3_default_checkbox.setToolTip(
+            "Use CLF3 (SulfurNitride) as the default engine for all installs. "
+            "CLF3 will be downloaded automatically if not already installed. "
+            "You can still override this per-install on the Install screen."
+        )
+        self.clf3_default_checkbox.setStyleSheet("color: #fff;")
+        try:
+            from jackify.backend.services.tool_registry import get_active_engine_id
+            self.clf3_default_checkbox.setChecked(get_active_engine_id() == "clf3")
+        except Exception:
+            pass
+        install_engine_layout.addWidget(self.clf3_default_checkbox)
+
+        install_engine_layout.addWidget(QLabel("Wine Components Installation:"))
+        self.component_method_group = QButtonGroup()
+        component_method_layout = QVBoxLayout()
+        current_method = self.config_handler.get('component_installation_method', 'native')
+        if current_method == 'bundled_protontricks':
+            current_method = 'system_protontricks'
+        self.native_radio = QRadioButton("Native (Default)")
+        self.native_radio.setChecked(current_method == 'native')
+        self.native_radio.setToolTip(
+            "Install components directly, without winetricks or protontricks, falling back to "
+            "bundled winetricks only for the handful of components not yet supported natively."
+        )
+        self.component_method_group.addButton(self.native_radio, 0)
+        component_method_layout.addWidget(self.native_radio)
+        self.winetricks_radio = QRadioButton("Winetricks")
+        self.winetricks_radio.setChecked(current_method == 'winetricks')
+        self.winetricks_radio.setToolTip("Use bundled winetricks for every component, bypassing the native installer entirely.")
+        self.component_method_group.addButton(self.winetricks_radio, 1)
+        component_method_layout.addWidget(self.winetricks_radio)
+        self.protontricks_radio = QRadioButton("Protontricks")
+        self.protontricks_radio.setChecked(current_method == 'system_protontricks')
+        self.protontricks_radio.setToolTip(
+            "Use system-installed protontricks (flatpak or native) for every component, "
+            "bypassing the native installer entirely."
+        )
+        self.component_method_group.addButton(self.protontricks_radio, 2)
+        component_method_layout.addWidget(self.protontricks_radio)
+        install_engine_layout.addLayout(component_method_layout)
+        engine_layout.addWidget(install_engine_group)
+        engine_layout.addSpacing(12)
 
         self.resource_settings_path = os.path.expanduser("~/.config/jackify/resource_settings.json")
         self.resource_settings = self._load_json(self.resource_settings_path)
         self.resource_edits = {}
         resource_group = QGroupBox("Resource Limits")
-        resource_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
+        resource_group.setStyleSheet(GROUP_BOX_STYLE)
         resource_outer_layout = QVBoxLayout()
         resource_group.setLayout(resource_outer_layout)
         if not self.resource_settings:
@@ -253,40 +310,18 @@ class SettingsDialogTabsMixin:
                 self.bandwidth_spin = None
             resource_grid.setColumnStretch(5, 1)
             resource_outer_layout.addLayout(resource_grid)
-        advanced_layout.addWidget(resource_group)
+        engine_layout.addWidget(resource_group)
+        engine_layout.addStretch()
+        self.tab_widget.addTab(engine_tab, "Install Engine")
 
-        component_group = QGroupBox("Advanced Tool Options")
-        component_group.setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 6px; margin-top: 8px; padding: 8px; background: #23282d; } QGroupBox:title { subcontrol-origin: margin; left: 10px; padding: 0 3px 0 3px; font-weight: bold; color: #fff; }")
-        component_layout = QVBoxLayout()
-        component_group.setLayout(component_layout)
-        component_layout.addWidget(QLabel("Wine Components Installation:"))
-        self.component_method_group = QButtonGroup()
-        component_method_layout = QVBoxLayout()
-        current_method = self.config_handler.get('component_installation_method', 'native')
-        if current_method == 'bundled_protontricks':
-            current_method = 'system_protontricks'
-        self.native_radio = QRadioButton("Native (Default)")
-        self.native_radio.setChecked(current_method == 'native')
-        self.native_radio.setToolTip(
-            "Install components directly, without winetricks or protontricks, falling back to "
-            "bundled winetricks only for the handful of components not yet supported natively."
-        )
-        self.component_method_group.addButton(self.native_radio, 0)
-        component_method_layout.addWidget(self.native_radio)
-        self.winetricks_radio = QRadioButton("Winetricks")
-        self.winetricks_radio.setChecked(current_method == 'winetricks')
-        self.winetricks_radio.setToolTip("Use bundled winetricks for every component, bypassing the native installer entirely.")
-        self.component_method_group.addButton(self.winetricks_radio, 1)
-        component_method_layout.addWidget(self.winetricks_radio)
-        self.protontricks_radio = QRadioButton("Protontricks")
-        self.protontricks_radio.setChecked(current_method == 'system_protontricks')
-        self.protontricks_radio.setToolTip(
-            "Use system-installed protontricks (flatpak or native) for every component, "
-            "bypassing the native installer entirely."
-        )
-        self.component_method_group.addButton(self.protontricks_radio, 2)
-        component_method_layout.addWidget(self.protontricks_radio)
-        component_layout.addLayout(component_method_layout)
+    def _create_automation_tab(self):
+        automation_tab = QWidget()
+        automation_layout = QVBoxLayout(automation_tab)
+
+        automation_group = QGroupBox("Install/Configure Automation")
+        automation_group.setStyleSheet(GROUP_BOX_STYLE)
+        automation_group_layout = QVBoxLayout()
+        automation_group.setLayout(automation_group_layout)
 
         self.auto_tool_compat_checkbox = QCheckBox("Apply tool compatibility settings during install/configure")
         self.auto_tool_compat_checkbox.setChecked(self.config_handler.get('auto_tool_compat', True))
@@ -296,7 +331,60 @@ class SettingsDialogTabsMixin:
             "noticeable delay."
         )
         self.auto_tool_compat_checkbox.setStyleSheet("color: #fff;")
-        component_layout.addWidget(self.auto_tool_compat_checkbox)
+        automation_group_layout.addWidget(self.auto_tool_compat_checkbox)
+
+        self.usvfs_linux_fix_checkbox = QCheckBox("Apply USVFS Linux fix during install/configure")
+        self.usvfs_linux_fix_checkbox.setChecked(self.config_handler.get('usvfs_linux_fix', True))
+        self.usvfs_linux_fix_checkbox.setToolTip(
+            "Replace MO2's usvfs_x64.dll with a build patched for Wine, cutting initial "
+            "load time by roughly 12-45% depending on the modlist, hardware and Wine/Proton "
+            "configuration. Only applies to Skyrim and Fallout 4 modlists (including VR) "
+            "at this time. Disabling this affects new installs and configures only - "
+            "modlists already patched are left as they are."
+        )
+        self.usvfs_linux_fix_checkbox.setStyleSheet("color: #fff;")
+        automation_group_layout.addWidget(self.usvfs_linux_fix_checkbox)
+
+        self.playbooks_enabled_checkbox = QCheckBox("Apply modlist fixes from the community registry")
+        self.playbooks_enabled_checkbox.setChecked(self.config_handler.get('playbooks_enabled', True))
+        self.playbooks_enabled_checkbox.setToolTip(
+            "Automatically apply known per-modlist fixes (e.g. VNV/MEW post-install steps) "
+            "published in Jackify's community registry, at the end of every configure workflow. "
+            "Disable to skip this entirely and behave exactly as before this feature existed."
+        )
+        self.playbooks_enabled_checkbox.setStyleSheet("color: #fff;")
+        automation_group_layout.addWidget(self.playbooks_enabled_checkbox)
+        automation_layout.addWidget(automation_group)
+        automation_layout.addSpacing(12)
+
+        data_group = QGroupBox("Data & Updates")
+        data_group.setStyleSheet(GROUP_BOX_STYLE)
+        data_group_layout = QVBoxLayout()
+        data_group.setLayout(data_group_layout)
+
+        self.jackify_db_enabled_checkbox = QCheckBox("Record anonymous install/configure history locally")
+        self.jackify_db_enabled_checkbox.setChecked(self.config_handler.get('jackify_db_enabled', True))
+        self.jackify_db_enabled_checkbox.setToolTip(
+            "Keep a local, anonymous record of install/configure outcomes (modlist name, game "
+            "type, Proton version, distro, success/failure) in your Jackify data directory. "
+            "Nothing is ever sent anywhere - this is local history only, kept for a future "
+            "compatibility database you would separately choose to contribute to. No file "
+            "paths, usernames, or Nexus account details are ever recorded."
+        )
+        self.jackify_db_enabled_checkbox.setStyleSheet("color: #fff;")
+        data_group_layout.addWidget(self.jackify_db_enabled_checkbox)
+
+        jackify_db_btn_row = QHBoxLayout()
+        view_data_btn = QPushButton("View Recorded Data")
+        view_data_btn.setStyleSheet(btn_style(COLOR_BTN_BACK, width=140))
+        view_data_btn.clicked.connect(self._on_view_jackify_db)
+        jackify_db_btn_row.addWidget(view_data_btn)
+        delete_data_btn = QPushButton("Delete Recorded Data")
+        delete_data_btn.setStyleSheet(btn_style(COLOR_BTN_BACK, width=140))
+        delete_data_btn.clicked.connect(self._on_delete_jackify_db)
+        jackify_db_btn_row.addWidget(delete_data_btn)
+        jackify_db_btn_row.addStretch()
+        data_group_layout.addLayout(jackify_db_btn_row)
 
         self.force_github_updates_checkbox = QCheckBox("Use GitHub as update source (bypass Nexus CDN)")
         self.force_github_updates_checkbox.setChecked(self.config_handler.get('force_github_updates', False))
@@ -306,22 +394,50 @@ class SettingsDialogTabsMixin:
             "Nexus delivers a .7z archive that Jackify must extract."
         )
         self.force_github_updates_checkbox.setStyleSheet("color: #fff;")
-        component_layout.addWidget(self.force_github_updates_checkbox)
+        data_group_layout.addWidget(self.force_github_updates_checkbox)
 
-        self.clf3_default_checkbox = QCheckBox("Use CLF3 as default install engine")
-        self.clf3_default_checkbox.setToolTip(
-            "Use CLF3 (SulfurNitride) as the default engine for all installs. "
-            "CLF3 will be downloaded automatically if not already installed. "
-            "You can still override this per-install on the Install screen."
+        automation_layout.addWidget(data_group)
+        automation_layout.addStretch()
+        self.tab_widget.addTab(automation_tab, "Automation && Data")
+
+    def _on_view_jackify_db(self):
+        from jackify.backend.services.jackify_db import load_records
+        from jackify.frontends.gui.services.message_service import MessageService
+        import json as _json
+
+        records = load_records()
+        if not records:
+            MessageService.information(self, "Recorded Data", "No data has been recorded yet.")
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Recorded Data ({len(records)} records)")
+        dialog.setMinimumSize(600, 400)
+        layout = QVBoxLayout()
+        from PySide6.QtWidgets import QTextEdit
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setLineWrapMode(QTextEdit.NoWrap)
+        text.setPlainText("\n\n".join(_json.dumps(r, indent=2) for r in records))
+        text.setStyleSheet("background-color: #1a1a1a; color: #ccc; font-family: monospace; font-size: 11px;")
+        layout.addWidget(text)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def _on_delete_jackify_db(self):
+        from jackify.backend.services.jackify_db import delete_all_records
+        from jackify.frontends.gui.services.message_service import MessageService
+        from PySide6.QtWidgets import QMessageBox
+
+        reply = MessageService.question(
+            self, "Delete Recorded Data",
+            "Delete all locally recorded install/configure history?\n\nThis cannot be undone.",
+            safety_level="low",
         )
-        self.clf3_default_checkbox.setStyleSheet("color: #fff;")
-        try:
-            from jackify.backend.services.tool_registry import get_active_engine_id
-            self.clf3_default_checkbox.setChecked(get_active_engine_id() == "clf3")
-        except Exception:
-            pass
-        component_layout.addWidget(self.clf3_default_checkbox)
-
-        advanced_layout.addWidget(component_group)
-        advanced_layout.addStretch()
-        self.tab_widget.addTab(advanced_tab, "Advanced")
+        if reply != QMessageBox.Yes:
+            return
+        delete_all_records()
+        MessageService.information(self, "Recorded Data", "Recorded data deleted.")

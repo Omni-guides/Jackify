@@ -27,7 +27,15 @@ def main():
 def handle_nxm_url(url: str) -> None:
     """Handle an nxm:// launch: hand off to running instance or open the app."""
     from PySide6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+        # A fresh QApplication here means Jackify wasn't already running - main.py's own
+        # startup (which normally applies this) never ran, so this standalone dialog would
+        # otherwise render with the platform's default (often light) palette instead of
+        # Jackify's own theme.
+        from jackify.frontends.gui.shared_theme import apply_dark_palette
+        apply_dark_palette(app)
 
     from jackify.backend.services.nxm_ipc import send_to_running_instance
     if send_to_running_instance(url):

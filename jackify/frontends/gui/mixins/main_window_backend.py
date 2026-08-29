@@ -75,3 +75,6 @@ class MainWindowBackendMixin:
                     logger.debug(f"Manual increase instructions available for {instructions['distribution']}")
         except Exception as e:
             logger.warning(f"Error applying resource limits: {e}")
+
+        from jackify.backend.services.engine_invoker import ensure_resource_settings_file
+        ensure_resource_settings_file()

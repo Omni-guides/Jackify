@@ -318,6 +318,7 @@ class FileProgressList(QWidget):
             percent=progress,
             current_size=0,
             total_size=0,
+            stable_key=item_id,
         )
         self.update_files([file_progress], current_phase=None)
 
@@ -380,6 +381,8 @@ class FileProgressList(QWidget):
 
     @staticmethod
     def _stable_key(fp: FileProgress) -> str:
+        if fp.stable_key:
+            return fp.stable_key
         if 'Installing Files:' in fp.filename:
             return "__installing_files__"
         if 'Converting Texture:' in fp.filename:

@@ -11,12 +11,10 @@ from pathlib import Path
 from ..models.modlist import ModlistContext, ModlistInfo
 from ..models.configuration import SystemInfo
 
-from .modlist_service_installation import ModlistServiceInstallationMixin
-
 logger = logging.getLogger(__name__)
 
 
-class ModlistService(ModlistServiceInstallationMixin):
+class ModlistService:
     """Service for managing modlist operations."""
     
     def __init__(self, system_info: SystemInfo):
@@ -260,71 +258,21 @@ class ModlistService(ModlistServiceInstallationMixin):
             }
             
             debug_callback(f"Configuration context built: {config_context}")
-            debug_callback("Setting up GUI mode and stdout redirection")
-            
-            # Set GUI mode for proper callback handling
-            import os
-            original_gui_mode = os.environ.get('JACKIFY_GUI_MODE')
-            original_stdout = None
-            
+
             from ..handlers.subprocess_utils import suspend_baloo, resume_baloo
             suspend_baloo()
             try:
-                # Force GUI mode to prevent input prompts
-                os.environ['JACKIFY_GUI_MODE'] = '1'
-                
-                # CRITICAL FIX: Redirect print output to capture progress messages
-                import sys
-                from io import StringIO
-                
-                # Create a custom stdout that forwards to GUI
-                class GuiRedirectStdout:
-                    def __init__(self, callback):
-                        self.callback = callback
-                        self.buffer = ""
-                        
-                    def write(self, text):
-                        if self.callback and text.strip():
-                            # Convert ANSI codes to HTML for colored GUI output
-                            try:
-                                from ...frontends.gui.utils import ansi_to_html
-                                # Clean up carriage returns but preserve ANSI colors
-                                clean_text = text.replace('\r', '').strip()
-                                if clean_text and clean_text != "Current Task: ":
-                                    # Convert ANSI to HTML for colored display
-                                    html_text = ansi_to_html(clean_text)
-                                    self.callback(html_text)
-                            except ImportError:
-                                # Fallback: strip ANSI codes if ansi_to_html not available
-                                import re
-                                clean_text = re.sub(r'\x1b\[[0-9;]*[mK]', '', text)
-                                clean_text = clean_text.replace('\r', '').strip()
-                                if clean_text and clean_text != "Current Task: ":
-                                    self.callback(clean_text)
-                        return len(text)
-                        
-                    def flush(self):
-                        pass
-                
-                # Redirect stdout to capture print statements
-                if progress_callback:
-                    original_stdout = sys.stdout
-                    sys.stdout = GuiRedirectStdout(progress_callback)
-                
                 # Call the working configuration-only method
                 debug_callback("Calling run_modlist_configuration_phase")
-                success = modlist_menu.run_modlist_configuration_phase(config_context)
+                success = modlist_menu.run_modlist_configuration_phase(
+                    config_context, status_callback=progress_callback, gui_mode=True
+                )
                 debug_callback(f"Configuration phase result: {success}")
                 context.steam_restart_needed = config_context.get('steam_restart_needed', False)
                 context.mounts_app_name = config_context.get('mounts_app_name', '')
                 context.mounts_exe_path = config_context.get('mounts_exe_path', '')
                 context.mounts_dl_path = config_context.get('mounts_dl_path', '')
 
-                # Restore stdout before ENB detection and completion callback
-                if original_stdout:
-                    sys.stdout = original_stdout
-                    original_stdout = None
-                
                 # Configure ENB for Linux compatibility (non-blocking)
                 # Do this BEFORE completion callback so we can pass detection status
                 enb_detected = False
@@ -361,15 +309,7 @@ class ModlistService(ModlistServiceInstallationMixin):
                 
             finally:
                 resume_baloo()
-                # Always restore stdout and environment
-                if original_stdout:
-                    sys.stdout = original_stdout
-                    
-                if original_gui_mode is not None:
-                    os.environ['JACKIFY_GUI_MODE'] = original_gui_mode
-                else:
-                    os.environ.pop('JACKIFY_GUI_MODE', None)
-                
+
                 # Remove GUI log handler to avoid memory leaks
                 if gui_log_handler:
                     for logger_name in [
@@ -407,91 +347,24 @@ class ModlistService(ModlistServiceInstallationMixin):
             
             return False
 
-    def configure_modlist(self, context: ModlistContext,
-                         progress_callback=None,
-                         completion_callback=None,
-                         output_callback=None) -> bool:
-        """Configure a modlist after installation.
-
-        Args:
-            context: Modlist context
-            progress_callback: Optional callback for progress updates
-            completion_callback: Optional callback for completion
-            output_callback: Optional callback for output/logging
-
-        Returns:
-            True if configuration successful, False otherwise
-        """
-        logger.info(f"Configuring modlist: {context.name}")
-        
-        try:
-            # Use the working ModlistMenuHandler for configuration
-            from ..handlers.menu_handler import ModlistMenuHandler
-            from ..handlers.config_handler import ConfigHandler
-            
-            config_handler = ConfigHandler()
-            modlist_menu = ModlistMenuHandler(config_handler)
-            
-            # Build configuration context
-            config_context = {
-                'name': context.name,
-                'path': str(context.install_dir),
-                'mo2_exe_path': str(context.install_dir / 'ModOrganizer.exe'),
-                'resolution': getattr(context, 'resolution', None),
-                'skip_confirmation': True,
-                'appid': getattr(context, 'app_id', None),
-                'download_dir': str(context.download_dir) if getattr(context, 'download_dir', None) else None,
-            }
-
-            # DEBUG: Log what resolution we're passing
-            logger.info(f"config_context resolution = {config_context['resolution']}")
-            logger.info(f"context.resolution = {getattr(context, 'resolution', 'NOT_SET')}")
-            
-            # Run the complete configuration phase
-            success = modlist_menu.run_modlist_configuration_phase(config_context)
-            
-            if success:
-                logger.info("Modlist configuration completed successfully")
-                if completion_callback:
-                    completion_callback(True, "Core configuration complete", context.name, False)
-            else:
-                logger.warning("Modlist configuration had issues")
-                if completion_callback:
-                    completion_callback(False, "Configuration failed", context.name, False)
-                
-            return success
-            
-        except Exception as e:
-            logger.error(f"Failed to configure modlist {context.name}: {e}")
-            return False
-    
     def _validate_install_context(self, context: ModlistContext) -> bool:
         """Validate that the installation context is complete and valid.
-        
+
         Args:
             context: The context to validate
-            
+
         Returns:
             True if valid, False otherwise
         """
-        if not context.name:
-            logger.error("Modlist name is required")
-            return False
-        
-        if not context.install_dir:
-            logger.error("Install directory is required")
-            return False
-        
-        if not context.download_dir:
-            logger.error("Download directory is required")
-            return False
-        
-        if not context.nexus_api_key:
-            logger.error("Nexus API key is required")
-            return False
-        
-        if not context.game_type:
-            logger.error("Game type is required")
-            return False
-        
-        return True 
+        from jackify.backend.services.install_validation import validate_install_request
+        issues = validate_install_request(
+            modlist_name=context.name,
+            install_dir=str(context.install_dir) if context.install_dir else None,
+            download_dir=str(context.download_dir) if context.download_dir else None,
+            nexus_api_key=context.nexus_api_key,
+            game_type=context.game_type,
+        )
+        errors = [i for i in issues if i.severity == 'error']
+        for issue in errors:
+            logger.error(issue.message)
+        return not errors

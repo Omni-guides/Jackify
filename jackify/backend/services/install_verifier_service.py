@@ -47,3 +47,9 @@ def run_install_verification(pfx: Path, modlist_dir: Path, game_type: str, appid
     except Exception as e:
         logger.warning("Install verifier failed: %s", e, exc_info=True)
         raise
+
+
+def new_results():
+    """A fresh, empty Results object - for callers (e.g. playbook failure notices) that need to
+    report warnings alongside verification even when the verifier itself didn't run."""
+    return _load_verifier().Results()

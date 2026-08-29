@@ -18,8 +18,21 @@ class ScreenBackMixin:
     Optional: show_details_checkbox, _toggle_console_visibility (for collapse).
     """
 
+    def request_return_target(self, index):
+        """
+        One-shot override for the next go_back() call, then cleared.
+
+        Lets a screen reachable from more than one place (e.g. Configure Existing from both
+        the Modlist Tasks menu and the Lifecycle Dashboard) return to wherever it was actually
+        opened from instead of always landing on main_menu_index. The caller that navigates
+        here via the *normal* route must clear any stale override left over from a previous
+        visit via the special route - see modlist_tasks.py's configure_existing_modlist branch.
+        """
+        self._return_target_override = index
+
     def go_back(self):
-        """Navigate back to main menu and request main window collapse."""
+        """Navigate back to main menu (or a one-shot override target) and request main window
+        collapse."""
         self.resize_request.emit("collapse")
         try:
             main_window = self.window()
@@ -29,7 +42,9 @@ class ScreenBackMixin:
         except Exception:
             pass
         if getattr(self, "stacked_widget", None) is not None:
-            self.stacked_widget.setCurrentIndex(self.main_menu_index)
+            target = getattr(self, "_return_target_override", None)
+            self._return_target_override = None
+            self.stacked_widget.setCurrentIndex(target if target is not None else self.main_menu_index)
 
     def collapse_show_details_before_leave(self):
         """

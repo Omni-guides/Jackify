@@ -28,12 +28,11 @@
     "display_name": "TTW Linux Installer",
     "description": "Automates Tale of Two Wastelands installation on Linux. Required for the TTW workflow.",
     "github_repo": "SulfurNitride/TTW_Linux_Installer",
-    "asset_patterns": ["mpi-installer-linux.*\\.(zip|tar\\.gz)"],
-    "executable_names": ["mpi_installer"],
+    "asset_patterns": ["universal-mpi-installer.*\\.(zip|tar\\.gz)"],
+    "executable_names": ["mpi_installer", "ttw_linux_gui"],
     "tier": 1,
     "can_uninstall": true,
     "can_launch": true,
-    "pinned_version": "0.2.0",
     "nexus_mod_id": 1657,
     "nexus_game_domain": "site",
     "nexus_file_filter": "mpi"
@@ -52,5 +51,17 @@
     "nexus_game_domain": "site",
     "nexus_file_filter": null,
     "hidden": false
+  },
+  {
+    "tool_id": "jackify-game-downgrader",
+    "display_name": "Game Version Downgrader",
+    "description": "Downgrades a Steam install of Skyrim SE or Fallout 4 to an older, script-extender-compatible build.",
+    "github_repo": "Omni-guides/JackifyGameDowngrader",
+    "asset_patterns": ["JackifyGameDowngrader.*\\.zip"],
+    "executable_names": ["jackify-game-downgrader"],
+    "tier": 1,
+    "can_uninstall": true,
+    "is_engine": false,
+    "can_launch": false
   }
 ]

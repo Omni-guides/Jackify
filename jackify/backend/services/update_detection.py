@@ -26,6 +26,58 @@ def normalize_modlist_name(value: Optional[str]) -> str:
     return " ".join((value or "").strip().lower().split())
 
 
+def _default_candidate_result() -> dict:
+    return {
+        "eligible": False,
+        "reason": "unknown",
+        "requested_version": None,
+        "installed_version": None,
+        "version_relation": "unknown",
+        "installed_name": None,
+    }
+
+
+def compare_installed_version(
+    modlist_name: str,
+    install_dir: str,
+    requested_version: Optional[str] = None,
+) -> dict:
+    """
+    Version-comparison half of evaluate_update_candidate(), usable without a resolved Steam
+    appid. Extracted for the Lifecycle Dashboard, which wants this comparison for every
+    registered install regardless of whether it has a matched shortcut yet - see
+    docs/0.8_work/modlist_lifecycle_dashboard.md section 4.
+    """
+    from jackify.backend.utils.modlist_meta import read_modlist_meta
+
+    result = _default_candidate_result()
+
+    meta = read_modlist_meta(install_dir)
+    if not meta:
+        result["reason"] = "missing_meta"
+        return result
+
+    installed_name = (meta.get("modlist_name") or "").strip()
+    result["installed_name"] = installed_name
+
+    if normalize_modlist_name(installed_name) != normalize_modlist_name(modlist_name):
+        result["reason"] = "modlist_name_mismatch"
+        return result
+
+    installed_version = normalize_version_token(meta.get("modlist_version"))
+    result["requested_version"] = requested_version
+    result["installed_version"] = installed_version
+
+    if requested_version and installed_version:
+        result["version_relation"] = (
+            "same" if requested_version == installed_version else "different"
+        )
+
+    result["eligible"] = True
+    result["reason"] = "eligible"
+    return result
+
+
 def evaluate_update_candidate(
     modlist_name: str,
     install_dir: str,
@@ -44,45 +96,13 @@ def evaluate_update_candidate(
     Returns:
         (eligible, result_dict) where eligible is True when update mode is safe to offer.
     """
-    from jackify.backend.utils.modlist_meta import read_modlist_meta
-
-    result: dict = {
-        "eligible": False,
-        "reason": "unknown",
-        "requested_version": None,
-        "installed_version": None,
-        "version_relation": "unknown",
-        "installed_name": None,
-    }
-
     if not existing_appid:
+        result = _default_candidate_result()
         result["reason"] = "missing_shortcut_appid"
         return False, result
 
-    meta = read_modlist_meta(install_dir)
-    if not meta:
-        result["reason"] = "missing_meta"
-        return False, result
-
-    installed_name = (meta.get("modlist_name") or "").strip()
-    result["installed_name"] = installed_name
-
-    if normalize_modlist_name(installed_name) != normalize_modlist_name(modlist_name):
-        result["reason"] = "modlist_name_mismatch"
-        return False, result
-
-    installed_version = normalize_version_token(meta.get("modlist_version"))
-    result["requested_version"] = requested_version
-    result["installed_version"] = installed_version
-
-    if requested_version and installed_version:
-        result["version_relation"] = (
-            "same" if requested_version == installed_version else "different"
-        )
-
-    result["eligible"] = True
-    result["reason"] = "eligible"
-    return True, result
+    result = compare_installed_version(modlist_name, install_dir, requested_version)
+    return result["eligible"], result
 
 
 def find_existing_shortcut_appid(modlist_name: str, install_dir: str) -> Optional[str]:

@@ -41,7 +41,8 @@ class FileProgress:
     total_size: int = 0  # Total bytes (0 if unknown)
     speed: float = -1.0  # Bytes per second (-1 = not provided by engine)
     last_update: float = field(default_factory=time.time)
-    
+    stable_key: Optional[str] = None  # explicit identity for callers whose filename/label changes every update
+
     def __post_init__(self):
         """Ensure percent is in valid range."""
         self.percent = max(0.0, min(100.0, self.percent))
@@ -313,7 +314,7 @@ class InstallationProgress:
                 return 0.0
             return max(0.0, self.speeds.get(op_key, 0.0))
 
-        # CRITICAL FIX: Use aggregate speeds from engine status lines
+        # Use aggregate speeds from engine status lines
         # The engine reports accurate total speeds in lines like:
         # "[00:00:10] Downloading Mod Archives (17/214) - 6.8MB/s"
         # These aggregate speeds are stored in self.speeds dict and are the source of truth

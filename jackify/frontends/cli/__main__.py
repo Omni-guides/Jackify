@@ -30,6 +30,11 @@ root_logger.info("Jackify %s starting (CLI)", jackify_version)
 def terminate_children(signum, frame):
     """Signal handler to terminate child processes on exit"""
     print("Received signal, shutting down...")
+    try:
+        from jackify.backend.handlers.subprocess_utils import kill_all_registered_process_groups
+        kill_all_registered_process_groups()
+    except Exception:
+        pass
     sys.exit(0)
 
 def main():

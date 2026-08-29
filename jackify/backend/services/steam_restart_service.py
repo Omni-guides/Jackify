@@ -48,7 +48,7 @@ def _get_clean_subprocess_env():
     env = os.environ.copy()
     bundle_vars_removed = []
     
-    # CRITICAL: Preserve display/session variables that Steam GUI needs
+    # Preserve display/session variables that Steam GUI needs
     # These MUST be kept for Steam to open its GUI window
     gui_vars_to_preserve = [
         'DISPLAY', 'WAYLAND_DISPLAY', 'XDG_SESSION_TYPE', 'DBUS_SESSION_BUS_ADDRESS',
@@ -423,6 +423,105 @@ def start_steam(is_steamdeck_flag=None, is_flatpak_flag=None, env_override=None,
         logger.error(f"Error starting Steam: {e}")
         return False
 
+
+def start_steam_and_wait(
+    is_steamdeck_flag: Optional[bool] = None,
+    is_flatpak_flag: Optional[bool] = None,
+    env_override=None,
+    strategy: str = STRATEGY_JACKIFY,
+    progress_callback: Optional[Callable[[str], None]] = None,
+) -> bool:
+    """Start Steam and block until steamwebhelper has stayed detected for 10+ seconds.
+
+    start_steam() alone returns as soon as the process is merely detected (~5s after launch,
+    well before Steam is actually usable) - callers that declare their own work "done" off
+    that alone can finish and surface a result to the user before Steam is really back. This
+    is the same wait loop robust_steam_restart() uses for its own restart phase, factored out
+    so a caller that must shut Steam down and start it back up around its own work (not an
+    atomic close-then-reopen, which robust_steam_restart() already covers) gets the same
+    stability guarantee instead of a bespoke, weaker check.
+    """
+    env = env_override if env_override is not None else _get_clean_subprocess_env()
+    _is_steam_deck = is_steamdeck_flag if is_steamdeck_flag is not None else is_steam_deck()
+    _is_flatpak = is_flatpak_flag if is_flatpak_flag is not None else is_flatpak_steam()
+
+    def report(msg):
+        if progress_callback:
+            progress_callback(msg)
+        else:
+            logger.info(msg)
+
+    report("Starting Steam...")
+
+    if _is_steam_deck:
+        try:
+            subprocess.Popen(["systemctl", "--user", "restart", "app-steam@autostart.service"], env=env)
+            logger.info("Steam Deck: Initiated systemctl restart")
+        except Exception as e:
+            logger.error(f"Steam Deck systemctl restart failed: {e}")
+            report("Failed to restart Steam on Steam Deck.")
+            return False
+    else:
+        steam_started = start_steam(
+            is_steamdeck_flag=_is_steam_deck,
+            is_flatpak_flag=_is_flatpak,
+            env_override=env,
+            strategy=strategy,
+        )
+        # Even if start_steam() returned False, Steam might still be starting - give it a
+        # chance by proceeding to the wait phase instead of failing immediately.
+        if not steam_started:
+            logger.warning("start_steam() returned False, but proceeding to wait phase in case Steam is starting anyway")
+            report("Steam start command issued, waiting for process...")
+
+    report("Waiting for Steam to fully start")
+    logger.info("Waiting up to 3 minutes (180 seconds) for Steam to fully initialize...")
+    max_startup_wait = 180
+    elapsed_wait = 0
+    initial_wait_done = False
+    last_status_log = 0
+
+    while elapsed_wait < max_startup_wait:
+        try:
+            if elapsed_wait - last_status_log >= 30:
+                remaining = max_startup_wait - elapsed_wait
+                logger.info(f"Still waiting for Steam... ({elapsed_wait}s elapsed, {remaining}s remaining)")
+                if progress_callback:
+                    progress_callback(f"Waiting for Steam... ({elapsed_wait}s / {max_startup_wait}s)")
+                last_status_log = elapsed_wait
+
+            result = subprocess.run(['pgrep', '-f', 'steamwebhelper'], capture_output=True, timeout=10, env=env)
+            if result.returncode == 0:
+                if not initial_wait_done:
+                    logger.info(f"Steam process detected at {elapsed_wait}s. Waiting additional time for full initialization...")
+                    initial_wait_done = True
+                time.sleep(2)
+                elapsed_wait += 2
+                # Require at least 10 seconds of stable detection
+                if initial_wait_done and elapsed_wait >= 10:
+                    final_check = subprocess.run(['pgrep', '-f', 'steamwebhelper'], capture_output=True, timeout=10, env=env)
+                    if final_check.returncode == 0:
+                        report("Steam started successfully.")
+                        report("[Jackify] Steam restart complete")
+                        logger.info(f"Steam confirmed running after {elapsed_wait}s wait.")
+                        return True
+                    else:
+                        logger.warning("Steam process disappeared during final initialization wait, continuing to wait...")
+                        initial_wait_done = False
+            else:
+                logger.debug(f"Steam process not yet detected. Waiting... ({elapsed_wait + 2}s)")
+                time.sleep(2)
+                elapsed_wait += 2
+        except Exception as e:
+            logger.warning(f"Error during Steam startup wait: {e}")
+            time.sleep(2)
+            elapsed_wait += 2
+
+    report(f"Steam did not start within {max_startup_wait}s timeout.")
+    logger.error(f"Steam failed to start/initialize within the allowed time ({elapsed_wait}s elapsed).")
+    return False
+
+
 def _resolve_steam_path_for_restart():
     """Return the Steam path we're using (for shortcuts/config). Used to decide Flatpak vs native when CLI detection fails."""
     try:
@@ -613,81 +712,10 @@ def robust_steam_restart(progress_callback: Optional[Callable[[str], None]] = No
     
     report("Steam closed successfully.")
 
-    # Start Steam using platform-specific logic
-    report("Starting Steam...")
-
-    # Steam Deck: Use systemctl restart (keep existing working approach)
-    if _is_steam_deck:
-        try:
-            subprocess.Popen(["systemctl", "--user", "restart", "app-steam@autostart.service"], env=start_env)
-            logger.info("Steam Deck: Initiated systemctl restart")
-        except Exception as e:
-            logger.error(f"Steam Deck systemctl restart failed: {e}")
-            report("Failed to restart Steam on Steam Deck.")
-            return False
-    else:
-        # All other distros: Use start_steam() which now uses -foreground to ensure GUI opens
-        steam_started = start_steam(
-            is_steamdeck_flag=_is_steam_deck,
-            is_flatpak_flag=_is_flatpak,
-            env_override=start_env,
-            strategy=strategy,
-        )
-        # Even if start_steam() returns False, Steam might still be starting
-        # Give it a chance by proceeding to wait phase
-        if not steam_started:
-            logger.warning("start_steam() returned False, but proceeding to wait phase in case Steam is starting anyway")
-            report("Steam start command issued, waiting for process...")
-
-    # Wait for Steam to fully initialize
-    # CRITICAL: Use steamwebhelper (actual Steam process), not "steam" (matches steam-powerbuttond, etc.)
-    report("Waiting for Steam to fully start")
-    logger.info("Waiting up to 3 minutes (180 seconds) for Steam to fully initialize...")
-    max_startup_wait = 180  # Increased from 120 to 180 seconds (3 minutes) for slower systems
-    elapsed_wait = 0
-    initial_wait_done = False
-    last_status_log = 0  # Track when we last logged status
-    
-    while elapsed_wait < max_startup_wait:
-        try:
-            # Log status every 30 seconds so user knows we're still waiting
-            if elapsed_wait - last_status_log >= 30:
-                remaining = max_startup_wait - elapsed_wait
-                logger.info(f"Still waiting for Steam... ({elapsed_wait}s elapsed, {remaining}s remaining)")
-                if progress_callback:
-                    progress_callback(f"Waiting for Steam... ({elapsed_wait}s / {max_startup_wait}s)")
-                last_status_log = elapsed_wait
-            
-            # Use steamwebhelper for detection (matches shutdown logic)
-            result = subprocess.run(['pgrep', '-f', 'steamwebhelper'], capture_output=True, timeout=10, env=start_env)
-            if result.returncode == 0:
-                if not initial_wait_done:
-                    logger.info(f"Steam process detected at {elapsed_wait}s. Waiting additional time for full initialization...")
-                    initial_wait_done = True
-                time.sleep(5)
-                elapsed_wait += 5
-                # Require at least 20 seconds of stable detection (increased from 15)
-                if initial_wait_done and elapsed_wait >= 20:
-                    final_check = subprocess.run(['pgrep', '-f', 'steamwebhelper'], capture_output=True, timeout=10, env=start_env)
-                    if final_check.returncode == 0:
-                        report("Steam started successfully.")
-                        report("[Jackify] Steam restart complete")
-                        logger.info(f"Steam confirmed running after {elapsed_wait}s wait.")
-                        return True
-                    else:
-                        logger.warning("Steam process disappeared during final initialization wait, continuing to wait...")
-                        # Don't break - continue waiting in case Steam is still starting
-                        initial_wait_done = False  # Reset to allow re-detection
-            else:
-                logger.debug(f"Steam process not yet detected. Waiting... ({elapsed_wait + 5}s)")
-                time.sleep(5)
-                elapsed_wait += 5
-        except Exception as e:
-            logger.warning(f"Error during Steam startup wait: {e}")
-            time.sleep(5)
-            elapsed_wait += 5
-    
-    # Only reach here if we've waited the full duration
-    report(f"Steam did not start within {max_startup_wait}s timeout.")
-    logger.error(f"Steam failed to start/initialize within the allowed time ({elapsed_wait}s elapsed).")
-    return False 
+    return start_steam_and_wait(
+        is_steamdeck_flag=_is_steam_deck,
+        is_flatpak_flag=_is_flatpak,
+        env_override=start_env,
+        strategy=strategy,
+        progress_callback=progress_callback,
+    )

@@ -13,25 +13,6 @@ logger = logging.getLogger(__name__)
 class ShortcutDiscoveryMixin:
     """Mixin providing shortcut discovery and AppID resolution methods."""
 
-    # DEAD CODE - Commented out 2026-01-29
-    # These methods were never completed. create_shortcut() requires arguments
-    # and returns tuple(bool, str), not dict. Kept for reference if CLI shortcut
-    # creation feature is implemented later.
-    #
-    # def create_shortcut_workflow(self):
-    #     """Run the complete shortcut creation workflow"""
-    #     shortcut_data = self.create_shortcut()
-    #     if not shortcut_data:
-    #         return False
-    #     return True
-    #
-    # def create_new_modlist_shortcut(self):
-    #     """Create a new modlist shortcut in Steam"""
-    #     print("\nShortcut Creation")
-    #     ...
-    #     modlist_data = self.create_shortcut()  # BUG: needs args, returns tuple not dict
-    #     ...
-
     def get_selected_modlist(self):
         """
         Get the selected modlist string in the format expected by ModlistHandler.configure_modlist

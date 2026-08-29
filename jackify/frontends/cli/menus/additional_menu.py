@@ -43,8 +43,12 @@ class AdditionalMenuHandler:
             print(f"   {COLOR_ACTION}→ Package logs and system info for support{COLOR_RESET}")
             print(f"{COLOR_SELECTION}6.{COLOR_RESET} Nexus Mods Authorization")
             print(f"   {COLOR_ACTION}→ Authorise with Nexus using OAuth or manage API key{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}7.{COLOR_RESET} Browse Crash Logs")
+            print(f"   {COLOR_ACTION}→ Show crash log locations for installed modlists{COLOR_RESET}")
+            print(f"{COLOR_SELECTION}8.{COLOR_RESET} Downgrade Game Version")
+            print(f"   {COLOR_ACTION}→ Downgrade Skyrim SE or Fallout 4 to a script-extender-compatible build{COLOR_RESET}")
             print(f"{COLOR_SELECTION}0.{COLOR_RESET} Return to Main Menu")
-            selection = input(f"\n{COLOR_PROMPT}Enter your selection (0-6): {COLOR_RESET}").strip()
+            selection = input(f"\n{COLOR_PROMPT}Enter your selection (0-8): {COLOR_RESET}").strip()
 
             if selection.lower() == 'q':  # Allow 'q' to re-display menu
                 continue
@@ -60,6 +64,10 @@ class AdditionalMenuHandler:
                 self._execute_diagnostic_bundle()
             elif selection == "6":
                 self._execute_nexus_authorization(cli_instance)
+            elif selection == "7":
+                self._execute_crash_logs()
+            elif selection == "8":
+                self._execute_downgrade_game()
             elif selection == "0":
                 break
             else:
@@ -583,6 +591,107 @@ class AdditionalMenuHandler:
             print(f"{COLOR_ERROR}Verifier error: {e}{COLOR_RESET}")
 
         input("\nPress Enter to return to menu...")
+
+    def _execute_crash_logs(self) -> None:
+        from jackify.backend.services.crash_log_service import (
+            find_modlists_with_crash_logs, get_crash_log_dir, list_crash_logs,
+        )
+        from jackify.shared.colors import COLOR_ERROR
+
+        self._clear_screen()
+        print_jackify_banner()
+        print_section_header("Browse Crash Logs")
+        print(f"{COLOR_INFO}Discovering modlists with crash log support (Skyrim/Fallout 4)...{COLOR_RESET}")
+
+        try:
+            modlists = find_modlists_with_crash_logs()
+        except Exception as e:
+            print(f"{COLOR_ERROR}Failed to discover modlists: {e}{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        if not modlists:
+            print(f"{COLOR_WARNING}No modlists with crash log support found.{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        for m in modlists:
+            name = m.get("name", "Unknown")
+            pfx = m.get("pfx")
+            game_type = m.get("game_type")
+            log_dir = get_crash_log_dir(pfx, game_type)
+            print(f"\n{COLOR_SELECTION}{name}{COLOR_RESET}")
+            if not log_dir:
+                print(f"{COLOR_WARNING}  No crash log directory found.{COLOR_RESET}")
+                continue
+            print(f"{COLOR_INFO}  {log_dir}{COLOR_RESET}")
+            logs = list_crash_logs(pfx, game_type)[:5]
+            if not logs:
+                print("  No crash logs recorded.")
+                continue
+            for log in logs:
+                print(f"    {log.name}")
+
+        input("\nPress Enter to return to menu...")
+
+    def _execute_downgrade_game(self) -> None:
+        """Run jackify-game-downgrader directly in this terminal.
+
+        This process is already the user's real terminal, so the tool's own interactive
+        game/version pickers and its steamcmd login flow (password/Steam Guard prompts) just
+        run as documented - no output capture or stdio redirection needed here.
+        """
+        import shutil
+        import subprocess
+
+        from jackify.backend.services.tool_registry import ToolRegistry
+        from jackify.shared.colors import COLOR_ERROR, COLOR_SUCCESS
+
+        self._clear_screen()
+        print_jackify_banner()
+        print_section_header("Downgrade Game Version")
+
+        binary_path = ToolRegistry().get_binary_path("jackify-game-downgrader")
+        if not binary_path:
+            print(f"{COLOR_ERROR}Game Version Downgrader is not installed.{COLOR_RESET}")
+            print(f"{COLOR_INFO}Install it from the Tools Hub, then try again.{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        python3 = shutil.which("python3")
+        if not python3:
+            print(f"{COLOR_ERROR}python3 was not found on PATH. The downgrader needs a system Python 3 interpreter.{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        print(f"{COLOR_INFO}1.{COLOR_RESET} Downgrade")
+        print(f"{COLOR_INFO}2.{COLOR_RESET} Dry Run (preview only, changes nothing)")
+        print(f"{COLOR_INFO}3.{COLOR_RESET} Restore a previous downgrade")
+        print(f"{COLOR_INFO}0.{COLOR_RESET} Cancel")
+        selection = input(f"\n{COLOR_PROMPT}Select an option: {COLOR_RESET}").strip()
+
+        if selection == "1":
+            args = ["downgrade"]
+        elif selection == "2":
+            args = ["downgrade", "--dry-run"]
+        elif selection == "3":
+            args = ["restore"]
+        else:
+            return
+
+        print(f"\n{COLOR_INFO}Handing off to the downgrader - follow its prompts below.{COLOR_RESET}\n")
+        try:
+            result = subprocess.run([python3, str(binary_path), *args])
+        except Exception as e:
+            print(f"{COLOR_ERROR}Failed to launch the downgrader: {e}{COLOR_RESET}")
+            input("Press Enter to return to menu...")
+            return
+
+        if result.returncode == 0:
+            print(f"\n{COLOR_SUCCESS}Downgrader finished.{COLOR_RESET}")
+        else:
+            print(f"\n{COLOR_ERROR}Downgrader exited with an error (code {result.returncode}).{COLOR_RESET}")
+        input("Press Enter to return to menu...")
 
     def _execute_tools_hub(self, cli_instance) -> None:
         from jackify.frontends.cli.menus.tools_hub_menu import ToolsHubMenuHandler

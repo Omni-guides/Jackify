@@ -35,7 +35,14 @@ class PostInstallFeedbackMixin:
         10. Enabling dotfiles - Make hidden config files visible in file manager
         11. Setting permissions - Ensure modlist files have correct permissions
         12. Backing up configuration - Create backup of ModOrganizer.ini
-        13. Finalising Jackify configuration - All post-install steps complete
+        13. Performing final tasks - Tool compat, Nemesis setup, and other end-of-config fixups
+        14. Finalising Jackify configuration - All post-install steps complete
+
+        Steps 14+ (modlist-specific automation - copying root mods, running the 4GB patcher,
+        BSA decompression, etc.) no longer belong here at all: they're the generic Modlist
+        Playbook System's job now, and its own progress is shown separately once it starts
+        (see `_begin_playbook_progress()`/`_handle_post_install_progress()`'s playbook-mode
+        branch) rather than being keyword-matched into this fixed list.
         """
         return [
             {
@@ -151,39 +158,6 @@ class PostInstallFeedbackMixin:
                 ],
             },
             {
-                'id': 'vnv_root_mods',
-                'label': "Copying root mods",
-                'keywords': [
-                    "step 1/3: copying root mods",
-                    "copying root mods to game directory",
-                    "root mods:",
-                ],
-            },
-            {
-                'id': 'vnv_4gb_patch',
-                'label': "Applying 4GB patch",
-                'keywords': [
-                    "step 2/3: downloading and running 4gb patcher",
-                    "downloading fnv4gb",
-                    "downloading:",
-                    "fetching file list",
-                    "running 4gb patcher",
-                    "4gb patcher:",
-                ],
-            },
-            {
-                'id': 'vnv_bsa_decompress',
-                'label': "Decompressing BSA files",
-                'keywords': [
-                    "step 3/3: downloading and running bsa decompressor",
-                    "downloading:",
-                    "fetching file list",
-                    "running bsa decompressor",
-                    "decompressing bsa files:",
-                    "bsa decompression:",
-                ],
-            },
-            {
                 'id': 'final_config',
                 'label': "Performing final tasks",
                 'keywords': [
@@ -219,7 +193,27 @@ class PostInstallFeedbackMixin:
         total = max(1, self._post_install_total_steps)
         self._update_post_install_ui(self._post_install_last_label, 0, total)
         self.cancel_btn.setVisible(False)
-        self.cancel_install_btn.setVisible(True)
+        # Configure New/Existing have only one Cancel button, no separate "Cancel
+        # Installation" - only the install/TTW workflow screens have both.
+        if hasattr(self, "cancel_install_btn"):
+            self.cancel_install_btn.setVisible(True)
+
+    def _begin_playbook_progress(self):
+        """Switch feedback into playbook mode: live text instead of the fixed step sequence.
+
+        The step sequence above is a hardcoded list of the old VNV/MEW-era phases and can never
+        know a playbook author's step labels in advance - matching playbook output against it
+        just freezes the banner at whatever step was last reached. Passed as PlaybookAutomation-
+        Controller's begin_feedback so it fires exactly when heavy-playbook execution starts.
+        """
+        self._post_install_active = True
+        self._post_install_playbook_mode = True
+        self.file_progress_list.update_or_add_item("__playbook__", "Running post-install automation...", 0.0)
+        self.cancel_btn.setVisible(False)
+        if hasattr(self, "cancel_install_btn"):
+            self.cancel_install_btn.setVisible(True)
+
+    _PLAYBOOK_PERCENT_RE = re.compile(r'(\d{1,3}(?:\.\d+)?)\s*%')
 
     def _handle_post_install_progress(self, message: str):
         """Translate backend progress messages into collapsed-mode feedback."""
@@ -230,6 +224,13 @@ class PostInstallFeedbackMixin:
 
         text = message.strip()
         if not text:
+            return
+
+        if getattr(self, '_post_install_playbook_mode', False):
+            self.file_progress_list.update_or_add_item("__playbook__", text, 0.0)
+            percent_match = self._PLAYBOOK_PERCENT_RE.search(text)
+            if percent_match:
+                self.progress_indicator.set_status(text, min(100, int(float(percent_match.group(1)))))
             return
 
         if any(kw in text.lower() for kw in ['wine', 'vcrun', 'dotnet', 'winetricks', 'component']):
@@ -326,7 +327,7 @@ class PostInstallFeedbackMixin:
                     # Don't call _update_post_install_ui() - it would clear the component items
                     break
                 
-                # CRITICAL: If pulser is active (wine components still installing), don't update progress banner
+                # If pulser is active (wine components still installing), don't update progress banner
                 # Keep it on "Installing Wine components..." until pulser stops
                 if getattr(self, '_component_install_timer', None) and self._component_install_timer.isActive():
                     # Find wine_components step and keep banner on that
@@ -357,7 +358,7 @@ class PostInstallFeedbackMixin:
         # If no match but we have a current step, update with that step (not a new one)
         # Skip when pulser is active -- it manages Activity window directly
         if not matched and self._post_install_current_step > 0:
-            # CRITICAL: If pulser is active, we're still installing wine components
+            # If pulser is active, we're still installing wine components
             # Keep progress banner on "Installing Wine components..." regardless of step counter
             if getattr(self, '_component_install_timer', None) and self._component_install_timer.isActive():
                 # Find wine_components step in sequence
@@ -465,6 +466,7 @@ class PostInstallFeedbackMixin:
             return
         self._stop_component_install_pulse()
         self._stop_bsa_decompress_pulse()
+        self._post_install_playbook_mode = False
         total = max(1, self._post_install_total_steps)
         final_step = total if success else max(0, self._post_install_current_step)
         label = "Post-installation complete" if success else "Post-installation stopped"
@@ -472,7 +474,8 @@ class PostInstallFeedbackMixin:
         self._post_install_active = False
         self._post_install_last_label = label
         self.cancel_btn.setVisible(True)
-        self.cancel_install_btn.setVisible(False)
+        if hasattr(self, "cancel_install_btn"):
+            self.cancel_install_btn.setVisible(False)
 
     def _parse_wine_components_message(self, text: str):
         """Extract list of wine component names from backend status message, or None."""

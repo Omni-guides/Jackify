@@ -33,9 +33,8 @@ class WorkflowMixin:
             shortcuts = shortcuts_data.get('shortcuts', {})
             conflicts = []
             
-            # Look for shortcuts with the same name AND path
-            for i in range(len(shortcuts)):
-                shortcut = shortcuts[str(i)]
+            # Keys can have gaps after a removal, so don't index by position
+            for key, shortcut in shortcuts.items():
                 name = shortcut.get('AppName', '')
                 shortcut_exe = shortcut.get('Exe', '').strip('"')  # Remove quotes
                 shortcut_startdir = shortcut.get('StartDir', '').strip('"')  # Remove quotes
@@ -55,7 +54,7 @@ class WorkflowMixin:
                         except Exception:
                             normalized_appid = str(raw_appid)
                     conflicts.append({
-                        'index': i,
+                        'index': key,
                         'name': name,
                         'exe': shortcut_exe,
                         'startdir': shortcut_startdir,
@@ -205,6 +204,12 @@ class WorkflowMixin:
                 logger.warning("%s modlists use Rootbuilder for game root files - ensure Rootbuilder is set to COPY mode in MO2 plugin settings", game_label)
             else:
                 logger.debug("Standard modlist - no special game handling needed")
+
+            try:
+                from .playbook.hook_wiring import run_install_hook
+                run_install_hook(modlist_install_dir, shortcut_name)
+            except Exception as e:
+                logger.debug("Playbook post_install hook skipped: %s", e)
 
             # Step 0: Shut down Steam before modifying VDF files
             # Required to safely modify shortcuts.vdf and config.vdf without race conditions

@@ -35,6 +35,19 @@ def _resolve_pfx_for_appid(appid: str) -> Optional[Path]:
     return resolve_pfx_for_appid(appid)
 
 
+def _merge_playbook_warnings(results, playbook_warnings):
+    """Fold playbook step failures into the verification Results so they show up in the
+    success dialog's checks list instead of only ever appearing in the console/log."""
+    if not playbook_warnings:
+        return results
+    if results is None:
+        from jackify.backend.services.install_verifier_service import new_results
+        results = new_results()
+    for notice in playbook_warnings:
+        results.warn(f"Playbook: {notice}")
+    return results
+
+
 class InstallVerifierMixin:
     """Mixin: run the verifier before showing the success dialog."""
 
@@ -168,7 +181,8 @@ class InstallVerifierMixin:
                 "Verifier skipped: pfx not found (appid=%s dir=%s)",
                 resolved_appid, install_dir,
             )
-            self._show_success_dialog(success_params, verification_results=None)
+            results = _merge_playbook_warnings(None, success_params.get("playbook_warnings"))
+            self._show_success_dialog(success_params, verification_results=results)
             return
 
         self._verifier_thread = VerifierThread(
@@ -189,6 +203,7 @@ class InstallVerifierMixin:
             self._verifier_thread.wait(2000)
             self._verifier_thread.deleteLater()
             self._verifier_thread = None
+        results = _merge_playbook_warnings(results, success_params.get("playbook_warnings"))
         if results is not None:
             n_pass = len(results.passes)
             n_warn = len(results.warnings)

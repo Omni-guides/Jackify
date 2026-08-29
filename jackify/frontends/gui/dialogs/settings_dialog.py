@@ -11,6 +11,9 @@ import os
 import logging
 
 from jackify.frontends.gui.services.message_service import MessageService
+from jackify.frontends.gui.shared_theme import (
+    COLOR_BTN_BACK, COLOR_BTN_INSTALL, JACKIFY_COLOR_BLUE, TAB_BAR_STYLE, btn_style,
+)
 from .settings_dialog_tabs import SettingsDialogTabsMixin
 from .settings_dialog_proton import SettingsDialogProtonMixin
 
@@ -37,27 +40,27 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
 
             # Create tab widget
             self.tab_widget = QTabWidget()
-            self.tab_widget.setStyleSheet("""
-                QTabWidget::pane { border: 1px solid #555; background: #232323; }
-                QTabBar::tab { background: #333; color: #eee; padding: 8px 16px; margin: 2px; }
-                QTabBar::tab:selected { background: #555; }
-                QTabBar::tab:hover { background: #444; }
-            """)
+            self.tab_widget.setStyleSheet(TAB_BAR_STYLE)
             main_layout.addWidget(self.tab_widget)
 
             # Create tabs
             self._create_general_tab()
-            self._create_advanced_tab()
+            self._create_nexus_tab()
+            self._create_engine_tab()
+            self._create_automation_tab()
 
             # --- Save/Close/Help Buttons ---
             btn_layout = QHBoxLayout()
             self.help_btn = QPushButton("Help")
             self.help_btn.setToolTip("Help/documentation coming soon!")
+            self.help_btn.setStyleSheet(btn_style(COLOR_BTN_BACK, width=70))
             self.help_btn.clicked.connect(self._show_help)
             btn_layout.addWidget(self.help_btn)
             btn_layout.addStretch(1)
             save_btn = QPushButton("Save")
             close_btn = QPushButton("Close")
+            save_btn.setStyleSheet(btn_style(COLOR_BTN_INSTALL, width=70))
+            close_btn.setStyleSheet(btn_style(COLOR_BTN_BACK, width=70))
             save_btn.clicked.connect(self._save)
             close_btn.clicked.connect(self.reject)
             btn_layout.addWidget(save_btn)
@@ -84,7 +87,7 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             self.api_show_btn.setText("\U0001F441")
         if checked:
             self.api_key_edit.setEchoMode(QLineEdit.Normal)
-            self.api_show_btn.setStyleSheet("QToolButton { color: #3fd0ea; }")
+            self.api_show_btn.setStyleSheet(f"QToolButton {{ color: {JACKIFY_COLOR_BLUE}; }}")
         else:
             self.api_key_edit.setEchoMode(QLineEdit.Password)
             self.api_show_btn.setStyleSheet("")
@@ -141,7 +144,7 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
                 pass
             display = f"Authorised as {username}{tier_label}" if username else "Authorised"
             self.oauth_status_label.setText(display)
-            self.oauth_status_label.setStyleSheet("color: #3fd0ea;")
+            self.oauth_status_label.setStyleSheet(f"color: {JACKIFY_COLOR_BLUE};")
             self.oauth_btn.setText("Revoke")
         elif method == 'oauth_expired':
             self.oauth_status_label.setText("OAuth token expired")
@@ -311,6 +314,9 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
 
             # Save auto tool compat preference
             self.config_handler.set('auto_tool_compat', self.auto_tool_compat_checkbox.isChecked())
+            self.config_handler.set('usvfs_linux_fix', self.usvfs_linux_fix_checkbox.isChecked())
+            self.config_handler.set('playbooks_enabled', self.playbooks_enabled_checkbox.isChecked())
+            self.config_handler.set('jackify_db_enabled', self.jackify_db_enabled_checkbox.isChecked())
             self.config_handler.set('force_github_updates', self.force_github_updates_checkbox.isChecked())
             if getattr(self, 'clf3_default_checkbox', None):
                 from jackify.backend.services.tool_registry import set_active_engine_id
@@ -328,7 +334,6 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             method_changed = (old_method != method)
 
             self.config_handler.set("component_installation_method", method)
-            self.config_handler.set("use_winetricks_for_components", method != 'system_protontricks')
 
             # Force immediate save and verify
             save_result = self.config_handler.save_config()

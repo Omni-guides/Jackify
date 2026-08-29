@@ -65,8 +65,8 @@ class TTWInstallationThread(QThread):
             from jackify.backend.handlers.ttw_installer_handler import TTWInstallerHandler
             from jackify.backend.handlers.filesystem_handler import FileSystemHandler
             from jackify.backend.handlers.config_handler import ConfigHandler
+            from jackify.shared.paths import get_jackify_logs_dir
             from pathlib import Path
-            import tempfile
 
             self.process_and_buffer_line("Initialising TTW installation...")
             self.flush_output_buffer()
@@ -80,11 +80,12 @@ class TTWInstallationThread(QThread):
                 config_handler=config_handler,
             )
 
-            output_file = tempfile.NamedTemporaryFile(
-                mode='w+', delete=False, suffix='.ttw_output', encoding='utf-8'
-            )
-            output_file_path = Path(output_file.name)
-            output_file.close()
+            # Kept (not a deleted temp file) so a run's raw, unfiltered output survives for
+            # diagnosis of what the GUI actually filtered/parsed from it - the batched/filtered
+            # console view is deliberately lossy (hundreds of thousands of per-asset lines would
+            # grind the UI to a halt), so this is the only place the full record exists.
+            output_file_path = get_jackify_logs_dir() / "TTW_Linux_Installer_raw.log"
+            output_file_path.parent.mkdir(parents=True, exist_ok=True)
 
             self.process_and_buffer_line("Starting TTW installation...")
             self.flush_output_buffer()
@@ -133,11 +134,6 @@ class TTWInstallationThread(QThread):
                     for line in f.readlines():
                         self.process_and_buffer_line(line.rstrip())
                 self.flush_output_buffer()
-            except Exception:
-                pass
-
-            try:
-                output_file_path.unlink(missing_ok=True)
             except Exception:
                 pass
 

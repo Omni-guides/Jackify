@@ -129,7 +129,6 @@ import json
 from jackify.backend.models.configuration import SystemInfo
 from jackify.backend.services.modlist_service import ModlistService
 from jackify.frontends.gui.services.message_service import MessageService
-from jackify.frontends.gui.shared_theme import DEBUG_BORDERS
 from jackify.frontends.gui.utils import get_screen_geometry, set_responsive_minimum
 from jackify.frontends.gui.dialogs.settings_dialog import SettingsDialog
 from jackify.frontends.gui.mixins.main_window_geometry import MainWindowGeometryMixin
@@ -215,7 +214,7 @@ def resource_path(relative_path):
 
 def main(initial_nxm_url: str = ""):
     """Main entry point for the GUI application"""
-    # CRITICAL: Enable faulthandler for segfault debugging
+    # Enable faulthandler for segfault debugging
     # Print Python stack traces on segfault
     import faulthandler
     import signal
@@ -303,10 +302,16 @@ def main(initial_nxm_url: str = ""):
 
     # Launch GUI application
     app = QApplication.instance() or QApplication(sys.argv)
-    # CRITICAL: Set application name before desktop file name to ensure proper window title/icon on PopOS/Ubuntu
+    # Set application name before desktop file name to ensure proper window title/icon on PopOS/Ubuntu
     app.setApplicationName("Jackify")
     app.setApplicationDisplayName("Jackify")
-    app.setDesktopFileName("jackify.desktop")
+    app.setDesktopFileName("com.jackify.app.desktop")
+
+    from jackify.frontends.gui.shared_theme import apply_dark_palette
+    apply_dark_palette(app)
+
+    from jackify.backend.handlers.modlist_handler import set_gui_mode
+    set_gui_mode(True)
 
     # Global cleanup function for signal handling
     def emergency_cleanup():
@@ -317,8 +322,8 @@ def main(initial_nxm_url: str = ""):
         except Exception:
             pass
         try:
-            import subprocess
-            subprocess.run(['pkill', '-f', 'jackify-engine'], timeout=5, capture_output=True)
+            from jackify.backend.handlers.subprocess_utils import kill_all_registered_process_groups
+            kill_all_registered_process_groups()
         except Exception:
             pass
     
@@ -368,10 +373,14 @@ def main(initial_nxm_url: str = ""):
             icon_path = try_path
             icon = QIcon(try_path)
     
-    if debug_mode:
-        logging.getLogger().debug(f"Final icon path: {icon_path}")
-        logging.getLogger().debug(f"Icon is null: {icon.isNull()}")
-    
+    if icon.isNull():
+        logging.getLogger().warning(
+            "Application icon failed to load (APPDIR=%s, tried: %s)",
+            os.environ.get('APPDIR'), icon_path,
+        )
+    else:
+        logging.getLogger().info(f"Application icon loaded from: {icon_path}")
+
     app.setWindowIcon(icon)
     window = JackifyMainWindow(dev_mode=dev_mode)
     window.setWindowIcon(icon)

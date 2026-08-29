@@ -137,6 +137,15 @@ class MainWindowStartupMixin:
                 except Exception as e:
                     logger.info("Problem mods manifest prefetch failed: %s", e)
 
+                try:
+                    from jackify.backend.services.playbook.hook_wiring import get_registry
+                    if get_registry().sync():
+                        logger.info("Playbook registry refreshed at startup")
+                    else:
+                        logger.info("Playbook registry prefetch unreachable (cached/bundled set in use)")
+                except Exception as e:
+                    logger.info("Playbook registry prefetch failed: %s", e)
+
         self._manifest_prefetch_thread = _ManifestPrefetchThread()
         self._manifest_prefetch_thread.start()
 

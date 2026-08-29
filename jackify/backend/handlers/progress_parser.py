@@ -55,6 +55,12 @@ class ProgressParser(ProgressParserPhaseMixin, ProgressParserFilesMixin, Progres
     
     def __init__(self):
         """Initialize parser with pattern definitions."""
+        # Download byte totals derived from the engine's "N GB remaining" figure, which is the
+        # only size it reports. See _parse_aggregate_remaining().
+        self._download_last_remaining = None
+        self._download_processed = 0
+        self._download_total = 0
+
         # Phase detection patterns
         self.phase_patterns = [
             (r'===?\s*(.+?)\s*===?', self._extract_phase_from_section),
@@ -122,6 +128,45 @@ class ProgressParser(ProgressParserPhaseMixin, ProgressParserFilesMixin, Progres
     def should_display_file(self, filename: str) -> bool:
         """Public helper so other components can reuse the filter."""
         return self._should_display_file(filename)
+
+    def _reset_download_totals(self) -> None:
+        """Clear download byte totals so a later download does not inherit an earlier one's."""
+        self._download_last_remaining = None
+        self._download_processed = 0
+        self._download_total = 0
+
+    def _parse_aggregate_remaining(self, remaining_bytes: int) -> tuple:
+        """Turn "N GB remaining" into a (processed, total) pair.
+
+        The engine reports how much is left to fetch but never the total, and the per-archive
+        lines carry a percentage rather than byte sizes, so no real total is available. The
+        first aggregate line of a download reports nothing fetched yet, so the largest
+        remaining figure seen stands in for the total.
+
+        The previous approach extrapolated a total from the archive count instead
+        (remaining / (1 - archives_done / archives_total)), which assumed every archive was the
+        same size. Once the count neared completion while large archives were still pending,
+        the divisor collapsed into its clamp and the total inflated by up to 100x - a 39.7GB
+        download was displayed as 508GB/516GB.
+
+        Attaching part-way through a download understates the total rather than overstating it,
+        which keeps the pair honest even when it is incomplete.
+
+        Remaining occasionally rises mid-run when the engine re-queues an archive. That is work
+        being added, so it raises the total rather than lowering the amount already fetched -
+        bytes on disk do not un-download, and a counter that jumps backwards reads as a bug.
+        """
+        if self._download_last_remaining is None:
+            self._download_total = remaining_bytes
+            self._download_processed = 0
+        else:
+            delta = self._download_last_remaining - remaining_bytes
+            if delta > 0:
+                self._download_processed += delta
+            elif delta < 0:
+                self._download_total += -delta
+        self._download_last_remaining = remaining_bytes
+        return self._download_processed, self._download_total
     
     def _should_display_file(self, filename: str) -> bool:
         """Determine whether a filename is worth showing in the UI."""
@@ -247,14 +292,8 @@ class ProgressParser(ProgressParserPhaseMixin, ProgressParserFilesMixin, Progres
             remaining_unit = timestamp_match.group(6)
             if remaining_val and remaining_unit:
                 remaining_bytes = self._convert_to_bytes(float(remaining_val), remaining_unit)
-                if remaining_bytes > 0 and max_steps > 0 and current_step < max_steps:
-                    fraction_done = current_step / max_steps
-                    # Estimate total from remaining and fraction; clamp denominator to avoid div/0 near completion
-                    estimated_total = remaining_bytes / max(1.0 - fraction_done, 0.01)
-                    data_processed = int(estimated_total - remaining_bytes)
-                    result.data_info = (max(0, data_processed), int(estimated_total))
-                elif remaining_bytes > 0:
-                    result.data_info = (0, int(remaining_bytes))
+                if remaining_bytes > 0:
+                    result.data_info = self._parse_aggregate_remaining(remaining_bytes)
 
             # Calculate overall percentage from step progress
             if max_steps > 0:
@@ -447,3 +486,4 @@ class ProgressStateManager(ProgressStateProcessingMixin, ProgressStateMetricsMix
         self._wabbajack_entry_name = None
         self._synthetic_flag = "_synthetic_wabbajack"
         self._has_real_wabbajack = False
+        self.parser._reset_download_totals()

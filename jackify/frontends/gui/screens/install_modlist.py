@@ -4,7 +4,7 @@ InstallModlistScreen for Jackify GUI
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QTabWidget, QDialog, QListWidget, QListWidgetItem, QMessageBox, QProgressDialog, QApplication, QCheckBox, QStyledItemDelegate, QStyle, QTableWidget, QTableWidgetItem, QHeaderView, QMainWindow
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer, QProcess, QMetaObject, QUrl
 from PySide6.QtGui import QPixmap, QTextCursor, QColor, QPainter, QFont
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import ansi_to_html, set_responsive_minimum
 from ..widgets.unsupported_game_dialog import UnsupportedGameDialog
 import os
@@ -26,7 +26,6 @@ from jackify.backend.handlers.validation_handler import ValidationHandler
 from jackify.frontends.gui.dialogs.warning_dialog import WarningDialog
 from jackify.frontends.gui.services.message_service import MessageService
 from jackify.backend.utils.nexus_premium_detector import is_non_premium_indicator
-# R&D: Progress reporting components
 from jackify.backend.handlers.progress_parser import ProgressStateManager
 from jackify.frontends.gui.widgets.progress_indicator import OverallProgressIndicator
 from jackify.frontends.gui.widgets.file_progress_list import FileProgressList
@@ -44,16 +43,16 @@ from .install_modlist_postinstall import PostInstallFeedbackMixin
 from .install_modlist_automated_prefix import AutomatedPrefixHandlersMixin
 from .install_modlist_configuration import ConfigurationPhaseMixin
 from .install_modlist_ttw import TTWIntegrationMixin
-from .install_modlist_vnv import VNVAutomationMixin
-from .install_modlist_mew import MEWAutomationMixin
+from .playbook_automation_mixin import PlaybookAutomationMixin
 from .install_modlist_workflow import InstallWorkflowMixin
 from .install_modlist_nexus import NexusAuthMixin
 from .install_modlist_selection import ModlistSelectionMixin
 from .screen_back_mixin import ScreenBackMixin
+from .screen_focus_reclaim import FocusReclaimMixin
 from .install_verifier_mixin import InstallVerifierMixin
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
-class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifierMixin, InstallModlistUISetupMixin, ConsoleOutputMixin, ProgressHandlersMixin, PostInstallFeedbackMixin, AutomatedPrefixHandlersMixin, ConfigurationPhaseMixin, QWidget, TTWIntegrationMixin, VNVAutomationMixin, MEWAutomationMixin, InstallWorkflowMixin, NexusAuthMixin, ModlistSelectionMixin):
+class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifierMixin, InstallModlistUISetupMixin, ConsoleOutputMixin, ProgressHandlersMixin, PostInstallFeedbackMixin, AutomatedPrefixHandlersMixin, ConfigurationPhaseMixin, FocusReclaimMixin, QWidget, TTWIntegrationMixin, PlaybookAutomationMixin, InstallWorkflowMixin, NexusAuthMixin, ModlistSelectionMixin):
     resize_request = Signal(str)  # Signal for expand/collapse like TTW screen
     def _collect_actionable_controls(self):
         """Collect all actionable controls that should be disabled during operations (except Cancel)"""
@@ -197,10 +196,9 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
                             # Lock the height - same in both modes
                             self.upper_section_widget.setMaximumHeight(self._upper_section_fixed_height)
                             self.upper_section_widget.setMinimumHeight(self._upper_section_fixed_height)
-                    except Exception as e:
-                        if self.debug:
-                            logger.debug(f"Error calculating upper section height: {e}")
-                
+                    except Exception:
+                        pass
+
                 # Calculate heights immediately after forcing layout update
                 # Prevents visible layout shift
                 self.updateGeometry()
@@ -416,9 +414,9 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
         dlg.exec()
 
     def hideEvent(self, event):
-        if getattr(self, '_vnv_controller', None) is not None:
+        if getattr(self, '_playbook_controller', None) is not None:
             try:
-                self._vnv_controller.cleanup()
+                self._playbook_controller.cleanup()
             except Exception:
                 pass
         super().hideEvent(event)
@@ -433,9 +431,9 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
             except Exception:
                 pass
 
-        if getattr(self, '_vnv_controller', None) is not None:
-            self._vnv_controller.cleanup()
-            self._vnv_controller = None
+        if getattr(self, '_playbook_controller', None) is not None:
+            self._playbook_controller.cleanup()
+            self._playbook_controller = None
 
         self._stop_focus_reclaim()
 

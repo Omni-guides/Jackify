@@ -123,9 +123,9 @@ class ModlistInstallCLITTWMixin:
             if not game_type or game_type.lower() not in ['falloutnv', 'fallout new vegas', 'fallout_new_vegas']:
                 return False
 
-            # Check 2: Must be on TTW compatibility whitelist
-            from jackify.backend.data.ttw_compatible_modlists import is_ttw_compatible
-            if not is_ttw_compatible(modlist_name):
+            # Check 2: Must be eligible per a matching playbook's offer_tool_flow step
+            from jackify.backend.services.playbook.hook_wiring import modlist_offers_tool_flow
+            if not modlist_offers_tool_flow(install_dir, modlist_name, "ttw_install"):
                 return False
 
             # Check 3: TTW must not already be installed

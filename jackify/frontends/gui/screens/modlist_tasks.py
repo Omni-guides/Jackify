@@ -30,9 +30,6 @@ from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import set_responsive_minimum
 from ..mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
-# Constants
-DEBUG_BORDERS = False
-
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +47,6 @@ class ModlistTasksScreen(ThreadLifecycleMixin, QWidget):
         
         self.stacked_widget = stacked_widget
         self.main_menu_index = main_menu_index
-        self.debug = DEBUG_BORDERS
         self.dev_mode = dev_mode
         
         # Initialize backend services
@@ -82,9 +78,6 @@ class ModlistTasksScreen(ThreadLifecycleMixin, QWidget):
         main_layout.setContentsMargins(30, 30, 30, 30)
         main_layout.setSpacing(12)  # Match main menu spacing
 
-        if self.debug:
-            self.setStyleSheet("border: 2px solid green;")
-        
         # Header section
         self._setup_header(main_layout)
         
@@ -211,6 +204,14 @@ class ModlistTasksScreen(ThreadLifecycleMixin, QWidget):
             self.stacked_widget.setCurrentIndex(6)  # Configure New Modlist Screen
         elif action_id == "configure_existing_modlist":
             self.stacked_widget.setCurrentIndex(8)  # Configure Existing Modlist Screen
+            # Clear any one-shot return-target override left over from reaching this screen
+            # via the Lifecycle Dashboard's "Configure"/"Update" - Cancel here must go back to
+            # this menu, not silently reuse a stale target from a previous, different visit.
+            # Fetched after setCurrentIndex: screens 1-9 are lazy-initialised placeholders
+            # until first switched to.
+            screen = self.stacked_widget.widget(8)
+            if hasattr(screen, "request_return_target"):
+                screen.request_return_target(None)
         elif action_id == "install_wabbajack":
             self.stacked_widget.setCurrentIndex(7)  # Wabbajack Installer Screen
     

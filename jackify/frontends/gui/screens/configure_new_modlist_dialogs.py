@@ -25,7 +25,7 @@ class ModlistFetchThread(QThread):
         self.install_dir = install_dir
         self.download_dir = download_dir
     def run(self):
-        # CRITICAL: Use safe Python executable to prevent AppImage recursive spawning
+        # Use safe Python executable to prevent AppImage recursive spawning
         from jackify.backend.handlers.subprocess_utils import get_safe_python_executable
         python_exe = get_safe_python_executable()
         
@@ -85,18 +85,18 @@ class ConfigureNewModlistDialogsMixin:
             pass
 
     def hideEvent(self, event):
-        if getattr(self, '_vnv_controller', None) is not None:
+        if getattr(self, '_playbook_controller', None) is not None:
             try:
-                self._vnv_controller.cleanup()
+                self._playbook_controller.cleanup()
             except Exception:
                 pass
         super().hideEvent(event)
 
     def cleanup_processes(self):
-        if getattr(self, '_vnv_controller', None) is not None:
+        if getattr(self, '_playbook_controller', None) is not None:
             try:
-                self._vnv_controller.cleanup()
-                self._vnv_controller = None
+                self._playbook_controller.cleanup()
+                self._playbook_controller = None
             except Exception:
                 pass
         self._stop_focus_reclaim()
@@ -157,15 +157,108 @@ class ConfigureNewModlistDialogsMixin:
                 ModlistHandler().set_steam_grid_images(str(existing_appid), install_dir, game_type=_game_type)
             except Exception as _e:
                 logger.warning("Failed to apply Steam artwork on shortcut reuse: %s", _e)
-            self.continue_configuration_after_automated_prefix(
-                str(existing_appid),
-                existing_name,
-                install_dir,
-                None,
+
+            # A shortcut can outlive its prefix (manual deletion, a stale AppID from before
+            # reconciliation existed) - "reuse" must not assume the prefix is still there,
+            # or configuration fails immediately trying to resolve a WINEPREFIX that isn't.
+            from jackify.backend.services.native_steam_operations_service import NativeSteamOperationsService
+            has_prefix = NativeSteamOperationsService().get_wine_prefix_path(
+                str(existing_appid), log_missing=False
             )
+            if has_prefix:
+                self.continue_configuration_after_automated_prefix(
+                    str(existing_appid),
+                    existing_name,
+                    install_dir,
+                    None,
+                )
+            else:
+                self._safe_append_text(
+                    "Existing shortcut has no Proton prefix - recreating it before configuring."
+                )
+                mo2_exe_path = os.path.realpath(self.install_dir_edit.text().strip())
+                self._repair_missing_prefix_then_configure(
+                    existing_name, install_dir, mo2_exe_path, int(existing_appid)
+                )
         else:
             self._safe_append_text("Shortcut creation cancelled by user")
             self._restore_controls_after_shortcut_dialog_abort()
+
+    def _repair_missing_prefix_then_configure(self, shortcut_name, install_dir, mo2_exe_path, appid):
+        """Recreate the Proton prefix for an existing shortcut whose prefix is gone.
+
+        Mirrors the CLI's replace/reuse path (modlist_operations_configuration_cli.py):
+        shut Steam down, then continue_workflow_after_conflict_resolution() restarts it
+        and creates the prefix for the (already-existing) shortcut's AppID.
+        """
+        class _PrefixRepairThread(QThread):
+            progress_update = Signal(str)
+            repair_complete = Signal(object)
+            error_occurred = Signal(object)
+
+            def __init__(self, shortcut_name, install_dir, mo2_exe_path, appid):
+                super().__init__()
+                self.shortcut_name = shortcut_name
+                self.install_dir = install_dir
+                self.mo2_exe_path = mo2_exe_path
+                self.appid = appid
+
+            def run(self):
+                try:
+                    from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
+                    from jackify.backend.services.steam_restart_service import shutdown_steam
+
+                    def progress_callback(message):
+                        self.progress_update.emit(message)
+
+                    progress_callback("Shutting down Steam...")
+                    if not shutdown_steam():
+                        logger.warning("Steam shutdown returned False, continuing anyway")
+
+                    result = AutomatedPrefixService().continue_workflow_after_conflict_resolution(
+                        self.shortcut_name, self.install_dir, self.mo2_exe_path, self.appid, progress_callback
+                    )
+                    self.repair_complete.emit(result)
+                except Exception as e:
+                    from jackify.shared.errors import JackifyError, prefix_creation_failed
+                    if not isinstance(e, JackifyError):
+                        e = prefix_creation_failed(str(e))
+                    self.error_occurred.emit(e)
+
+        def _on_complete(result):
+            success = bool(result and result[0])
+            if success:
+                _, prefix_path, result_appid, last_timestamp = result
+                self._safe_append_text("Proton prefix recreated successfully.")
+                self.continue_configuration_after_automated_prefix(
+                    str(result_appid), shortcut_name, install_dir, last_timestamp
+                )
+            else:
+                self._safe_append_text("Failed to recreate the Proton prefix for the existing shortcut.")
+                MessageService.warning(
+                    self,
+                    "Prefix Recreation Failed",
+                    "Jackify could not recreate the Proton prefix for the existing Steam shortcut. "
+                    "Check the log for details.",
+                )
+                self._restore_controls_after_shortcut_dialog_abort()
+            self._prefix_repair_thread = None
+
+        def _on_error(error):
+            from jackify.shared.errors import JackifyError, classify_exception
+            if not isinstance(error, JackifyError):
+                error = classify_exception(str(error))
+            logger.error("Prefix repair failed: %s", error.message)
+            self._safe_append_text(f"[FAILED] {error.message}")
+            MessageService.show_error(self, error)
+            self._restore_controls_after_shortcut_dialog_abort()
+            self._prefix_repair_thread = None
+
+        self._prefix_repair_thread = _PrefixRepairThread(shortcut_name, install_dir, mo2_exe_path, appid)
+        self._prefix_repair_thread.progress_update.connect(self._safe_append_text)
+        self._prefix_repair_thread.repair_complete.connect(_on_complete)
+        self._prefix_repair_thread.error_occurred.connect(_on_error)
+        self._prefix_repair_thread.start()
 
     def retry_automated_workflow_with_new_name(self, new_name):
         """Retry the automated workflow with a new shortcut name"""
@@ -193,114 +286,6 @@ class ConfigureNewModlistDialogsMixin:
             # Max retries reached
             MessageService.show_error(self, manual_steps_incomplete())
             self.on_configuration_complete(False, "Manual steps validation failed after multiple attempts", self.modlist_name_edit.text().strip())
-
-    def _check_and_run_vnv_automation(self, modlist_name: str, install_dir: str) -> bool:
-        """Check if VNV automation should run and start it if applicable.
-
-        Returns:
-            True if VNV automation is starting (caller should defer success dialog)
-            False if no VNV needed (show success dialog immediately)
-        """
-        from ..services.vnv_automation_controller import VNVAutomationController
-
-        self._vnv_controller = VNVAutomationController()
-        return self._vnv_controller.attempt(
-            parent=self,
-            modlist_name=modlist_name,
-            install_dir=install_dir,
-            on_progress=self._safe_append_text,
-            on_complete=self._on_vnv_complete,
-            begin_feedback=self._begin_post_install_feedback,
-            handle_feedback=self._handle_post_install_progress,
-        )
-
-    def _on_vnv_complete(self, success: bool, error: str):
-        """Handle VNV automation completion and show deferred success dialog."""
-        self._end_post_install_feedback(not bool(error))
-        if not success and error:
-            from ..services.message_service import MessageService
-            MessageService.warning(
-                self,
-                "VNV Automation Failed",
-                f"VNV post-install automation encountered an error:\n\n{error}\n\n"
-                "You can complete these steps manually by following the guide at:\n"
-                "https://vivanewvegas.moddinglinked.com/wabbajack.html"
-            )
-        elif success:
-            self._safe_append_text("VNV post-install automation completed successfully.")
-
-        if hasattr(self, '_pending_success_dialog_params'):
-            params = self._pending_success_dialog_params
-            del self._pending_success_dialog_params
-            self._run_verifier_then_show_success(
-                install_dir=params.get('install_dir', ''),
-                game_type=params.get('game_type', 'unknown'),
-                appid=params.get('appid', ''),
-                success_params={
-                    'modlist_name': params['modlist_name'],
-                    'workflow_type': params['workflow_type'],
-                    'time_taken': params['time_taken'],
-                    'game_name': params.get('game_name'),
-                    'enb_detected': params.get('enb_detected', False),
-                },
-            )
-
-    def _check_and_run_mew_automation(self, modlist_name: str, install_dir: str) -> bool:
-        """Check if MEW automation should run and start it if applicable.
-
-        Returns:
-            True if MEW automation is starting (caller should defer success dialog)
-            False if no MEW needed (show success dialog immediately)
-        """
-        from ..services.mew_automation_controller import MEWAutomationController
-
-        _ctx = getattr(self, 'context', None)
-        _appid = getattr(self, '_current_appid', None) or (
-            _ctx.get('appid') if isinstance(_ctx, dict) else None
-        )
-
-        self._mew_controller = MEWAutomationController()
-        return self._mew_controller.attempt(
-            parent=self,
-            modlist_name=modlist_name,
-            install_dir=install_dir,
-            appid=_appid,
-            on_progress=self._safe_append_text,
-            on_complete=self._on_mew_complete,
-            begin_feedback=self._begin_post_install_feedback,
-            handle_feedback=self._handle_post_install_progress,
-        )
-
-    def _on_mew_complete(self, success: bool, error: str):
-        """Handle MEW automation completion and show deferred success dialog."""
-        self._end_post_install_feedback(not bool(error))
-        if not success and error:
-            from ..services.message_service import MessageService
-            MessageService.warning(
-                self,
-                "MEW Automation Failed",
-                f"MEW post-install automation encountered an error:\n\n{error}\n\n"
-                "You can complete these steps manually by following the guide at:\n"
-                "https://mojaveexpressguide.com/docs/Installation"
-            )
-        elif success:
-            self._safe_append_text("MEW post-install automation completed successfully.")
-
-        if hasattr(self, '_pending_success_dialog_params'):
-            params = self._pending_success_dialog_params
-            del self._pending_success_dialog_params
-            self._run_verifier_then_show_success(
-                install_dir=params.get('install_dir', ''),
-                game_type=params.get('game_type', 'unknown'),
-                appid=params.get('appid', ''),
-                success_params={
-                    'modlist_name': params['modlist_name'],
-                    'workflow_type': params['workflow_type'],
-                    'time_taken': params['time_taken'],
-                    'game_name': params.get('game_name'),
-                    'enb_detected': params.get('enb_detected', False),
-                },
-            )
 
     def show_next_steps_dialog(self, message):
         dlg = QDialog(self)

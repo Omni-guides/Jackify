@@ -31,8 +31,10 @@ TTW_INSTALLER_EXECUTABLE_NAME = "mpi_installer"
 # GitHub release info
 TTW_INSTALLER_REPO = "SulfurNitride/TTW_Linux_Installer"
 TTW_INSTALLER_RELEASE_URL = f"https://api.github.com/repos/{TTW_INSTALLER_REPO}/releases/latest"
-# Set to None to use latest release
-TTW_INSTALLER_PINNED_VERSION = "0.2.0"
+# Set to a version string to pin; None uses the latest release.
+# Deliberately unpinned - TTW_Linux_Installer tracks upstream, and a release that breaks the
+# integration is accepted as the cost of not gating every third-party update behind a Jackify release.
+TTW_INSTALLER_PINNED_VERSION = None
 
 
 class TTWInstallerHandler(TTWInstallerBackendMixin):
@@ -85,12 +87,16 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
         self.ttw_installer_executable_path = None
         self.logger.info(f"TTW_Linux_Installer not found (searched for: {TTW_INSTALLER_EXECUTABLE_NAME})")
 
-    def install_ttw_installer(self, install_dir: Optional[Path] = None) -> Tuple[bool, str]:
+    def install_ttw_installer(
+        self, install_dir: Optional[Path] = None, version: Optional[str] = None
+    ) -> Tuple[bool, str]:
         """Download and install TTW_Linux_Installer from GitHub releases.
-        
+
         Args:
             install_dir: Optional directory to install to (defaults to ~/Jackify/TTW_Linux_Installer)
-            
+            version: Optional release tag to install. Takes precedence over the pinned
+                version; without either, the latest release is used.
+
         Returns:
             (success: bool, message: str)
         """
@@ -98,18 +104,23 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
             target_dir = Path(install_dir) if install_dir else self.ttw_installer_dir
             target_dir.mkdir(parents=True, exist_ok=True)
 
-            # Fetch release info - always use pinned version when set; never use latest
-            if TTW_INSTALLER_PINNED_VERSION:
+            # An explicitly requested version (Tools Hub "Change Version") outranks the pin
+            requested_version = version or TTW_INSTALLER_PINNED_VERSION
+            version_source = "requested" if version else "pinned"
+
+            if requested_version:
                 tag_candidates = [
-                    TTW_INSTALLER_PINNED_VERSION,
-                    f"v{TTW_INSTALLER_PINNED_VERSION}" if not TTW_INSTALLER_PINNED_VERSION.startswith("v") else None,
+                    requested_version,
+                    f"v{requested_version}" if not requested_version.startswith("v") else None,
                 ]
                 tag_candidates = [t for t in tag_candidates if t]
                 data = None
                 release_tag = None
                 for tag in tag_candidates:
                     release_url = f"https://api.github.com/repos/{TTW_INSTALLER_REPO}/releases/tags/{tag}"
-                    self.logger.info(f"Fetching pinned TTW_Linux_Installer version {tag} from {release_url}")
+                    self.logger.info(
+                        f"Fetching {version_source} TTW_Linux_Installer version {tag} from {release_url}"
+                    )
                     resp = requests.get(release_url, timeout=15, verify=True)
                     if resp.status_code == 200:
                         data = resp.json()
@@ -119,7 +130,7 @@ class TTWInstallerHandler(TTWInstallerBackendMixin):
                         resp.raise_for_status()
                 if not data:
                     return False, (
-                        f"Pinned release {TTW_INSTALLER_PINNED_VERSION} not found on GitHub "
+                        f"{version_source.capitalize()} release {requested_version} not found on GitHub "
                         f"(tried tags: {', '.join(tag_candidates)}). Check repo and tag names."
                     )
             else:

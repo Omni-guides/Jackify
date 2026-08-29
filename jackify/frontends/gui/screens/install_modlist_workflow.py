@@ -14,11 +14,12 @@ from jackify.backend.services.update_detection import (
 )
 from .install_modlist_output_mixin import InstallModlistOutputMixin
 from .install_modlist_workflow_execution import InstallWorkflowExecutionMixin
+from .install_modlist_workflow_validation import InstallWorkflowValidationMixin
 
 logger = logging.getLogger(__name__)
 
 
-class InstallWorkflowMixin(InstallWorkflowExecutionMixin, InstallModlistOutputMixin):
+class InstallWorkflowMixin(InstallWorkflowExecutionMixin, InstallWorkflowValidationMixin, InstallModlistOutputMixin):
     """Mixin providing installation workflow methods for InstallModlistScreen."""
 
     # normalize_version_token and normalize_modlist_name are imported from update_detection service

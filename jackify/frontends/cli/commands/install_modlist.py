@@ -11,7 +11,7 @@ from typing import Optional
 
 # Import the backend services we'll need
 from jackify.backend.models.modlist import ModlistContext
-from jackify.shared.colors import COLOR_INFO, COLOR_ERROR, COLOR_RESET
+from jackify.shared.colors import COLOR_INFO, COLOR_ERROR, COLOR_RESET, COLOR_WARNING
 
 logger = logging.getLogger(__name__)
 
@@ -212,23 +212,33 @@ class InstallModlistCommand:
         }
     
     def _validate_install_context(self, context: dict) -> bool:
-        """Validate installation context.
-        
+        """Validate installation context for the non-interactive (--install-modlist) path.
+
         Args:
             context: Installation context dictionary
-            
+
         Returns:
             True if valid, False otherwise
         """
-        is_gui_mode = os.environ.get('JACKIFY_GUI_MODE') == '1'
-        required_keys = ['modlist_name', 'install_dir', 'download_dir', 'nexus_api_key', 'game_type']
-        missing = [k for k in required_keys if not context.get(k)]
-        
-        if is_gui_mode and missing:
-            print(f"ERROR: Missing required arguments for GUI workflow: {', '.join(missing)}")
+        from jackify.backend.services.install_validation import validate_install_request
+        issues = validate_install_request(
+            modlist_name=context.get('modlist_name'),
+            install_dir=context.get('install_dir'),
+            download_dir=context.get('download_dir'),
+            nexus_api_key=context.get('nexus_api_key'),
+            game_type=context.get('game_type'),
+        )
+        errors = [i for i in issues if i.severity == 'error']
+        warnings = [i for i in issues if i.severity == 'warning']
+
+        for issue in warnings:
+            print(f"{COLOR_WARNING}WARNING: {issue.message}{COLOR_RESET}")
+
+        if errors:
+            print(f"ERROR: {', '.join(i.message for i in errors)}")
             print("This workflow must be fully non-interactive. Please report this as a bug if you see this message.")
             return False
-        
+
         return True
     
     def _execute_legacy_list_modlists(self, args):
@@ -286,7 +296,7 @@ class InstallModlistCommand:
                 for m in grouped_modlists[cat_key]:
                     print(m.get('id', ''))
     
-    def _execute_legacy_install(self, context: dict) -> int:
+    def _execute_legacy_install(self, context: dict, gui_mode: bool = False) -> int:
         """Execute installation using backend implementation.
         
         Args:
@@ -297,25 +307,48 @@ class InstallModlistCommand:
         """
         # Import backend services
         from jackify.backend.core.modlist_operations import ModlistInstallCLI
-        from jackify.shared.colors import COLOR_WARNING, COLOR_PROMPT
-        
+        from jackify.backend.services.install_validation import validate_install_request
+        from jackify.shared.colors import COLOR_PROMPT
+
         # Use new SystemInfo pattern
         modlist_cli = ModlistInstallCLI(self.system_info)
-        
+
         # Detect game type and check support
         game_type = None
         wabbajack_file_path = context.get('wabbajack_file_path')
         modlist_info = context.get('modlist_info')
-        
+
         if wabbajack_file_path:
             game_type = modlist_cli.detect_game_type(wabbajack_file_path=wabbajack_file_path)
         elif modlist_info:
             game_type = modlist_cli.detect_game_type(modlist_info=modlist_info)
         elif context.get('game_type'):
             game_type = context['game_type']
-        
+
+        issues = validate_install_request(
+            modlist_name=context.get('modlist_name'),
+            install_dir=context.get('install_dir'),
+            download_dir=context.get('download_dir'),
+            nexus_api_key=context.get('nexus_api_key'),
+            game_type=game_type,
+        )
+        unsupported = next((i for i in issues if i.code == 'unsupported_game'), None)
+        vr_notice = next((i for i in issues if i.code == 'vr_game'), None)
+        unsafe_dir = next((i for i in issues if i.code in ('unsafe_directory', 'dangerous_directory')), None)
+
+        if unsafe_dir:
+            print(f"\n{COLOR_WARNING}Install Directory Notice{COLOR_RESET}")
+            print(f"{COLOR_WARNING}{unsafe_dir.message}{COLOR_RESET}")
+            if unsafe_dir.severity == 'error':
+                print("[INFO] Modlist installation cancelled - unsafe install directory.")
+                return 1
+            response = input(f"{COLOR_PROMPT}Press Enter to continue, or type 'cancel' to abort: {COLOR_RESET}").strip().lower()
+            if response == 'cancel':
+                print("[INFO] Modlist installation cancelled by user.")
+                return 1
+
         # Check if game is supported
-        if game_type and not modlist_cli.check_game_support(game_type):
+        if unsupported:
             supported_games = modlist_cli.wabbajack_parser.get_supported_games_display_names()
             supported_games_str = ", ".join(supported_games)
             print(f"\n{COLOR_WARNING}Game Support Notice{COLOR_RESET}")
@@ -325,7 +358,7 @@ class InstallModlistCommand:
             if response == 'cancel':
                 print("[INFO] Modlist installation cancelled by user.")
                 return 1
-        elif game_type in ('skyrimvr', 'fallout4vr'):
+        elif vr_notice:
             game_label = "Skyrim VR" if game_type == 'skyrimvr' else "Fallout 4 VR"
             print(f"\n{COLOR_WARNING}VR Platform Notice{COLOR_RESET}")
             print(f"{COLOR_WARNING}{game_label} modlist detected. Jackify will handle the install and prefix setup, but running VR modlists on Linux requires a working VR platform (SteamVR, ALVR, WiVRn, etc.) configured independently.{COLOR_RESET}")
@@ -335,34 +368,16 @@ class InstallModlistCommand:
                 print("[INFO] Modlist installation cancelled by user.")
                 return 1
         
-        is_gui_mode = os.environ.get('JACKIFY_GUI_MODE') == '1'
-        
-        if is_gui_mode:
-            confirmed_context = modlist_cli.run_discovery_phase(context_override=context)
-            if confirmed_context:
-                # For unsupported games, skip post-install configuration
-                if game_type and not modlist_cli.check_game_support(game_type):
-                    print(f"{COLOR_WARNING}Modlist installation completed successfully.{COLOR_RESET}")
-                    print(f"{COLOR_WARNING}Note: Post-install configuration was skipped for unsupported game type: {game_type}{COLOR_RESET}")
-                    return 0
-                else:
-                    modlist_cli.configuration_phase()
+        confirmed_context = modlist_cli.run_discovery_phase(context_override=context, gui_mode=gui_mode)
+        if confirmed_context:
+            # For unsupported games, skip post-install configuration
+            if game_type and not modlist_cli.check_game_support(game_type):
+                print(f"{COLOR_WARNING}Modlist installation completed successfully.{COLOR_RESET}")
+                print(f"{COLOR_WARNING}Note: Post-install configuration was skipped for unsupported game type: {game_type}{COLOR_RESET}")
                 return 0
             else:
-                print("[INFO] Modlist installation cancelled or not confirmed.")
-                return 1
+                modlist_cli.configuration_phase(gui_mode=gui_mode)
+            return 0
         else:
-            # CLI mode: allow interactive prompts as before
-            confirmed_context = modlist_cli.run_discovery_phase(context_override=context)
-            if confirmed_context:
-                # For unsupported games, skip post-install configuration
-                if game_type and not modlist_cli.check_game_support(game_type):
-                    print(f"{COLOR_WARNING}Modlist installation completed successfully.{COLOR_RESET}")
-                    print(f"{COLOR_WARNING}Note: Post-install configuration was skipped for unsupported game type: {game_type}{COLOR_RESET}")
-                    return 0
-                else:
-                    modlist_cli.configuration_phase()
-                return 0
-            else:
-                print("[INFO] Modlist installation cancelled or not confirmed.")
-                return 1 
+            print("[INFO] Modlist installation cancelled or not confirmed.")
+            return 1 

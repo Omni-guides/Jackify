@@ -69,15 +69,21 @@ class TTWWorkflowMixin:
                 try:
                     has_files = any(install_dir_path.iterdir())
                     if has_files:
-                        dlg = WarningDialog(
-                            f"The TTW output directory already exists and contains files:\n{install_dir}\n\n"
-                            f"All files in this directory will be deleted before installation.\n\n"
-                            f"This action cannot be undone.",
-                            parent=self
-                        )
-                        if not dlg.exec() or not dlg.confirmed:
-                            self._enable_controls_after_operation()
-                            return
+                        # In modlist-integration mode Jackify chose this directory itself - a
+                        # Wabbajack-created mod placeholder (bare meta.ini, no payload yet), not
+                        # user data - so the generic "will delete everything" prompt below (for
+                        # the standalone/manual TTW screen, where the directory is user-chosen)
+                        # would just be alarming noise here. Still clears it, just silently.
+                        if not getattr(self, '_integration_mode', False):
+                            dlg = WarningDialog(
+                                f"The TTW output directory already exists and contains files:\n{install_dir}\n\n"
+                                f"All files in this directory will be deleted before installation.\n\n"
+                                f"This action cannot be undone.",
+                                parent=self
+                            )
+                            if not dlg.exec() or not dlg.confirmed:
+                                self._enable_controls_after_operation()
+                                return
 
                         import shutil
                         try:

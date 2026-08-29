@@ -26,7 +26,7 @@ class GameProtonWarningDialog(QDialog):
         self.modlist_name = modlist_name
         self.setWindowTitle("Recommended Proton Version")
         self.setWindowModality(Qt.ApplicationModal)
-        self.setFixedSize(600, 420)
+        self.setFixedWidth(600)
         self.setStyleSheet("QDialog { background: #181818; color: #fff; border-radius: 12px; }")
 
         layout = QVBoxLayout(self)
@@ -38,8 +38,6 @@ class GameProtonWarningDialog(QDialog):
         card.setFrameShape(QFrame.StyledPanel)
         card.setFrameShadow(QFrame.Raised)
         card.setFixedWidth(540)
-        card.setMinimumHeight(280)
-        card.setMaximumHeight(16777215)
         card_layout = QVBoxLayout(card)
         card_layout.setSpacing(16)
         card_layout.setContentsMargins(28, 28, 28, 28)
@@ -86,7 +84,6 @@ class GameProtonWarningDialog(QDialog):
         details_label.setTextFormat(Qt.RichText)
         card_layout.addWidget(details_label)
 
-        layout.addStretch()
         layout.addWidget(card, alignment=Qt.AlignCenter)
         layout.addSpacing(20)
 

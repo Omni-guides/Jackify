@@ -68,15 +68,3 @@ class ShortcutHandler(
         readline.set_completer_delims(' \t\n;')
         readline.parse_and_bind("tab: complete")
 
-    # DEAD CODE - Commented out 2026-01-29
-    # These helper methods were meant for create_new_modlist_shortcut() in
-    # shortcut_discovery.py which was never completed. Kept for reference.
-    #
-    # def _get_mo2_path(self):
-    #     """Get path to ModOrganizer.exe from user with tab completion"""
-    #     ...
-    #
-    # def _get_modlist_name(self):
-    #     """Get the modlist name from user"""
-    #     ...
-    

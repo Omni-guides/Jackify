@@ -24,7 +24,7 @@ from jackify.shared.errors import mo2_setup_failed
 from jackify.shared.progress_models import FileProgress, OperationType
 from ..dialogs.existing_setup_dialog import prompt_existing_setup_dialog
 from ..services.message_service import MessageService
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import set_responsive_minimum, browse_directory
 from .screen_focus_reclaim import FocusReclaimMixin, STEAM_RESTART_SENTINEL
 from ..widgets.progress_indicator import OverallProgressIndicator
@@ -91,7 +91,6 @@ class InstallMO2Screen(ThreadLifecycleMixin, ScreenBackMixin, FocusReclaimMixin,
         self.main_menu_index = additional_tasks_index
         self.additional_tasks_index = additional_tasks_index
         self.system_info = system_info or SystemInfo(is_steamdeck=False)
-        self.debug = DEBUG_BORDERS
         self.worker = None
 
         self._user_manually_scrolled = False

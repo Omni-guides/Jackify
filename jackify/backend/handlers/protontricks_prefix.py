@@ -126,15 +126,20 @@ class ProtontricksPrefixMixin:
             self.logger.error(f"Error setting Windows 10 prefix: {e}")
             return False
 
-    def get_wine_prefix_path(self, appid) -> Optional[str]:
+    def get_wine_prefix_path(self, appid, log_missing: bool = True) -> Optional[str]:
         """
         Get the WINEPREFIX path for a given AppID.
         Uses native path discovery when enabled, else protontricks -c echo $WINEPREFIX.
+
+        log_missing=False downgrades the not-found log to debug, for callers where a
+        missing prefix is an expected state rather than a fault.
         """
         if self.use_native_operations:
             self.logger.debug(f"Getting WINEPREFIX for AppID {appid} via native path discovery")
             try:
-                return self._get_native_steam_service().get_wine_prefix_path(appid)
+                return self._get_native_steam_service().get_wine_prefix_path(
+                    appid, log_missing=log_missing
+                )
             except Exception as e:
                 self.logger.warning(f"Native WINEPREFIX detection failed, falling back to protontricks: {e}")
 
@@ -144,7 +149,11 @@ class ProtontricksPrefixMixin:
             prefix_path = result.stdout.strip()
             self.logger.debug(f"Detected WINEPREFIX: {prefix_path}")
             return prefix_path
-        self.logger.error(f"Failed to get WINEPREFIX for AppID {appid}. Stderr: {result.stderr if result else 'N/A'}")
+        message = f"Failed to get WINEPREFIX for AppID {appid}. Stderr: {result.stderr if result else 'N/A'}"
+        if log_missing:
+            self.logger.error(message)
+        else:
+            self.logger.debug(message)
         return None
 
     def install_wine_components(self, appid, game_var, specific_components: Optional[List[str]] = None):

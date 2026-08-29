@@ -10,6 +10,10 @@ from .resolution_handler import ResolutionHandler
 
 logger = logging.getLogger(__name__)
 
+# Special game types that still receive Step 15 tool compatibility settings, because they run
+# the same engine and tooling as the non-special variants that already get them.
+TOOL_COMPAT_VR_TYPES = ('skyrimvr', 'fallout4vr')
+
 
 class ModlistConfigurationMixin:
     """Mixin providing configuration workflow methods for ModlistHandler."""
@@ -48,11 +52,14 @@ class ModlistConfigurationMixin:
         else:
             return True
 
-    def _execute_configuration_steps(self, status_callback=None):
+    def _execute_configuration_steps(self, status_callback=None, defer_playbooks: bool = False):
         """
         Runs the actual configuration steps for the selected modlist.
         Args:
             status_callback (callable, optional): A function to call with status updates during configuration.
+            defer_playbooks: True when the caller runs on a background Qt thread and cannot show
+                a consent dialog here - Step 17 is skipped entirely and the caller is responsible
+                for calling the playbook hook itself once back on the main thread.
         """
         try:
             # Store status_callback for Configuration Summary
@@ -573,24 +580,23 @@ class ModlistConfigurationMixin:
             
         self.logger.info("Configuration steps completed successfully.")
 
-        # Step 14: Re-enforce Windows 10 mode after modlist-specific configurations (matches legacy script line 1333)
-        if status_callback:
-            status_callback(f"{self._get_progress_timestamp()} Re-applying final Windows compatibility settings")
-        self._re_enforce_windows_10_mode()
-
         # Step 15: Apply tool compatibility settings (xEdit, Pandora, DLL overrides).
-        # Runs for standard Skyrim SE/AE modlists and Enderal SE. Other special types
-        # (FNV, FO3, etc.) are excluded entirely - different engine, none of these
-        # fixes apply. Enderal SE shares the Skyrim SE engine and plugin format, so
-        # xEdit/Pandora/DLL overrides/Synthesis dotnet+NuGet setup all still apply -
-        # only the mscoree AppDefault is skipped for it (apply_engine_mscoree below),
-        # since that entry is scoped to SkyrimSE.exe, which is also Enderal's own
-        # game process and would crash it.
+        # Runs for standard Skyrim SE/AE and Fallout 4 modlists (neither is a special
+        # type, so both fall through the None branch), plus Enderal SE and the two VR
+        # variants. Other special types (FNV, FO3, etc.) are excluded entirely -
+        # different engine, none of these fixes apply. Enderal SE shares the Skyrim SE
+        # engine and plugin format, so xEdit/Pandora/DLL overrides/Synthesis dotnet+NuGet
+        # setup all still apply - only the mscoree AppDefault is skipped for it
+        # (apply_engine_mscoree below), since that entry is scoped to SkyrimSE.exe, which
+        # is also Enderal's own game process and would crash it.
+        # The VR variants run the same engines and tooling as the flat versions, and need no
+        # mscoree exception - their processes are SkyrimVR.exe/Fallout4VR.exe.
         _special_type = self.detect_special_game_type(self.modlist_dir)
         _enderal = _special_type == 'enderal'
+        _vr = _special_type in TOOL_COMPAT_VR_TYPES
         try:
             from jackify.backend.handlers.config_handler import ConfigHandler
-            if ConfigHandler().get('auto_tool_compat', True) and (_special_type is None or _enderal):
+            if ConfigHandler().get('auto_tool_compat', True) and (_special_type is None or _enderal or _vr):
                 if status_callback:
                     status_callback(f"{self._get_progress_timestamp()} Applying tool compatibility settings")
                 self.logger.info("Step 15: Applying tool compatibility settings...")
@@ -643,9 +649,54 @@ class ModlistConfigurationMixin:
         except Exception as e:
             self.logger.warning("Step 16: Nemesis setup failed (non-fatal): %s", e)
 
+        # Step 17: USVFS Linux fix (patched usvfs_x64.dll for faster MO2 load under Wine)
+        try:
+            if self.modlist_dir:
+                from jackify.backend.services.usvfs_patch_service import apply_usvfs_patch
+                result = apply_usvfs_patch(
+                    Path(self.modlist_dir),
+                    log=lambda msg: status_callback(f"{self._get_progress_timestamp()} {msg}") if status_callback else None,
+                )
+                if result.is_warning:
+                    self.logger.warning("Step 17: %s", result.message)
+                else:
+                    self.logger.info("Step 17: %s", result.message)
+        except Exception as e:
+            self.logger.warning("Step 17: USVFS Linux fix failed (non-fatal): %s", e)
+
+        try:
+            if self.modlist_dir and self.game_name:
+                from jackify.backend.services.install_registry import register_install
+                register_install(
+                    self.modlist_dir, self.game_name,
+                    game_type=self.game_var_full, appid=self.appid, configured=True,
+                )
+        except Exception as e:
+            self.logger.debug("Install registry update skipped: %s", e)
+
+        try:
+            from jackify import __version__ as _jackify_version
+            from jackify.backend.services.jackify_db import gather_environment_fields, record_event
+            record_event(
+                "configure_completed", "success",
+                modlist_name=self.game_name, game_type=self.game_var_full,
+                jackify_version=_jackify_version,
+                proton_version=getattr(self, 'proton_ver', None),
+                **gather_environment_fields(),
+            )
+        except Exception as e:
+            self.logger.debug("JackifyDB record skipped: %s", e)
+
+        # Step 17: Modlist playbooks (community fixes registry) - non-fatal by design, see
+        # backend/services/playbook/hook_wiring.py. Deferred to the caller when running on a
+        # background Qt thread, since consent may require a dialog this thread cannot show.
+        if not defer_playbooks:
+            from jackify.backend.services.playbook.hook_wiring import run_configuration_hook
+            run_configuration_hook(self)
+
         return True # Return True on success
 
-    def run_modlist_configuration_phase(self, context: dict = None) -> bool:
+    def run_modlist_configuration_phase(self, context: dict = None, defer_playbooks: bool = False) -> bool:
         """
         Main entry point to run the full modlist configuration sequence.
         This orchestrates all the individual steps.
@@ -654,7 +705,7 @@ class ModlistConfigurationMixin:
         # Call the private method that contains the actual steps
         # Pass along the status_callback if it was provided in the context
         status_callback = context.get('status_callback') if context else None
-        return self._execute_configuration_steps(status_callback=status_callback)
+        return self._execute_configuration_steps(status_callback=status_callback, defer_playbooks=defer_playbooks)
 
     def _configure_nxmhandler_ini(self) -> None:
         """

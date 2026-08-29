@@ -116,6 +116,27 @@ class ConfigureExistingModlistShortcutsMixin:
                 self.shortcut_combo.addItem(display)
                 self.shortcut_map.append(shortcut)
 
+            self._apply_pending_appid_selection()
+
+        self._update_shortcut_info_label()
+
+    def request_select_appid(self, appid: str) -> None:
+        """Ask this screen to auto-select the shortcut matching `appid` once shortcuts finish
+        loading (the Dashboard's Configure/Update prefill - shortcuts load asynchronously, so
+        this just records the request; _on_shortcuts_loaded() applies it when ready)."""
+        self._pending_appid_to_select = str(appid) if appid else None
+
+    def _apply_pending_appid_selection(self) -> None:
+        appid = self._pending_appid_to_select
+        self._pending_appid_to_select = None
+        if not appid:
+            return
+        for i, shortcut in enumerate(self.shortcut_map):
+            raw_appid = shortcut.get('AppID', shortcut.get('appid'))
+            if raw_appid is not None and str(raw_appid) == str(appid):
+                self.shortcut_combo.setCurrentIndex(i + 1)  # +1 for "Please Select..."
+                return
+
     def _on_shortcuts_error(self, error_msg):
         """Handle errors from shortcut loading thread"""
         # Log error from main thread (safe to write to stderr here)
@@ -125,3 +146,24 @@ class ConfigureExistingModlistShortcutsMixin:
             self.shortcut_combo.clear()
             self.shortcut_combo.setEnabled(True)
             self.shortcut_combo.addItem("Error loading modlists - please try again")
+        self.mo2_shortcuts = []
+        self._update_shortcut_info_label()
+
+    def _update_shortcut_info_label(self):
+        """Show numbered setup guidance when the modlist list is empty, a short
+        one-liner once modlists are listed (Fable5 review finding 2.5)."""
+        if not hasattr(self, 'shortcut_info_label'):
+            return
+        if self.mo2_shortcuts:
+            self.shortcut_info_label.setText(
+                "<span style='color:#aaa'>Don't see a modlist you expect? "
+                "Click the refresh button (↻) to update the list.</span>"
+            )
+        else:
+            self.shortcut_info_label.setText(
+                "<span style='color:#aaa'>If your modlist isn't listed:<br>"
+                "1. Add ModOrganizer.exe to Steam as a non-Steam game.<br>"
+                "2. Set a Proton version in its Properties &gt; Compatibility.<br>"
+                "3. Launch it once from Steam, then click the refresh button (↻)."
+                "</span>"
+            )

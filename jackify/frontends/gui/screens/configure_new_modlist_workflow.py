@@ -123,7 +123,7 @@ class ConfigureNewModlistWorkflowMixin:
         self.configure_modlist()
 
     def configure_modlist(self):
-        # CRITICAL: Reload config from disk to pick up any settings changes from Settings dialog
+        # Reload config from disk to pick up any settings changes from Settings dialog
         # Refresh Proton version and winetricks settings
         self.config_handler._load_config()
 

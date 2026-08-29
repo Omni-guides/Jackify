@@ -8,7 +8,6 @@ Handles CLI menu system for Jackify
 import os
 import sys
 import logging
-import time
 import subprocess # Add subprocess import
 import argparse
 import re
@@ -18,8 +17,7 @@ import glob  # Add for the simpler tab completion
 
 # Import colors from the new central location
 from jackify.shared.colors import (
-    COLOR_PROMPT, COLOR_SELECTION, COLOR_RESET, COLOR_INFO, COLOR_ERROR,
-    COLOR_SUCCESS, COLOR_WARNING, COLOR_DISABLED, COLOR_ACTION, COLOR_INPUT
+    COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_ERROR, COLOR_WARNING
 )
 
 # Import our modules
@@ -32,7 +30,6 @@ from .resolution_handler import ResolutionHandler
 from .protontricks_handler import ProtontricksHandler
 from .path_handler import PathHandler
 from .vdf_handler import VDFHandler
-from jackify.shared.ui_utils import print_section_header
 from .completers import path_completer
 
 try:
@@ -80,107 +77,6 @@ class MenuHandler:
 
 
 
-
-    def _show_recovery_menu(self, cli_instance):
-        """Show the recovery tools menu."""
-        while True:
-            self._clear_screen()
-            # Banner display handled by frontend
-            print_section_header('Recovery Tools')
-            print(f"{COLOR_INFO}This allows restoring original Steam configuration files from backups created by Jackify.{COLOR_RESET}")
-            print(f"{COLOR_SELECTION}1.{COLOR_RESET} Restore all backups")
-            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Restore config.vdf only")
-            print(f"{COLOR_SELECTION}3.{COLOR_RESET} Restore libraryfolders.vdf only")
-            print(f"{COLOR_SELECTION}4.{COLOR_RESET} Restore shortcuts.vdf only")
-            print(f"{COLOR_SELECTION}0.{COLOR_RESET} Return to Main Menu")
-            
-            choice = input(f"\n{COLOR_PROMPT}Enter your selection (0-4): {COLOR_RESET}").strip()
-
-            if choice == "1":
-                logger.info("Recovery selected: Restore all Steam config files")
-                print("\nAttempting to restore all supported Steam config files...")
-                # Logic to find and restore backups for all three files
-                paths_to_check = {
-                    "libraryfolders": cli_instance.path_handler.find_steam_library_vdf_path(), # Need method to find vdf itself
-                    "config": cli_instance.path_handler.find_steam_config_vdf(),
-                    "shortcuts": cli_instance.shortcut_handler._find_shortcuts_vdf() # Assumes this returns the path
-                }
-                restored_count = 0
-                for file_type, file_path in paths_to_check.items():
-                    if file_path:
-                        print(f"Restoring {file_type} ({file_path})...")
-                        # Find latest backup (needs helper function)
-                        latest_backup = cli_instance.filesystem_handler.find_latest_backup(Path(file_path))
-                        if latest_backup:
-                            if cli_instance.filesystem_handler.restore_backup(latest_backup, Path(file_path)):
-                                print(f"Successfully restored {file_type}.")
-                                restored_count += 1
-                            else:
-                                print(f"{COLOR_ERROR}Failed to restore {file_type} from {latest_backup}.{COLOR_RESET}")
-                        else:
-                            print(f"No backup found for {file_type}.")
-                    else:
-                        print(f"Could not locate original file for {file_type} to restore.")
-                print(f"\nRestore process completed. {restored_count}/{len(paths_to_check)} files potentially restored.")
-                input("\nPress Enter to continue...")
-            elif choice == "2":
-                logger.info("Recovery selected: Restore config.vdf only")
-                print("\nAttempting to restore config.vdf...")
-                # Logic for config.vdf
-                file_path = cli_instance.path_handler.find_steam_config_vdf()
-                if file_path:
-                    latest_backup = cli_instance.filesystem_handler.find_latest_backup(Path(file_path))
-                    if latest_backup:
-                        if cli_instance.filesystem_handler.restore_backup(latest_backup, Path(file_path)):
-                            print(f"Successfully restored config.vdf from {latest_backup}.")
-                        else:
-                            print(f"{COLOR_ERROR}Failed to restore config.vdf from {latest_backup}.{COLOR_RESET}")
-                    else:
-                        print("No backup found for config.vdf.")
-                else:
-                    print("Could not locate config.vdf.")
-                input("\nPress Enter to continue...")
-            elif choice == "3":
-                logger.info("Recovery selected: Restore libraryfolders.vdf only")
-                print("\nAttempting to restore libraryfolders.vdf...")
-                # Logic for libraryfolders.vdf
-                file_path = cli_instance.path_handler.find_steam_library_vdf_path()
-                if file_path:
-                    latest_backup = cli_instance.filesystem_handler.find_latest_backup(Path(file_path))
-                    if latest_backup:
-                        if cli_instance.filesystem_handler.restore_backup(latest_backup, Path(file_path)):
-                            print(f"Successfully restored libraryfolders.vdf from {latest_backup}.")
-                        else:
-                            print(f"{COLOR_ERROR}Failed to restore libraryfolders.vdf from {latest_backup}.{COLOR_RESET}")
-                    else:
-                        print("No backup found for libraryfolders.vdf.")
-                else:
-                    print("Could not locate libraryfolders.vdf.")
-                input("\nPress Enter to continue...")
-            elif choice == "4":
-                logger.info("Recovery selected: Restore shortcuts.vdf only")
-                print("\nAttempting to restore shortcuts.vdf...")
-                # Logic for shortcuts.vdf
-                file_path = cli_instance.shortcut_handler._find_shortcuts_vdf()
-                if file_path:
-                    latest_backup = cli_instance.filesystem_handler.find_latest_backup(Path(file_path))
-                    if latest_backup:
-                        if cli_instance.filesystem_handler.restore_backup(latest_backup, Path(file_path)):
-                            print(f"Successfully restored shortcuts.vdf from {latest_backup}.")
-                        else:
-                            print(f"{COLOR_ERROR}Failed to restore shortcuts.vdf from {latest_backup}.{COLOR_RESET}")
-                    else:
-                        print("No backup found for shortcuts.vdf.")
-                else:
-                    print("Could not locate shortcuts.vdf.")
-                input("\nPress Enter to continue...")
-            elif choice == "0":
-                logger.info("Returning to main menu from recovery.")
-                break # Exit recovery menu loop
-            else:
-                logger.warning(f"Invalid recovery menu selection: {choice}")
-                print("\nInvalid selection. Please try again.")
-                time.sleep(1)
 
     def get_input_with_default(self, prompt, default=None):
         """

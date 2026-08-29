@@ -1,35 +1,44 @@
 """
 Tools Hub card widget.
 
-Per-tool card showing status badge, version, and action buttons.
-Engines show Set Active / Active badge; tools with can_launch show Launch.
+Vertical card matching the Modlist Dashboard's card shape (icon tile on top, name/status
+below, actions at the bottom) rather than the old full-width row - the same visual language
+across both card grids, and no more wasted horizontal space per tool.
 """
 
 import logging
+import subprocess
 from typing import Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel,
-    QMenu, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QMenu, QPushButton, QSizePolicy, QVBoxLayout,
 )
 
+from jackify.backend.services.tool_icons import get_cached_icon_path
 from jackify.backend.services.tool_registry import ToolRegistry, ToolStatus, set_active_engine_id
+from jackify.frontends.gui.screens.modlist_dashboard_card import CARD_HEIGHT, CARD_WIDTH, IMAGE_HEIGHT, IMAGE_WIDTH
 from jackify.frontends.gui.services.message_service import MessageService, open_url
-from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
+from jackify.frontends.gui.shared_theme import (  # noqa: F401 - btn_style re-exported for callers
+    JACKIFY_COLOR_BLUE, LOGO_PATH,
+    COLOR_BTN_BACK as _C_BACK,
+    COLOR_BTN_DISABLED as _C_DISABLED,
+    COLOR_BTN_INSTALL as _C_INSTALL,
+    COLOR_BTN_LAUNCH as _C_LAUNCH,
+    COLOR_BTN_SET_ACTIVE as _C_SET_ACTIVE,
+    COLOR_BTN_UPDATE as _C_UPDATE,
+    btn_style,
+)
+
+_JACKIFY_ENGINE_TOOL_ID = "jackify-engine"
 
 logger = logging.getLogger(__name__)
 
-_C_INSTALL    = "#1a5fa8"
-_C_UPDATE     = "#4a5568"
-_C_LAUNCH     = "#1a5fa8"
-_C_SET_ACTIVE = "#4a5568"
-_C_BACK       = "#4a5568"
-_C_DISABLED   = "#333"
-
 _STYLE_BTN_INVISIBLE = (
     "QPushButton { background: transparent; border: none; color: transparent; "
-    "font-size: 11px; font-weight: bold; padding: 4px 8px; min-width: 90px; }"
+    "font-size: 11px; font-weight: bold; padding: 4px 8px; }"
     "QPushButton:hover { background: transparent; }"
 )
 
@@ -38,16 +47,8 @@ _BADGE_UP_TO_DATE    = ("#1a3545", "#5fb8c8")
 _BADGE_UPDATE_AVAIL  = ("#5a3d00", "#f0c040")
 _BADGE_ACTIVE        = ("#0e3d5a", JACKIFY_COLOR_BLUE)
 
-
-def btn_style(colour: str, disabled: bool = False, width: int = 90) -> str:
-    bg = _C_DISABLED if disabled else colour
-    hover = "#444" if disabled else colour
-    return (
-        f"QPushButton {{ background-color: {bg}; color: {'#666' if disabled else 'white'}; "
-        f"border: none; border-radius: 4px; font-size: 11px; font-weight: bold; "
-        f"padding: 4px 8px; min-width: {width}px; }}"
-        f"QPushButton:hover {{ background-color: {hover}; }}"
-    )
+_TILE_ENGINE = "#2e4a63"
+_TILE_TOOL = "#3d3d45"
 
 
 def section_header(text: str) -> QLabel:
@@ -57,6 +58,15 @@ def section_header(text: str) -> QLabel:
         "background: transparent; border: none; padding: 0;"
     )
     return lbl
+
+
+def _initials(display_name: str) -> str:
+    words = [w for w in display_name.replace("-", " ").split() if w]
+    if not words:
+        return "?"
+    if len(words) == 1:
+        return words[0][:3].upper()
+    return "".join(w[0] for w in words[:3]).upper()
 
 
 class ToolCard(QFrame):
@@ -73,83 +83,138 @@ class ToolCard(QFrame):
 
         self.setFrameShape(QFrame.StyledPanel)
         self.setStyleSheet(
-            "QFrame { background-color: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px; }"
+            "ToolCard { background-color: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px; } "
+            "ToolCard:hover { background-color: #333333; border: 1px solid #5a9fd6; }"
         )
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setFixedSize(CARD_WIDTH, CARD_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        outer = QHBoxLayout()
-        outer.setContentsMargins(14, 7, 14, 7)
-        outer.setSpacing(12)
+        outer = QVBoxLayout()
+        outer.setContentsMargins(10, 8, 10, 6)
+        outer.setSpacing(3)
 
-        info_col = QVBoxLayout()
-        info_col.setSpacing(2)
-        url = status.definition.upstream_url
+        defn = status.definition
+        self._tile_label = QLabel()
+        self._tile_label.setFixedSize(IMAGE_WIDTH, IMAGE_HEIGHT)
+        self._tile_label.setAlignment(Qt.AlignCenter)
+        self._tile_label.setStyleSheet("background: #1c1c1c; border-radius: 4px; border: none;")
+        self._load_tile_image()
+        outer.addWidget(self._tile_label, alignment=Qt.AlignHCenter)
+
+        name_font = QFont("Sans", 11, QFont.Bold)
+        url = defn.upstream_url
         if url:
             name_html = (
-                f'<a href="{url}" style="color: #e0e0e0; text-decoration: none; font-weight: bold;">'
-                f'{status.definition.display_name}</a>'
+                f'<a href="{url}" style="color: {JACKIFY_COLOR_BLUE}; text-decoration: none;">'
+                f'{defn.display_name}</a>'
             )
         else:
-            name_html = f"<b>{status.definition.display_name}</b>"
+            name_html = f'<span style="color: {JACKIFY_COLOR_BLUE};">{defn.display_name}</span>'
         self._name_label = QLabel(name_html)
+        self._name_label.setFont(name_font)
         self._name_label.setTextFormat(Qt.RichText)
         self._name_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         self._name_label.setOpenExternalLinks(False)
         self._name_label.linkActivated.connect(self._open_url)
-        self._name_label.setStyleSheet("color: #e0e0e0; font-size: 13px; background: transparent; border: none;")
-        info_col.addWidget(self._name_label)
-        desc_label = QLabel(status.definition.description)
-        desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #888; font-size: 11px; background: transparent; border: none;")
-        info_col.addWidget(desc_label)
-        info_w = QWidget()
-        info_w.setLayout(info_col)
-        info_w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        info_w.setStyleSheet("background: transparent; border: none;")
-        outer.addWidget(info_w, stretch=3)
+        self._name_label.setStyleSheet("background: transparent; border: none;")
+        self._name_label.setFixedHeight(18)
+        outer.addWidget(self._name_label)
 
-        centre_col = QVBoxLayout()
-        centre_col.setSpacing(4)
-        centre_col.setAlignment(Qt.AlignCenter)
+        desc_font = QFont("Sans", 9)
+        elided_desc = QFontMetrics(desc_font).elidedText(defn.description, Qt.ElideRight, CARD_WIDTH - 20)
+        desc_label = QLabel(elided_desc)
+        desc_label.setFont(desc_font)
+        desc_label.setStyleSheet("color: #888; background: transparent; border: none;")
+        desc_label.setFixedHeight(14)
+        if elided_desc != defn.description:
+            desc_label.setToolTip(defn.description)
+        outer.addWidget(desc_label)
+
+        badge_row = QHBoxLayout()
+        badge_row.setSpacing(6)
         self._badge = QLabel()
-        self._badge.setAlignment(Qt.AlignCenter)
-        self._badge.setFixedWidth(140)
-        self._badge.setStyleSheet("border-radius: 3px; padding: 2px 6px; font-size: 11px; font-weight: bold;")
-        centre_col.addWidget(self._badge, alignment=Qt.AlignCenter)
+        self._badge.setStyleSheet("border-radius: 3px; padding: 2px 6px; font-size: 10px; font-weight: bold;")
+        badge_row.addWidget(self._badge)
+        badge_row.addStretch(1)
         self._version_label = QLabel()
-        self._version_label.setAlignment(Qt.AlignCenter)
         self._version_label.setStyleSheet("color: #777; font-size: 10px; background: transparent; border: none;")
-        centre_col.addWidget(self._version_label, alignment=Qt.AlignCenter)
-        centre_w = QWidget()
-        centre_w.setLayout(centre_col)
-        centre_w.setFixedWidth(160)
-        centre_w.setStyleSheet("background: transparent; border: none;")
-        outer.addWidget(centre_w)
+        self._version_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        badge_row.addWidget(self._version_label)
+        outer.addLayout(badge_row)
 
-        btn_col = QVBoxLayout()
-        btn_col.setSpacing(3)
-        btn_col.setAlignment(Qt.AlignCenter)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(4)
         self._btn_primary = QPushButton()
-        self._btn_primary.setFixedWidth(100)
+        self._btn_primary.setFixedHeight(24)
         self._btn_primary.clicked.connect(self._on_primary)
-        btn_col.addWidget(self._btn_primary)
+        btn_row.addWidget(self._btn_primary, stretch=2)
         self._btn_update = QPushButton("Update")
-        self._btn_update.setFixedWidth(100)
+        self._btn_update.setFixedHeight(24)
         self._btn_update.clicked.connect(lambda: self.action_requested.emit(self._tool_id, "update"))
-        btn_col.addWidget(self._btn_update)
+        btn_row.addWidget(self._btn_update, stretch=2)
         self._btn_more = QPushButton("...")
-        self._btn_more.setFixedWidth(100)
-        self._btn_more.setStyleSheet(btn_style(_C_BACK))
+        self._btn_more.setFixedHeight(24)
+        self._btn_more.setStyleSheet(btn_style(_C_BACK, width=30))
         self._btn_more.clicked.connect(self._on_more)
-        btn_col.addWidget(self._btn_more)
-        btn_w = QWidget()
-        btn_w.setLayout(btn_col)
-        btn_w.setFixedWidth(120)
-        btn_w.setStyleSheet("background: transparent; border: none;")
-        outer.addWidget(btn_w)
+        btn_row.addWidget(self._btn_more, stretch=1)
+        outer.addLayout(btn_row)
 
         self.setLayout(outer)
         self._refresh_ui()
+
+    def _load_tile_image(self) -> None:
+        # Fetched GitHub-owner avatars only make sense for engines (few, well-known repos) -
+        # for the wider tools list they were often unrelated/low-quality images, so those
+        # keep the colour-tile placeholder instead. jackify-engine uses the bundled Jackify
+        # logo directly rather than a fetched avatar.
+        if self._tool_id == _JACKIFY_ENGINE_TOOL_ID:
+            pixmap = QPixmap(LOGO_PATH)
+            if not pixmap.isNull():
+                self._set_tile_pixmap(pixmap)
+                return
+        if self._status.definition.is_engine:
+            cached = get_cached_icon_path(self._tool_id)
+            if cached:
+                pixmap = QPixmap(str(cached))
+                if not pixmap.isNull():
+                    self._set_tile_pixmap(pixmap)
+                    return
+        self._tile_label.setPixmap(self._placeholder_pixmap())
+
+    def set_icon_pixmap(self, path) -> None:
+        """Called once a background fetch has cached a real icon for this tool - engines only,
+        see _load_tile_image."""
+        if not self._status.definition.is_engine:
+            return
+        pixmap = QPixmap(str(path))
+        if not pixmap.isNull():
+            self._set_tile_pixmap(pixmap)
+
+    def _set_tile_pixmap(self, pixmap: QPixmap) -> None:
+        size = self._tile_label.size()
+        # Fetched avatars/logos are square-ish, not the same aspect ratio as the tile - fit
+        # within it (letterboxed on the dark tile background) rather than cropping or
+        # stretching a face/logo out of shape.
+        scaled = pixmap.scaled(size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self._tile_label.setPixmap(scaled)
+
+    def _placeholder_pixmap(self) -> QPixmap:
+        base = QColor(_TILE_ENGINE if self._status.definition.is_engine else _TILE_TOOL)
+        size = self._tile_label.size()
+        pixmap = QPixmap(size)
+        painter = QPainter(pixmap)
+        gradient = QLinearGradient(0, 0, size.width(), size.height())
+        gradient.setColorAt(0.0, base.lighter(130))
+        gradient.setColorAt(1.0, base.darker(140))
+        painter.fillRect(pixmap.rect(), gradient)
+        painter.setPen(QColor(255, 255, 255, 210))
+        font = QFont()
+        font.setBold(True)
+        font.setPointSize(22)
+        painter.setFont(font)
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, _initials(self._status.definition.display_name))
+        painter.end()
+        return pixmap
 
     def _refresh_ui(self):
         defn = self._status.definition
@@ -161,14 +226,12 @@ class ToolCard(QFrame):
             self._badge.setText("Working...")
             self._badge.setStyleSheet(
                 "background-color: #555; color: #ccc; border-radius: 3px; "
-                "padding: 2px 6px; font-size: 11px; font-weight: bold; border: none;"
+                "padding: 2px 6px; font-size: 10px; font-weight: bold; border: none;"
             )
             self._btn_primary.setText(self._busy_label or "Working...")
             self._btn_primary.setEnabled(False)
             self._btn_primary.setVisible(True)
-            self._btn_update.setStyleSheet(
-                _STYLE_BTN_INVISIBLE
-            )
+            self._btn_update.setStyleSheet(_STYLE_BTN_INVISIBLE)
             self._btn_update.setEnabled(False)
             self._btn_more.setEnabled(False)
             return
@@ -184,43 +247,42 @@ class ToolCard(QFrame):
         self._badge.setText(badge_text)
         self._badge.setStyleSheet(
             f"background-color: {bg}; color: {fg}; border-radius: 3px; "
-            f"padding: 2px 6px; font-size: 11px; font-weight: bold; border: none;"
+            f"padding: 2px 6px; font-size: 10px; font-weight: bold; border: none;"
         )
 
         iv = self._status.installed_version or "-"
         lv = self._status.latest_version or "checking..."
-        self._version_label.setText(f"Installed: {iv}\nLatest: {lv}")
+        self._version_label.setText(f"{iv} / {lv}")
+        self._version_label.setToolTip(f"Installed: {iv}\nLatest: {lv}")
 
         if not installed:
             self._btn_primary.setText("Install")
-            self._btn_primary.setStyleSheet(btn_style(_C_INSTALL))
+            self._btn_primary.setStyleSheet(btn_style(_C_INSTALL, width=70))
             self._btn_primary.setEnabled(not self._busy)
             self._btn_primary.setVisible(True)
         elif defn.is_engine:
             if is_active:
                 self._btn_primary.setText("Active")
-                self._btn_primary.setStyleSheet(btn_style(_C_DISABLED, disabled=True))
+                self._btn_primary.setStyleSheet(btn_style(_C_DISABLED, disabled=True, width=70))
                 self._btn_primary.setEnabled(False)
             else:
                 self._btn_primary.setText("Set Active")
-                self._btn_primary.setStyleSheet(btn_style(_C_SET_ACTIVE))
+                self._btn_primary.setStyleSheet(btn_style(_C_SET_ACTIVE, width=70))
                 self._btn_primary.setEnabled(not self._busy)
             self._btn_primary.setVisible(True)
         elif defn.can_launch:
             self._btn_primary.setText("Launch")
-            self._btn_primary.setStyleSheet(btn_style(_C_LAUNCH))
+            self._btn_primary.setStyleSheet(btn_style(_C_LAUNCH, width=70))
             self._btn_primary.setEnabled(not self._busy)
             self._btn_primary.setVisible(True)
         else:
             self._btn_primary.setVisible(False)
 
         if installed and update_avail and not self._busy:
-            self._btn_update.setStyleSheet(btn_style(_C_UPDATE))
+            self._btn_update.setStyleSheet(btn_style(_C_UPDATE, width=70))
             self._btn_update.setEnabled(True)
         else:
-            self._btn_update.setStyleSheet(
-                _STYLE_BTN_INVISIBLE
-            )
+            self._btn_update.setStyleSheet(_STYLE_BTN_INVISIBLE)
             self._btn_update.setEnabled(False)
         self._btn_more.setEnabled(not self._busy)
 
@@ -282,13 +344,13 @@ class ToolCard(QFrame):
         btn_row.addStretch()
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFixedSize(90, 30)
-        cancel_btn.setStyleSheet(btn_style(_C_BACK))
+        cancel_btn.setStyleSheet(btn_style(_C_BACK, width=90))
         cancel_btn.setDefault(True)
         cancel_btn.clicked.connect(dlg.reject)
         btn_row.addWidget(cancel_btn)
         uninstall_btn = QPushButton("Uninstall")
         uninstall_btn.setFixedSize(90, 30)
-        uninstall_btn.setStyleSheet(btn_style("#8b2020"))
+        uninstall_btn.setStyleSheet(btn_style("#8b2020", width=90))
         uninstall_btn.clicked.connect(dlg.accept)
         btn_row.addWidget(uninstall_btn)
         layout.addLayout(btn_row)

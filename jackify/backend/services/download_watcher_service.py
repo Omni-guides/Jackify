@@ -11,7 +11,18 @@ from pathlib import Path
 from threading import Thread, Event, Lock
 from typing import Callable, Optional
 
+from jackify.backend.services.file_validator_service import (
+    _XXH64Fallback, _hash_matches_expected, xxhash,
+)
+
 logger = logging.getLogger(__name__)
+
+
+def _as_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def normalize_download_name(name: str) -> str:
@@ -58,6 +69,8 @@ class DownloadWatcherService:
         self._thread: Optional[Thread] = None
         self._debouncing: set[Path] = set()
         self._debouncing_lock = Lock()
+        # (path, size, mtime) -> hash, so a file is hashed once rather than every scan
+        self._hash_cache: dict = {}
 
     def set_pending_items(self, items: list[dict]) -> None:
         """Replace the pending items list. Thread-safe for simple list swap."""
@@ -118,6 +131,78 @@ class DownloadWatcherService:
                 logger.debug(f"Candidate normalized match: {path.name} -> {expected_name}")
                 self._debounce_and_emit(path, item)
                 return
+
+        item = self._match_by_content(path)
+        if item is not None:
+            logger.info(
+                "Candidate content match: %s -> %s (filename differs)",
+                path.name, item.get('file_name'),
+            )
+            self._debounce_and_emit(path, item)
+
+    def match_by_content(self, path: Path) -> Optional[dict]:
+        """Public entry point for callers outside the live scan loop (e.g. the
+        manager's startup precheck / Scan Now button) that need the same
+        hash+size fallback the passive watcher already applies."""
+        return self._match_by_content(path)
+
+    def _match_by_content(self, path: Path) -> Optional[dict]:
+        """Match on hash when the filename does not match any pending item.
+
+        Nexus has changed its archive filename format more than once, and browsers alter names
+        while saving, so a correct archive can arrive under a name no normalisation rule can
+        map back. Size is checked first because it is a stat() - only an exact size match is
+        worth hashing.
+        """
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return None
+        if size <= 0:
+            return None
+
+        candidates = [
+            item for item in self._pending_items
+            if str(item.get('expected_hash', '')).strip()
+            and _as_int(item.get('expected_size')) == size
+        ]
+        if not candidates:
+            return None
+
+        key = (str(path), size, self._mtime(path))
+        computed = self._hash_cache.get(key)
+        if computed is None:
+            computed = self._hash_file(path)
+            if computed is None:
+                return None
+            self._hash_cache[key] = computed
+
+        for item in candidates:
+            if _hash_matches_expected(computed, str(item.get('expected_hash', ''))):
+                return item
+        return None
+
+    @staticmethod
+    def _mtime(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    @staticmethod
+    def _hash_file(path: Path) -> Optional[str]:
+        try:
+            h = xxhash.xxh64() if xxhash else _XXH64Fallback()
+            with open(path, 'rb') as f:
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+            return h.hexdigest().lower()
+        except OSError as e:
+            logger.debug("Content match hashing failed for %s: %s", path, e)
+            return None
 
     def _debounce_and_emit(self, path: Path, item: dict) -> None:
         with self._debouncing_lock:

@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "playbook_id": "viva-new-vegas",
+  "revision": 2,
+  "display_name": "Viva New Vegas",
+  "summary": "Post-install steps from the Viva New Vegas Wabbajack guide.",
+  "reference_url": "https://vivanewvegas.moddinglinked.com/wabbajack.html",
+  "maintainer": "omni",
+  "created": "2026-07-27",
+  "match": {
+    "name_contains": ["viva new vegas", "vnv"],
+    "mo2_profiles": ["Viva New Vegas", "Viva New Vegas Extended"],
+    "game_types": ["Fallout New Vegas"]
+  },
+  "confirm": {
+    "type": "dir_exists",
+    "path": "{modlist_dir}/__Files Requiring Manual Install"
+  },
+  "hook": "post_configure",
+  "intro": "Jackify can automatically perform the following post-install steps:",
+  "outro": "Jackify will download the required tools automatically where possible.\nIf you are not a Nexus Premium member, you will be prompted to\nmanually download any tools that cannot be fetched automatically.",
+  "steps": [
+    {
+      "id": "root-mods",
+      "label": "Copy root mods to game directory",
+      "type": "copy_files",
+      "source": "{modlist_dir}/__Files Requiring Manual Install",
+      "dest": "{game_root}",
+      "merge": true,
+      "completed_when": { "type": "file_exists", "path": "{game_root}/FNVpatch.exe" },
+      "on_failure": "abort_playbook"
+    },
+    {
+      "id": "4gb-patch",
+      "label": "Download and run Linux 4GB patcher",
+      "type": "run_catalog_tool",
+      "tool": "fnv-4gb-patcher",
+      "cwd": "{game_root}",
+      "completed_when": { "type": "file_exists", "path": "{game_root}/FalloutNV_backup.exe" },
+      "on_failure": "abort_playbook"
+    },
+    {
+      "id": "bsa-decompress",
+      "label": "Download and run BSA decompressor (reduces loading times)",
+      "type": "run_catalog_tool",
+      "tool": "fnv-bsa-decompressor",
+      "write_marker": "{game_root}/.jackify_bsa_decompressed",
+      "completed_when": { "type": "file_exists", "path": "{game_root}/.jackify_bsa_decompressed" },
+      "on_failure": "abort_playbook"
+    }
+  ]
+}

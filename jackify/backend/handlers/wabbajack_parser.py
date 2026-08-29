@@ -101,6 +101,28 @@ class WabbajackParser:
             self.logger.error(f"Error parsing .wabbajack file {wabbajack_path}: {e}")
             return None
     
+    def parse_wabbajack_version(self, wabbajack_path: Path) -> Optional[str]:
+        """
+        Extract the modlist author's own declared Version from a .wabbajack file - ground
+        truth for what was actually installed, unlike matching the install's name against the
+        gallery's current listing (which only reflects the latest public version, not
+        necessarily what this specific archive was built from).
+
+        Returns the version string, or None if not present or unreadable.
+        """
+        try:
+            with zipfile.ZipFile(wabbajack_path, 'r') as zip_file:
+                modlist_files = [f for f in zip_file.namelist() if f in ['modlist', 'modlist.json']]
+                if not modlist_files:
+                    return None
+                with zip_file.open(modlist_files[0]) as f:
+                    data = json.load(f)
+            version = data.get('Version')
+            return str(version) if version else None
+        except Exception as e:
+            self.logger.debug(f"Could not read Version from {wabbajack_path}: {e}")
+            return None
+
     def parse_wabbajack_readme(self, wabbajack_path: Path) -> Optional[str]:
         """
         Extract the readme URL from a .wabbajack file.

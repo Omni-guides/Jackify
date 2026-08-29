@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton
 from PySide6.QtGui import QPixmap, QFont
 from PySide6.QtCore import Qt
 import os
-from ..shared_theme import JACKIFY_COLOR_BLUE, LOGO_PATH, DISCLAIMER_TEXT
+from ..shared_theme import JACKIFY_COLOR_BLUE, LOGO_PATH, DISCLAIMER_TEXT, COLOR_SEPARATOR
 from ..utils import set_responsive_minimum
 
 _TOOLS_HUB_ACTION = "third_party_tools"
@@ -56,7 +56,7 @@ class MainMenu(QWidget):
         # Separator
         sep = QLabel()
         sep.setFixedHeight(2)
-        sep.setStyleSheet("background: #fff;")
+        sep.setStyleSheet(f"background: {COLOR_SEPARATOR};")
         header_layout.addWidget(sep)
 
         header_layout.addSpacing(10)
@@ -70,6 +70,7 @@ class MainMenu(QWidget):
         button_height = 40
         MENU_ITEMS = [
             ("Modlist Tasks", "modlist_tasks", "Manage your modlists with native Linux tools"),
+            ("Modlist Dashboard", "modlist_dashboard", "View, launch, and manage installed modlists"),
             ("Additional Tasks", "additional_tasks", "Verifier, diagnostics, Nexus OAuth, and more"),
             ("Tools Hub", "third_party_tools", "Install and manage additional engines and modding tools"),
             ("Exit Jackify", "exit_jackify", "Close the application"),
@@ -174,6 +175,8 @@ class MainMenu(QWidget):
             self.stacked_widget.setCurrentIndex(3)
         elif action_id == "third_party_tools" and self.stacked_widget:
             self.stacked_widget.setCurrentIndex(10)
+        elif action_id == "modlist_dashboard" and self.stacked_widget:
+            self.stacked_widget.setCurrentIndex(12)
         elif action_id == "return_main_menu":
             pass
         elif self.stacked_widget:

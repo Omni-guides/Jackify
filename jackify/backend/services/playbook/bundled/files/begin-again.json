@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "playbook_id": "begin-again",
+  "revision": 1,
+  "display_name": "Begin Again",
+  "summary": "Offers the Tale of Two Wastelands installer for the Begin Again Wabbajack modlist.",
+  "maintainer": "omni",
+  "created": "2026-07-27",
+  "match": {
+    "name_exact": ["Begin Again"]
+  },
+  "confirm": {
+    "any": [
+      { "type": "file_exists", "path": "{modlist_dir}/ModOrganizer.exe" },
+      { "type": "file_exists", "path": "{modlist_dir}/files/ModOrganizer.exe" }
+    ]
+  },
+  "hook": "post_install",
+  "steps": [
+    {
+      "id": "offer-ttw",
+      "label": "Offer Tale of Two Wastelands installation",
+      "type": "offer_tool_flow",
+      "flow": "ttw_install"
+    }
+  ]
+}

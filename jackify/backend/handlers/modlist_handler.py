@@ -35,11 +35,22 @@ import logging
 # Initialize logger
 logger = logging.getLogger(__name__)
 
+# Set once by the GUI at startup (frontends/gui/main.py). No call chain reaches
+# _restore_terminal - it's invoked by atexit/signal handlers, not by our own code -
+# so gui_mode can't be threaded through as a parameter here.
+_gui_mode = False
+
+
+def set_gui_mode(enabled: bool) -> None:
+    global _gui_mode
+    _gui_mode = enabled
+
+
 # Ensure terminal state is restored on exit, error, or interrupt
 def _restore_terminal():
     try:
         # Skip stty in GUI mode to prevent "Inappropriate ioctl for device" error
-        if os.environ.get('JACKIFY_GUI_MODE') == '1':
+        if _gui_mode:
             return
         os.system('stty sane')
     except Exception:

@@ -140,7 +140,11 @@ GAME_REGISTRY = {
     "fallout3": (r"Software\\Wow6432Node\\bethesda softworks\\fallout3", "Installed Path", "system"),
     "enderal": (r"Software\\Wow6432Node\\SureAI\\Enderal SE", "installed path", "system"),
     "cp2077": (r"Software\\CD Projekt Red\\Cyberpunk 2077", "InstallFolder", "system"),
-    "bg3": (r"Software\\Larian Studios\\Baldur's Gate 3", "InstallDir", "system"),
+    # bg3 deliberately excluded: this check (and the matching games_config entry in
+    # automated_prefix_registry.py) was added in an "Untested checkpoint" commit,
+    # copy-pasted from the FNV/FO3/Enderal pattern with no confirmed BG3-specific need -
+    # unlike those games' xSE loaders, nothing in BG3's modding stack is known to read this
+    # registry key. Re-add only once that's actually confirmed.
 }
 
 # winetricks components Jackify installs per game type (modlist_wine_ops.py)
@@ -791,6 +795,45 @@ def check_modlist_dir(modlist_dir: Path, r: Results):
     else:
         r.warn("ModOrganizer.ini not found")
 
+    _check_usvfs_patch(modlist_dir, r)
+
+
+def _check_usvfs_patch(modlist_dir: Path, r: Results):
+    """USVFS Linux fix is a performance optimisation. A genuine failure to apply it is a
+    WARN; deliberately skipping it (disabled, or this MO2 build can't take it) is expected,
+    correct behaviour and must read as OK, not as something the player needs to review."""
+    try:
+        from jackify.backend.services.usvfs_patch_service import (
+            USVFS_DLL_NAME,
+            build_unsupported_build_report,
+            find_usvfs_dll,
+            is_already_patched,
+            is_enabled,
+            is_supported_game_type,
+            is_unsupported_build,
+        )
+    except Exception as e:
+        r.warn(f"Could not check USVFS Linux fix: {e}")
+        return
+
+    if not is_supported_game_type(detect_game_type(modlist_dir)):
+        r.ok("USVFS Linux fix not applicable for this game type")
+        return
+
+    dll = find_usvfs_dll(modlist_dir)
+    if dll is None:
+        r.warn(f"{USVFS_DLL_NAME} not found in modlist directory")
+        return
+
+    if is_already_patched(dll):
+        r.ok("USVFS Linux fix applied")
+    elif not is_enabled():
+        r.ok("USVFS Linux fix not applied (disabled in Settings)")
+    elif is_unsupported_build(dll):
+        r.warn(build_unsupported_build_report(modlist_dir, dll))
+    else:
+        r.warn("USVFS Linux fix not applied - MO2 will load more slowly under Wine")
+
 
 def _resolve_wine_path(gp: str, pfx: Optional[Path] = None) -> Optional[Path]:
     """
@@ -1080,8 +1123,8 @@ def check_ttw_installation(modlist_dir: Path, game_type: str, r: Results, modlis
         return
 
     try:
-        from jackify.backend.data.ttw_compatible_modlists import is_ttw_compatible
-        if not is_ttw_compatible(modlist_name):
+        from jackify.backend.services.playbook.hook_wiring import modlist_offers_tool_flow
+        if not modlist_offers_tool_flow(str(modlist_dir), modlist_name, "ttw_install"):
             return
     except Exception:
         pass

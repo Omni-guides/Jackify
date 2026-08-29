@@ -406,6 +406,7 @@ class ManualDownloadManagerRuntimeMixin:
 
         matched = 0
         used_paths: set[Path] = set()
+        used_hints: set[str] = set()
         for hint in targets:
             name = hint['file_name']
             exact = exact_map.get(name.lower())
@@ -414,7 +415,22 @@ class ManualDownloadManagerRuntimeMixin:
             if exact is None or exact in used_paths:
                 continue
             used_paths.add(exact)
+            used_hints.add(name)
             if self._on_candidate(exact, hint, from_startup_precheck=True):
+                matched += 1
+
+        # Content-hash fallback for files whose saved name matches no pending item -
+        # keeps this path (startup precheck and the Scan Now button) as capable as
+        # the passive background watcher, which already does this (ba5b927).
+        for p in existing_files:
+            if p in used_paths:
+                continue
+            hint = self._watcher.match_by_content(p)
+            if hint is None or hint.get('file_name', '') in used_hints:
+                continue
+            used_paths.add(p)
+            used_hints.add(hint.get('file_name', ''))
+            if self._on_candidate(p, hint, from_startup_precheck=True):
                 matched += 1
 
         if matched:

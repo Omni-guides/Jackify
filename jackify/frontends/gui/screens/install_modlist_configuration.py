@@ -2,7 +2,7 @@
 import warnings
 from PySide6.QtWidgets import QMessageBox, QProgressDialog
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
-from .screen_focus_reclaim import FocusReclaimMixin, STEAM_RESTART_SENTINEL
+from .screen_focus_reclaim import FocusReclaimMixin
 from PySide6.QtGui import QFont
 from jackify.frontends.gui.services.message_service import MessageService
 from jackify.shared.errors import manual_steps_incomplete, configuration_failed
@@ -45,7 +45,9 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                 pass
             finally:
                 self.steam_restart_progress = None
-        pass
+        # Steam takes focus when it comes back up, leaving Jackify behind the Steam window
+        if hasattr(self, '_start_focus_reclaim_retries'):
+            self._start_focus_reclaim_retries()
 
     def _detect_game_type_from_mo2_ini(self, install_dir: str) -> str:
         """Detect game type by checking ModOrganizer.ini for loader executables."""
@@ -83,8 +85,8 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
             self.file_progress_list.stop_cpu_tracking()
             # Re-enable controls now that installation/configuration is complete
             self._enable_controls_after_operation()
-            # Don't end post-install feedback yet - may continue with VNV automation
-            # Will be called in _on_vnv_complete or after VNV check
+            # Don't end post-install feedback yet - may continue with playbook automation
+            # Will be called in _on_playbook_automation_complete or after the playbook check
 
             if success:
                 # Check if we need to show Somnium guidance
@@ -142,10 +144,12 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                         self._initiate_ttw_workflow(ttw_modlist_name, install_dir)
                         return  # Don't show success dialog yet, will show after TTW completes
 
-                # Check for VNV/MEW post-install automation after TTW check
-                vnv_automation_running = self._check_and_run_vnv_automation(modlist_name, install_dir)
-                if not vnv_automation_running:
-                    vnv_automation_running = self._check_and_run_mew_automation(modlist_name, install_dir)
+                # Check for modlist post-install fixes (playbooks - VNV, MEW, etc.) after TTW check
+                vnv_automation_running = self._check_and_run_playbook_automation(
+                    modlist_name, install_dir,
+                    appid=getattr(self, '_current_appid', None),
+                    game_type=getattr(self, '_current_game_type', None),
+                )
 
                 if vnv_automation_running:
                     self._cleanup_config_thread()
@@ -182,6 +186,7 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                         'game_name': game_name,
                         'enb_detected': enb_detected,
                         'readme_url': getattr(self, '_readme_url', None),
+                        'playbook_warnings': list(getattr(self._playbook_controller, 'last_failure_notices', None) or []) if hasattr(self, '_playbook_controller') else [],
                     },
                 )
             elif hasattr(self, '_manual_steps_retry_count') and self._manual_steps_retry_count >= 3:
@@ -300,7 +305,7 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
         logger.info("Waiting for Steam filesystem updates to complete...")
         time.sleep(2)
         
-        # CRITICAL: Re-detect the AppID after Steam restart and manual steps
+        # Re-detect the AppID after Steam restart and manual steps
         # Steam assigns a NEW AppID during restart, different from the one we initially created
         logger.info(f"Re-detecting AppID for shortcut '{modlist_name}' after Steam restart...")
         from jackify.backend.handlers.shortcut_handler import ShortcutHandler

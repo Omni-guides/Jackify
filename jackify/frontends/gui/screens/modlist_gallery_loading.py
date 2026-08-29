@@ -175,9 +175,7 @@ class ModlistGalleryLoadingMixin:
                 if index >= 0:
                     self.game_combo.setCurrentIndex(index)
 
-            # Populate tag filter (mod filter temporarily disabled)
             self._populate_tag_filter()
-            # self._populate_mod_filter()  # TEMPORARILY DISABLED
 
             # Create cards immediately (will show placeholders for images not in cache)
             self._create_all_cards()
@@ -248,9 +246,7 @@ class ModlistGalleryLoadingMixin:
                     if index >= 0:
                         self.game_combo.setCurrentIndex(index)
 
-                # Populate tag filter (mod filter temporarily disabled)
                 self._populate_tag_filter()
-                # self._populate_mod_filter()  # TEMPORARILY DISABLED
 
                 # Create cards immediately (will show placeholders for images not in cache)
                 self._create_all_cards()

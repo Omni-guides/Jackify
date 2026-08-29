@@ -368,127 +368,15 @@ class NativeSteamService:
             return False, None
     
     def set_proton_version(self, app_id: int, proton_version: str = "proton_experimental") -> bool:
-        """
-        Set the Proton version for a specific app using ONLY config.vdf like steam-conductor does.
-
-        Args:
-            app_id: The unsigned AppID
-            proton_version: The Proton version to set
-
-        Returns:
-            True if successful
-        """
+        """Set the Proton version for a specific app - see native_steam_proton.py."""
         # Ensure Steam user detection is completed first
         if not self.steam_path:
             if not self.find_steam_user():
                 logger.error("Cannot set Proton version: Steam user detection failed")
                 return False
 
-        logger.info(f"Setting Proton version '{proton_version}' for AppID {app_id} using STL-compatible format")
-
-        try:
-            # Step 1: Write to the main config.vdf for CompatToolMapping
-            config_path = self.steam_path / "config" / "config.vdf"
-            
-            if not config_path.exists():
-                logger.error(f"Steam config.vdf not found at: {config_path}")
-                return False
-            
-            # Create backup first
-            import shutil
-            import glob
-            backup_dir = config_path.parent / "backups"
-            backup_dir.mkdir(exist_ok=True)
-            backup_path = backup_dir / f"config_{int(time.time())}.bak"
-            shutil.copy2(config_path, backup_path)
-            logger.info(f"Created backup: {backup_path}")
-            existing = sorted(glob.glob(str(backup_dir / "config_*.bak")))
-            for old in existing[:-5]:
-                try:
-                    os.remove(old)
-                except Exception:
-                    pass
-            
-            # Read the file as text to avoid VDF library formatting issues
-            with open(config_path, 'r', encoding='utf-8', errors='ignore') as f:
-                config_text = f.read()
-            
-            # Find the CompatToolMapping section
-            compat_start = config_text.find('"CompatToolMapping"')
-            if compat_start == -1:
-                logger.warning("CompatToolMapping section not found in config.vdf, creating it")
-                # Find the Steam section to add CompatToolMapping to
-                steam_section = config_text.find('"Steam"')
-                if steam_section == -1:
-                    logger.error("Steam section not found in config.vdf")
-                    return False
-
-                # Find the opening brace for Steam section
-                steam_brace = config_text.find('{', steam_section)
-                if steam_brace == -1:
-                    logger.error("Steam section opening brace not found")
-                    return False
-
-                # Insert CompatToolMapping section right after Steam opening brace
-                insert_pos = steam_brace + 1
-                compat_section = '\n\t\t"CompatToolMapping"\n\t\t{\n\t\t}\n'
-                config_text = config_text[:insert_pos] + compat_section + config_text[insert_pos:]
-
-                # Update compat_start position after insertion
-                compat_start = config_text.find('"CompatToolMapping"')
-                logger.info("Created CompatToolMapping section in config.vdf")
-            
-            # Find the closing brace for CompatToolMapping
-            # Look for the opening brace after CompatToolMapping
-            brace_start = config_text.find('{', compat_start)
-            if brace_start == -1:
-                logger.error("CompatToolMapping opening brace not found")
-                return False
-            
-            # Count braces to find the matching closing brace
-            brace_count = 1
-            pos = brace_start + 1
-            compat_end = -1
-            
-            while pos < len(config_text) and brace_count > 0:
-                if config_text[pos] == '{':
-                    brace_count += 1
-                elif config_text[pos] == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        compat_end = pos
-                        break
-                pos += 1
-            
-            if compat_end == -1:
-                logger.error("CompatToolMapping closing brace not found")
-                return False
-            
-            # Check if this AppID already exists
-            app_id_pattern = f'"{app_id}"'
-            app_id_exists = app_id_pattern in config_text[compat_start:compat_end]
-            
-            if app_id_exists:
-                logger.info(f"AppID {app_id} already exists in CompatToolMapping, will be overwritten")
-                # Remove the existing entry by finding and removing the entire block
-                # Complex ordering -- just append for now
-            
-            # Create the new entry in STL's exact format (tabs between key and value)
-            new_entry = f'\t\t\t\t\t"{app_id}"\n\t\t\t\t\t{{\n\t\t\t\t\t\t"name"\t\t"{proton_version}"\n\t\t\t\t\t\t"config"\t\t""\n\t\t\t\t\t\t"priority"\t\t"250"\n\t\t\t\t\t}}\n'
-            
-            # Insert the new entry just before the closing brace of CompatToolMapping
-            new_config_text = config_text[:compat_end] + new_entry + config_text[compat_end:]
-            
-            # Write back the modified text
-            with open(config_path, 'w', encoding='utf-8') as f:
-                f.write(new_config_text)
-            
-            logger.info(f"Successfully set Proton version '{proton_version}' for AppID {app_id} using config.vdf only (steam-conductor method)")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error setting Proton version: {e}")
-            return False
+        from .native_steam_proton import set_proton_version as _set_proton_version
+        return _set_proton_version(self.steam_path, app_id, proton_version)
     
     def create_shortcut_with_proton(self, app_name: str, exe_path: str, start_dir: str = None,
                                   launch_options: str = "%command%", tags: List[str] = None,
@@ -574,9 +462,13 @@ class NativeSteamService:
                 logger.warning(f"Shortcut '{app_name}' not found")
                 return False
             
-            # Remove the shortcut
+            # Reindex after removal - a gap breaks the duplicate-shortcut check
             del shortcuts[to_remove]
-            data['shortcuts'] = shortcuts
+            remaining = [
+                shortcuts[k]
+                for k in sorted(shortcuts.keys(), key=lambda x: int(x) if str(x).isdigit() else 0)
+            ]
+            data['shortcuts'] = {str(i): entry for i, entry in enumerate(remaining)}
             
             # Write back
             if self.write_shortcuts_vdf(data):

@@ -2,7 +2,7 @@
 from pathlib import Path
 from PySide6.QtWidgets import QMessageBox, QApplication, QDialog
 from jackify.frontends.gui.utils import browse_directory, browse_file
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QFontMetrics
 import logging
 import os
@@ -12,6 +12,24 @@ from .install_modlist_dialogs import SelectionDialog, ModlistFetchThread  # Runt
 from jackify.frontends.gui.screens.modlist_gallery import ModlistGalleryDialog  # Runtime import
 
 logger = logging.getLogger(__name__)
+
+# game_type_btn label -> gallery's gameHumanFriendly filter value. "Other" has no single
+# filter value (it is everything not listed here), and "Oblivion Remastered" collapses onto
+# the same filter as "Oblivion" - both pre-existing, not introduced by the reverse lookup below.
+_GAME_TYPE_TO_HUMAN_FRIENDLY = {
+    "Skyrim": "Skyrim Special Edition",
+    "Fallout 4": "Fallout 4",
+    "Fallout New Vegas": "Fallout New Vegas",
+    "Oblivion": "Oblivion",
+    "Starfield": "Starfield",
+    "Oblivion Remastered": "Oblivion",
+    "Enderal": "Enderal Special Edition",
+    "Skyrim VR": "Skyrim VR",
+    "Fallout 4 VR": "Fallout 4 VR",
+    "Baldur's Gate 3": "Baldur's Gate 3",
+    "Other": None,
+}
+_HUMAN_FRIENDLY_TO_GAME_TYPE = {v: k for k, v in _GAME_TYPE_TO_HUMAN_FRIENDLY.items() if v}
 
 
 class ModlistSelectionMixin:
@@ -120,7 +138,7 @@ class ModlistSelectionMixin:
             self.modlist_btn.setEnabled(False)
 
     def open_modlist_dialog(self):
-        # CRITICAL: Prevent opening gallery without game type selected
+        # Prevent opening gallery without game type selected
         # Prevent engine path resolution / subprocess issues
         if not hasattr(self, 'current_game_type') or not self.current_game_type:
             QMessageBox.warning(
@@ -136,23 +154,9 @@ class ModlistSelectionMixin:
             QApplication.setOverrideCursor(Qt.WaitCursor)
             cursor_overridden = True
 
-            game_type_to_human_friendly = {
-                "Skyrim": "Skyrim Special Edition",
-                "Fallout 4": "Fallout 4",
-                "Fallout New Vegas": "Fallout New Vegas",
-                "Oblivion": "Oblivion",
-                "Starfield": "Starfield",
-                "Oblivion Remastered": "Oblivion",
-                "Enderal": "Enderal Special Edition",
-                "Skyrim VR": "Skyrim VR",
-                "Fallout 4 VR": "Fallout 4 VR",
-                "Baldur's Gate 3": "Baldur's Gate 3",
-                "Other": None
-            }
-
             game_filter = None
             if hasattr(self, 'current_game_type'):
-                game_filter = game_type_to_human_friendly.get(self.current_game_type)
+                game_filter = _GAME_TYPE_TO_HUMAN_FRIENDLY.get(self.current_game_type)
 
             self._gallery_dlg = ModlistGalleryDialog(game_filter=game_filter, parent=self)
             if cursor_overridden:
@@ -161,22 +165,7 @@ class ModlistSelectionMixin:
 
             if self._gallery_dlg.exec() == QDialog.Accepted and self._gallery_dlg.selected_metadata:
                 metadata = self._gallery_dlg.selected_metadata
-                metrics = QFontMetrics(self.modlist_btn.font())
-                available_width = self.modlist_btn.width() - 24  # padding allowance
-                elided_title = metrics.elidedText(metadata.title, Qt.ElideRight, available_width)
-                self.modlist_btn.setText(elided_title)
-                self.modlist_btn.setToolTip(metadata.title)
-                self.selected_modlist_info = {
-                    'machine_url': metadata.namespacedName,
-                    'title': metadata.title,
-                    'author': metadata.author,
-                    'game': metadata.gameHumanFriendly,
-                    'description': metadata.description,
-                    'nsfw': metadata.nsfw,
-                    'force_down': metadata.forceDown,
-                    'readme_url': metadata.links.readme if metadata.links else None,
-                    'download_url': metadata.links.download if metadata.links else None,
-                }
+                self._apply_selected_modlist_metadata(metadata)
                 self.modlist_name_edit.setText(metadata.title)
 
                 # Auto-append modlist name to install directory
@@ -191,6 +180,121 @@ class ModlistSelectionMixin:
             if cursor_overridden:
                 QApplication.restoreOverrideCursor()
             self.modlist_btn.setEnabled(True)
+
+    def _apply_selected_modlist_metadata(self, metadata) -> None:
+        """Populate selected_modlist_info and the modlist button from a chosen ModlistMetadata.
+        Shared by gallery selection and the Dashboard's Update prefill."""
+        metrics = QFontMetrics(self.modlist_btn.font())
+        available_width = self.modlist_btn.width() - 24  # padding allowance
+        elided_title = metrics.elidedText(metadata.title, Qt.ElideRight, available_width)
+        self.modlist_btn.setText(elided_title)
+        self.modlist_btn.setToolTip(metadata.title)
+
+        # Reuse the gallery's own image cache (already fetched to render this dialog's
+        # cards) as the Dashboard's artwork source at install completion - no extra
+        # network call needed.
+        gallery_image_path = None
+        try:
+            from jackify.backend.services.modlist_gallery_service import ModlistGalleryService
+            cache_path = ModlistGalleryService().get_image_cache_path(metadata, size="large")
+            if cache_path.is_file():
+                gallery_image_path = str(cache_path)
+        except Exception:
+            pass
+
+        self.selected_modlist_info = {
+            'machine_url': metadata.namespacedName,
+            'title': metadata.title,
+            'author': metadata.author,
+            'game': metadata.gameHumanFriendly,
+            'description': metadata.description,
+            'nsfw': metadata.nsfw,
+            'force_down': metadata.forceDown,
+            'readme_url': metadata.links.readme if metadata.links else None,
+            'download_url': metadata.links.download if metadata.links else None,
+            'version': metadata.version,
+            'gallery_image_path': gallery_image_path,
+        }
+
+    def request_update_prefill(self, machine_url: str, modlist_name: str, install_dir: str) -> None:
+        """Prefill the online-modlist tab for a Dashboard 'Update' action: same machine_url,
+        same install_dir the existing install already uses, so _check_update_mode's automatic
+        update-vs-new detection fires once the user clicks Start - this just gets the form into
+        the state a manual gallery pick would, no separate update-mode flag needed."""
+        self.source_tabs.setCurrentIndex(0)
+        self.install_dir_edit.setText(install_dir)
+        self.modlist_name_edit.setText(modlist_name)
+
+        # Reuse the existing install's own downloads directory (from ModOrganizer.ini) rather
+        # than leaving the screen's fresh-install default in place - an update should reuse
+        # already-downloaded archives, not point at an unrelated directory.
+        try:
+            from jackify.backend.services.nxm_downloader import resolve_mo2_download_dir
+            existing_downloads_dir = resolve_mo2_download_dir(Path(install_dir))
+            if existing_downloads_dir:
+                self.downloads_dir_edit.setText(str(existing_downloads_dir))
+        except Exception as e:
+            logger.warning("Could not resolve existing downloads directory for update prefill: %s", e)
+
+        self.modlist_btn.setText("Finding modlist...")
+        self.modlist_btn.setEnabled(False)
+        self.start_btn.setEnabled(False)
+
+        from jackify.backend.services.modlist_gallery_service import ModlistGalleryService
+
+        class _UpdatePrefillThread(QThread):
+            finished = Signal(object, object)  # metadata_response, error
+
+            def __init__(self, gallery_service):
+                super().__init__()
+                self.gallery_service = gallery_service
+
+            def run(self):
+                try:
+                    metadata_response = self.gallery_service.fetch_modlist_metadata(
+                        include_validation=False, include_search_index=False, sort_by="title"
+                    )
+                    self.finished.emit(metadata_response, None)
+                except Exception as e:
+                    self.finished.emit(None, str(e))
+
+        self._update_prefill_thread = _UpdatePrefillThread(ModlistGalleryService())
+        self._update_prefill_thread.finished.connect(
+            lambda resp, err: self._on_update_prefill_metadata_loaded(resp, err, machine_url)
+        )
+        self._update_prefill_thread.start()
+
+    def _on_update_prefill_metadata_loaded(self, metadata_response, error, machine_url: str) -> None:
+        self.start_btn.setEnabled(True)
+        self.modlist_btn.setEnabled(True)
+        if error or not metadata_response:
+            self.modlist_btn.setText("Select Modlist")
+            QMessageBox.warning(
+                self, "Could Not Fetch Modlist",
+                "Could not fetch the modlist gallery to prepare the update. "
+                "Select the modlist manually from the gallery to continue."
+            )
+            return
+        match = next(
+            (m for m in metadata_response.modlists if m.namespacedName == machine_url), None
+        )
+        if match is None:
+            self.modlist_btn.setText("Select Modlist")
+            QMessageBox.warning(
+                self, "Modlist Not Found",
+                "This modlist is no longer listed in the gallery. Select a modlist manually to "
+                "continue, or use the '.wabbajack File' tab."
+            )
+            return
+        self._apply_selected_modlist_metadata(match)
+
+        # Normal flow only reaches the modlist gallery after picking a Game Type, so
+        # game_type_btn is never blank here - matching that for the prefilled state too,
+        # since a modlist already showing selected with no game type looks like a state the
+        # user can't otherwise get into.
+        game_type = _HUMAN_FRIENDLY_TO_GAME_TYPE.get(match.gameHumanFriendly, "Other")
+        self.game_type_btn.setText(game_type)
+        self.current_game_type = game_type
 
     def browse_wabbajack_file(self):
         file = browse_file(self, "Select .wabbajack File", os.path.expanduser("~"), "Wabbajack Files (*.wabbajack)")

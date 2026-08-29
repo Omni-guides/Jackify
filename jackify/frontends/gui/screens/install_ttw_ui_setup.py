@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QCheckBox, QFrame, QTabWidget
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QFont
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from jackify.frontends.gui.services.message_service import open_url
 from jackify.backend.handlers.wabbajack_parser import WabbajackParser
 from jackify.frontends.gui.widgets.file_progress_list import FileProgressList
@@ -16,7 +16,6 @@ class TTWUISetupMixin:
         self.stacked_widget = stacked_widget
         self.main_menu_index = main_menu_index
         self.system_info = system_info
-        self.debug = DEBUG_BORDERS
         self.online_modlists = {}  # {game_type: [modlist_dict, ...]}
         self.modlist_details = {}  # {modlist_name: modlist_dict}
 
@@ -57,8 +56,6 @@ class TTWUISetupMixin:
         # Match other workflow screens
         main_overall_vbox.setContentsMargins(50, 50, 50, 0)
         main_overall_vbox.setSpacing(12)
-        if self.debug:
-            self.setStyleSheet("border: 2px solid magenta;")
 
         # --- Header (title, description) ---
         header_widget = QWidget()
@@ -89,9 +86,6 @@ class TTWUISetupMixin:
 
         header_widget.setLayout(header_layout)
         header_widget.setFixedHeight(120)  # Fixed total header height to match other screens
-        if self.debug:
-            header_widget.setStyleSheet("border: 2px solid pink;")
-            header_widget.setToolTip("HEADER_SECTION")
         main_overall_vbox.addWidget(header_widget)
 
         # --- Upper section: user-configurables (left) + process monitor (right) ---
@@ -228,17 +222,11 @@ class TTWUISetupMixin:
         btn_row_widget = QWidget()
         btn_row_widget.setLayout(btn_row)
         btn_row_widget.setMaximumHeight(50)  # Limit height to make it more compact
-        if self.debug:
-            btn_row_widget.setStyleSheet("border: 2px solid red;")
-            btn_row_widget.setToolTip("BUTTON_ROW")
         # Keep a reference for dynamic sizing when collapsing/expanding
         self.btn_row_widget = btn_row_widget
         user_config_widget = QWidget()
         user_config_widget.setLayout(user_config_vbox)
         user_config_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        if self.debug:
-            user_config_widget.setStyleSheet("border: 2px solid orange;")
-            user_config_widget.setToolTip("USER_CONFIG_WIDGET")
 
         # Right: Tabbed interface with Activity and Process Monitor
         # Both tabs are always available, user can switch between them
@@ -262,9 +250,6 @@ class TTWUISetupMixin:
         process_monitor_widget = QWidget()
         process_monitor_widget.setLayout(process_vbox)
         process_monitor_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        if self.debug:
-            process_monitor_widget.setStyleSheet("border: 2px solid purple;")
-            process_monitor_widget.setToolTip("PROCESS_MONITOR")
         self.process_monitor_widget = process_monitor_widget
 
         # Create tab widget to hold both Activity and Process Monitor
@@ -273,9 +258,6 @@ class TTWUISetupMixin:
         self.activity_tabs.setContentsMargins(0, 0, 0, 0)
         self.activity_tabs.setDocumentMode(False)
         self.activity_tabs.setTabPosition(QTabWidget.North)
-        if self.debug:
-            self.activity_tabs.setStyleSheet("border: 2px solid cyan;")
-            self.activity_tabs.setToolTip("ACTIVITY_TABS")
 
         # Add both widgets as tabs
         self.activity_tabs.addTab(self.file_progress_list, "Activity")
@@ -289,9 +271,6 @@ class TTWUISetupMixin:
         # Use Fixed size policy for consistent height
         self.upper_section_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.upper_section_widget.setMaximumHeight(280)  # Fixed height to match other workflow screens
-        if self.debug:
-            self.upper_section_widget.setStyleSheet("border: 2px solid green;")
-            self.upper_section_widget.setToolTip("UPPER_SECTION")
         main_overall_vbox.addWidget(self.upper_section_widget)
 
         # --- Status Banner (shows high-level progress) ---
@@ -333,9 +312,6 @@ class TTWUISetupMixin:
         self.console.setMinimumHeight(0)
         self.console.setMaximumHeight(0)
         self.console.setFontFamily('monospace')
-        if self.debug:
-            self.console.setStyleSheet("border: 2px solid yellow;")
-            self.console.setToolTip("CONSOLE")
 
         # Set up scroll tracking for professional auto-scroll behavior
         self._setup_scroll_tracking()

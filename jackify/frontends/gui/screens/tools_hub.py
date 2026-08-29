@@ -8,148 +8,51 @@ the cards are rebuilt and version checks restart.
 """
 
 import logging
-from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFrame, QHBoxLayout, QLabel,
+    QComboBox, QDialog, QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QMessageBox, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from jackify import __version__ as _JACKIFY_VERSION
 from jackify.backend.services.tool_registry import (
     ToolDefinition, ToolRegistry, ToolStatus,
-    apply_remote_manifest, fetch_remote_manifest, fetch_release_list,
-    get_active_engine_id, get_effective_definitions,
+    apply_remote_manifest, get_active_engine_id, get_effective_definitions,
 )
-from jackify.backend.services.update_service import UpdateInfo, UpdateService
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
+from jackify.frontends.gui.screens.modlist_dashboard_card import CARD_WIDTH
 from jackify.frontends.gui.screens.tools_hub_card import ToolCard, btn_style, section_header
+from jackify.frontends.gui.screens.tools_hub_threads import (
+    ArchiveInstallThread, IconFetchThread, ManifestFetchThread,
+    ReleaseFetchThread, ToolActionThread, VersionCheckThread,
+)
 from jackify.frontends.gui.services.message_service import MessageService
-from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
+from jackify.frontends.gui.shared_theme import (
+    COLOR_BTN_BACK as _C_BACK,
+    COLOR_BTN_INSTALL as _C_INSTALL,
+    COLOR_BTN_UPDATE as _C_UPDATE,
+)
 from jackify.frontends.gui.utils import set_responsive_minimum
 
 logger = logging.getLogger(__name__)
-
-_C_UPDATE   = "#4a5568"
-_C_BACK     = "#4a5568"
-_C_INSTALL  = "#1a5fa8"
-
-
-# -- background threads ------------------------------------------------------
-class _VersionCheckThread(QThread):
-    version_ready = Signal(str, str)   # tool_id, latest_tag
-
-    def run(self):
-        registry = ToolRegistry()
-        for defn in get_effective_definitions():
-            try:
-                tag = registry.check_latest_version(defn.tool_id)
-                self.version_ready.emit(defn.tool_id, tag or "unknown")
-            except Exception as e:
-                logger.debug("Version check failed for %s: %s", defn.tool_id, e)
-                self.version_ready.emit(defn.tool_id, "unknown")
-
-
-class _ToolActionThread(QThread):
-    finished_signal = Signal(str, bool, str)   # tool_id, success, message
-
-    def __init__(self, tool_id: str, action: str, version: Optional[str] = None):
-        super().__init__()
-        self._tool_id = tool_id
-        self._action = action
-        self._version = version
-
-    def run(self):
-        registry = ToolRegistry()
-        try:
-            if self._action == "install":
-                ok, msg = registry.install(self._tool_id, version=self._version)
-            elif self._action == "update":
-                ok, msg = registry.update(self._tool_id)
-            elif self._action == "uninstall":
-                ok, msg = registry.uninstall(self._tool_id)
-            else:
-                ok, msg = False, f"Unknown action: {self._action}"
-        except Exception as e:
-            ok, msg = False, str(e)
-        self.finished_signal.emit(self._tool_id, ok, msg)
-
-
-class _ArchiveInstallThread(QThread):
-    finished_signal = Signal(str, bool, str)   # tool_id, success, message
-
-    def __init__(self, tool_id: str, archive_path: Path):
-        super().__init__()
-        self._tool_id = tool_id
-        self._archive_path = archive_path
-
-    def run(self):
-        try:
-            ok, msg = ToolRegistry().install_from_archive(self._tool_id, self._archive_path)
-        except Exception as e:
-            ok, msg = False, str(e)
-        self.finished_signal.emit(self._tool_id, ok, msg)
-
-
-class _ManifestFetchThread(QThread):
-    manifest_ready = Signal(list)   # List[ToolDefinition]
-
-    def run(self):
-        result = fetch_remote_manifest()
-        if result:
-            self.manifest_ready.emit(result)
-
-
-class _ReleaseFetchThread(QThread):
-    releases_ready = Signal(str, list)   # tool_id, List[dict]
-
-    def __init__(self, tool_id: str, github_repo: str):
-        super().__init__()
-        self._tool_id = tool_id
-        self._github_repo = github_repo
-
-    def run(self):
-        releases = fetch_release_list(self._github_repo)
-        self.releases_ready.emit(self._tool_id, releases)
-
-
-class _JackifyUpdateCheckThread(QThread):
-    update_ready = Signal(object)   # UpdateInfo or None
-
-    def __init__(self, update_service: UpdateService):
-        super().__init__()
-        self._update_service = update_service
-
-    def run(self):
-        try:
-            update_info = self._update_service.check_for_updates()
-        except Exception as e:
-            logger.debug("Jackify update check failed: %s", e)
-            update_info = None
-        self.update_ready.emit(update_info)
 
 
 # -- main screen -------------------------------------------------------------
 class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
     """Tools Hub: engine selection and third-party tool management."""
 
-    def __init__(self, stacked_widget=None, main_menu_index: int = 0, ttw_screen_index: int = 5, parent=None):
+    def __init__(self, stacked_widget=None, ttw_screen_index: int = 5, parent=None):
         super().__init__(parent)
         self.stacked_widget = stacked_widget
-        self.main_menu_index = main_menu_index
         self.ttw_screen_index = ttw_screen_index
 
         self._cards: Dict[str, ToolCard] = {}
-        self._action_thread: Optional[_ToolActionThread] = None
-        self._version_thread: Optional[_VersionCheckThread] = None
-        self._manifest_thread: Optional[_ManifestFetchThread] = None
-        self._release_thread: Optional[_ReleaseFetchThread] = None
-        self._jackify_update_thread: Optional[_JackifyUpdateCheckThread] = None
-        self._jackify_update_info: Optional[UpdateInfo] = None
-        self._jackify_manual_check_pending = False
-        self._update_service = UpdateService(_JACKIFY_VERSION)
+        self._action_thread: Optional[ToolActionThread] = None
+        self._version_thread: Optional[VersionCheckThread] = None
+        self._manifest_thread: Optional[ManifestFetchThread] = None
+        self._release_thread: Optional[ReleaseFetchThread] = None
+        self._icon_thread: Optional[IconFetchThread] = None
         self._active_engine_id = get_active_engine_id()
 
         self._setup_ui()
@@ -160,35 +63,16 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         root.setSpacing(0)
         self.setLayout(root)
 
-        header_row = QHBoxLayout()
-
-        jackify_version_label = QLabel(f"Jackify v{_JACKIFY_VERSION}")
-        jackify_version_label.setStyleSheet("color: #888; font-size: 11px;")
-        self._btn_update_jackify = QPushButton("Check for Updates")
-        self._btn_update_jackify.setFixedSize(150, 30)
-        self._btn_update_jackify.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._btn_update_jackify.setStyleSheet(btn_style(_C_UPDATE, width=134))
-        self._btn_update_jackify.clicked.connect(self._on_update_jackify)
-
-        self._btn_update_all = QPushButton("Update All")
-        self._btn_update_all.setFixedSize(150, 30)
-        self._btn_update_all.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, disabled=True, width=134))
-        self._btn_update_all.setEnabled(False)
-        self._btn_update_all.clicked.connect(self._on_update_all)
-
-        header_row.addWidget(jackify_version_label)
-        header_row.addSpacing(8)
-        header_row.addWidget(self._btn_update_jackify)
-        header_row.addStretch()
-        title = QLabel("<b>Tools Hub</b>")
-        title.setStyleSheet(f"font-size: 20px; color: {JACKIFY_COLOR_BLUE};")
-        header_row.addWidget(title)
-        header_row.addStretch()
-        header_row.addWidget(self._btn_update_all)
-        root.addLayout(header_row)
-
-        root.addSpacing(6)
+        # Lives in the persistent header's tab row (next to the Tools Hub tab), not in this
+        # screen's own body - see main_window_ui.py's _make_third_party_tools_screen and
+        # modlist_dashboard_tabs.py's action slot. Built here because it's this screen's own
+        # state machine (enable/disable/style) that drives it.
+        self.update_all_button = QPushButton("Update All")
+        self.update_all_button.setFixedSize(150, 30)
+        self.update_all_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.update_all_button.setStyleSheet(btn_style(_C_UPDATE, disabled=True, width=134))
+        self.update_all_button.setEnabled(False)
+        self.update_all_button.clicked.connect(self._on_update_all)
 
         disclaimer = QLabel(
             "Some of these tools are developed and maintained by their respective authors, "
@@ -200,11 +84,6 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         disclaimer.setStyleSheet("color: #aaa; font-size: 12px;")
         root.addWidget(disclaimer)
 
-        root.addSpacing(10)
-        sep = QLabel()
-        sep.setFixedHeight(2)
-        sep.setStyleSheet("background: #fff;")
-        root.addWidget(sep)
         root.addSpacing(12)
 
         scroll = QScrollArea()
@@ -220,68 +99,113 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         self._list_layout.setSpacing(6)
         self._list_widget.setLayout(self._list_layout)
 
+        # Engine and Tools side by side rather than stacked - with only a couple of cards per
+        # section today, a full-width stack is mostly wasted vertical space. Each column gets
+        # its own responsive grid so this still holds up as more tools are added.
+        columns_row = QHBoxLayout()
+        columns_row.setSpacing(24)
+
+        engine_col = QVBoxLayout()
+        engine_col.setSpacing(4)
+        self._engine_header = section_header("Engine")
+        engine_col.addWidget(self._engine_header)
+        self._engine_grid = QGridLayout()
+        self._engine_grid.setSpacing(10)
+        self._engine_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        engine_col.addLayout(self._engine_grid)
+        engine_col.addStretch(1)
+        columns_row.addLayout(engine_col, stretch=1)
+
+        tools_col = QVBoxLayout()
+        tools_col.setSpacing(4)
+        self._tools_header = section_header("Tools")
+        tools_col.addWidget(self._tools_header)
+        self._tools_grid = QGridLayout()
+        self._tools_grid.setSpacing(10)
+        self._tools_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        tools_col.addLayout(self._tools_grid)
+        tools_col.addStretch(1)
+        columns_row.addLayout(tools_col, stretch=1)
+
+        self._list_layout.addLayout(columns_row)
+        self._list_layout.addSpacing(10)
+
+        self._placeholder_label = QLabel("More tools coming soon")
+        self._placeholder_label.setAlignment(Qt.AlignCenter)
+        self._placeholder_label.setStyleSheet(
+            "color: #555; font-size: 12px; font-style: italic; "
+            "background-color: #222; border: 1px dashed #333; "
+            "border-radius: 6px; padding: 10px;"
+        )
+        self._list_layout.addWidget(self._placeholder_label)
+        self._list_layout.addStretch()
+
+        self._scroll_area = scroll
         scroll.setWidget(self._list_widget)
         root.addWidget(scroll, stretch=1)
-
-        root.addSpacing(12)
-        back_row = QHBoxLayout()
-        back_row.addStretch()
-        back_btn = QPushButton("Back to Main Menu")
-        back_btn.setFixedSize(160, 34)
-        back_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {_C_BACK}; color: white; border: none; "
-            f"border-radius: 6px; font-size: 12px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background-color: #5a6578; }}"
-            f"QPushButton:pressed {{ background-color: {JACKIFY_COLOR_BLUE}; }}"
-        )
-        back_btn.clicked.connect(self._go_back)
-        back_row.addWidget(back_btn)
-        back_row.addStretch()
-        root.addLayout(back_row)
 
     # card list management
 
     def _rebuild_card_list(self):
-        while self._list_layout.count():
-            item = self._list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        for grid in (self._engine_grid, self._tools_grid):
+            while grid.count():
+                item = grid.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
         self._cards.clear()
 
         statuses = ToolRegistry().get_all_statuses()
         engines = [s for s in statuses if s.definition.is_engine]
         tools   = [s for s in statuses if not s.definition.is_engine]
 
-        if engines:
-            self._list_layout.addWidget(section_header("Engine"))
-            self._list_layout.addSpacing(4)
-            for s in engines:
-                self._add_card(s)
-            self._list_layout.addSpacing(10)
+        self._engine_header.setVisible(bool(engines))
+        for s in engines:
+            self._add_card(s, self._engine_grid)
+        self._lay_out_grid(self._engine_grid)
 
-        if tools:
-            self._list_layout.addWidget(section_header("Tools"))
-            self._list_layout.addSpacing(4)
-            for s in tools:
-                self._add_card(s)
+        self._tools_header.setVisible(bool(tools))
+        for s in tools:
+            self._add_card(s, self._tools_grid)
+        self._lay_out_grid(self._tools_grid)
 
-        placeholder = QLabel("More tools coming soon")
-        placeholder.setAlignment(Qt.AlignCenter)
-        placeholder.setStyleSheet(
-            "color: #555; font-size: 12px; font-style: italic; "
-            "background-color: #222; border: 1px dashed #333; "
-            "border-radius: 6px; padding: 10px;"
-        )
-        self._list_layout.addWidget(placeholder)
+        self._start_icon_fetch()
 
-        self._list_layout.addStretch()
-
-    def _add_card(self, status: ToolStatus):
+    def _add_card(self, status: ToolStatus, grid: QGridLayout):
         card = ToolCard(status, self._active_engine_id)
         card.action_requested.connect(self._on_action)
         card.engine_activated.connect(self._on_engine_activated)
         self._cards[status.definition.tool_id] = card
-        self._list_layout.addWidget(card)
+        grid.addWidget(card)  # position assigned in _lay_out_grid
+
+    def _lay_out_grid(self, grid: QGridLayout) -> None:
+        """Responsive column count based on available width - same approach the Dashboard
+        uses for its own card grid, but scoped to this column's half of the screen rather
+        than the whole viewport since Engine and Tools now sit side by side."""
+        available_width = self._scroll_area.viewport().width() // 2 - 12
+        if available_width <= 0:
+            available_width = self.width() // 2 - 60
+        if available_width <= 0:
+            available_width = 400
+        spacing = grid.spacing()
+        columns = max(1, (available_width + spacing) // (CARD_WIDTH + spacing))
+        columns = min(columns, 5)
+
+        widgets = [grid.itemAt(i).widget() for i in range(grid.count())]
+        for item in list(widgets):
+            grid.removeWidget(item)
+        for i, widget in enumerate(widgets):
+            row, col = divmod(i, columns)
+            grid.addWidget(widget, row, col)
+        for col in range(columns):
+            grid.setColumnStretch(col, 0)
+        if columns < 5:
+            grid.setColumnStretch(columns, 1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_engine_grid"):
+            self._lay_out_grid(self._engine_grid)
+            self._lay_out_grid(self._tools_grid)
 
     # show / manifest / version check
 
@@ -297,52 +221,34 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         self._rebuild_card_list()
         self._start_manifest_fetch()
         self._start_version_check()
-        self._start_jackify_update_check()
 
-    def _start_jackify_update_check(self):
-        if self._jackify_update_thread and self._jackify_update_thread.isRunning():
+    def _start_icon_fetch(self):
+        if self._icon_thread and self._icon_thread.isRunning():
             return
-        self._jackify_update_thread = _JackifyUpdateCheckThread(self._update_service)
-        self._jackify_update_thread.update_ready.connect(self._on_jackify_update_ready)
-        self._jackify_update_thread.start()
-
-    def _on_jackify_update_ready(self, update_info: Optional[UpdateInfo]):
-        self._jackify_update_info = update_info
-        manual = self._jackify_manual_check_pending
-        self._jackify_manual_check_pending = False
-        self._btn_update_jackify.setEnabled(True)
-
-        if update_info:
-            self._btn_update_jackify.setText("Update Jackify")
-            if manual:
-                self._open_jackify_update_dialog()
-        else:
-            self._btn_update_jackify.setText("Up to date" if manual else "Check for Updates")
-            if manual:
-                QTimer.singleShot(
-                    2500, lambda: self._btn_update_jackify.setText("Check for Updates")
-                )
-
-    def _on_update_jackify(self):
-        if self._jackify_update_info:
-            self._open_jackify_update_dialog()
+        from jackify.backend.services.tool_icons import get_cached_icon_path
+        targets = [
+            (tool_id, card._status.definition.github_repo)
+            for tool_id, card in self._cards.items()
+            if tool_id != "jackify-engine"
+            and card._status.definition.is_engine
+            and card._status.definition.github_repo
+            and not get_cached_icon_path(tool_id)
+        ]
+        if not targets:
             return
-        if self._jackify_update_thread and self._jackify_update_thread.isRunning():
-            return
-        self._jackify_manual_check_pending = True
-        self._btn_update_jackify.setEnabled(False)
-        self._btn_update_jackify.setText("Checking...")
-        self._start_jackify_update_check()
+        self._icon_thread = IconFetchThread(targets)
+        self._icon_thread.icon_ready.connect(self._on_icon_ready)
+        self._icon_thread.start()
 
-    def _open_jackify_update_dialog(self):
-        from jackify.frontends.gui.dialogs.update_dialog import UpdateDialog
-        dialog = UpdateDialog(self._jackify_update_info, self._update_service, self)
-        dialog.exec()
+    def _on_icon_ready(self, tool_id: str, path) -> None:
+        card = self._cards.get(tool_id)
+        if card:
+            card.set_icon_pixmap(path)
 
     def _start_manifest_fetch(self):
         if self._manifest_thread and self._manifest_thread.isRunning():
             return
-        self._manifest_thread = _ManifestFetchThread()
+        self._manifest_thread = ManifestFetchThread()
         self._manifest_thread.manifest_ready.connect(self._on_manifest_ready)
         self._manifest_thread.start()
 
@@ -359,7 +265,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
     def _start_version_check(self):
         if self._version_thread and self._version_thread.isRunning():
             return
-        self._version_thread = _VersionCheckThread()
+        self._version_thread = VersionCheckThread()
         self._version_thread.version_ready.connect(self._on_version_ready)
         self._version_thread.start()
 
@@ -368,22 +274,20 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         if card:
             has_update = card.set_latest_version(tag)
             if has_update:
-                self._btn_update_all.setEnabled(True)
-                self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, width=134))
+                self.update_all_button.setEnabled(True)
+                self.update_all_button.setStyleSheet(btn_style(_C_UPDATE, width=134))
         any_updates = any(c._status.update_available for c in self._cards.values())
-        main_menu = self._get_main_menu()
-        if main_menu:
-            main_menu.notify_tool_updates(any_updates)
+        self._notify_tab_bar(any_updates)
 
-    def _get_main_menu(self):
+    def _notify_tab_bar(self, has_updates: bool) -> None:
+        """Highlight the persistent "Tools Hub" tab when an update is available, so the
+        indicator is visible even while viewing Modlists or Additional Tasks."""
         try:
-            from jackify.frontends.gui.screens.main_menu import MainMenu
-            w = self.window()
-            if w and hasattr(w, 'main_menu'):
-                return w.main_menu
+            header = getattr(self.window(), "_app_header", None)
+            if header and self.stacked_widget:
+                header.set_needs_attention(self.stacked_widget.indexOf(self), has_updates)
         except Exception:
             pass
-        return None
 
     # engine activation
 
@@ -419,7 +323,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
                 "install": "Installing...", "update": "Updating...", "uninstall": "Removing...",
             }
             card.set_busy(True, label_map.get(action, "Working..."))
-        self._action_thread = _ToolActionThread(tool_id, action)
+        self._action_thread = ToolActionThread(tool_id, action)
         self._action_thread.finished_signal.connect(self._on_action_finished)
         self._action_thread.start()
 
@@ -441,6 +345,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
                     card.set_latest_version(status.latest_version)
             elif card:
                 card.mark_uninstalled()
+            self._notify_tab_bar(any(c._status.update_available for c in self._cards.values()))
             if message:
                 MessageService.information(self, "Done", message)
         else:
@@ -461,7 +366,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         card = self._cards.get(tool_id)
         if card:
             card.set_busy(True, "Installing...")
-        self._action_thread = _ArchiveInstallThread(tool_id, archive)
+        self._action_thread = ArchiveInstallThread(tool_id, archive)
         self._action_thread.finished_signal.connect(self._on_action_finished)
         self._action_thread.start()
 
@@ -483,7 +388,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         card = self._cards.get(tool_id)
         if card:
             card.set_busy(True, "Updating...")
-        self._action_thread = _ToolActionThread(tool_id, "update")
+        self._action_thread = ToolActionThread(tool_id, "update")
         self._action_thread.finished_signal.connect(self._on_update_all_step)
         self._action_thread.start()
 
@@ -494,9 +399,9 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             self._run_next_update()
         else:
             any_remaining = any(c._status.installed and c._status.update_available for c in self._cards.values())
-            self._btn_update_all.setEnabled(any_remaining)
+            self.update_all_button.setEnabled(any_remaining)
             if not any_remaining:
-                self._btn_update_all.setStyleSheet(btn_style(_C_UPDATE, disabled=True, width=134))
+                self.update_all_button.setStyleSheet(btn_style(_C_UPDATE, disabled=True, width=134))
 
     def _start_downgrade_flow(self, tool_id: str):
         card = self._cards.get(tool_id)
@@ -508,7 +413,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             return
         if card:
             card.set_busy(True, "Fetching releases...")
-        self._release_thread = _ReleaseFetchThread(tool_id, status.definition.github_repo)
+        self._release_thread = ReleaseFetchThread(tool_id, status.definition.github_repo)
         self._release_thread.releases_ready.connect(self._on_releases_ready)
         self._release_thread.start()
 
@@ -526,7 +431,7 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             return
         if card:
             card.set_busy(True, "Changing version...")
-        self._action_thread = _ToolActionThread(tool_id, "install", version=version)
+        self._action_thread = ToolActionThread(tool_id, "install", version=version)
         self._action_thread.finished_signal.connect(self._on_action_finished)
         self._action_thread.start()
 
@@ -564,12 +469,12 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         btn_row.addStretch()
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFixedSize(90, 30)
-        cancel_btn.setStyleSheet(btn_style(_C_BACK))
+        cancel_btn.setStyleSheet(btn_style(_C_BACK, width=90))
         cancel_btn.clicked.connect(dlg.reject)
         btn_row.addWidget(cancel_btn)
         install_btn = QPushButton("Install")
         install_btn.setFixedSize(90, 30)
-        install_btn.setStyleSheet(btn_style(_C_INSTALL))
+        install_btn.setStyleSheet(btn_style(_C_INSTALL, width=90))
         install_btn.setDefault(True)
         install_btn.clicked.connect(dlg.accept)
         btn_row.addWidget(install_btn)
@@ -577,8 +482,4 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         if dlg.exec() != QDialog.Accepted:
             return None
         return combo.currentData()
-
-    def _go_back(self):
-        if self.stacked_widget:
-            self.stacked_widget.setCurrentIndex(self.main_menu_index)
 

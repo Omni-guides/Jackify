@@ -96,12 +96,15 @@ class NativeSteamOperationsService:
         logger.debug("Using native Steam operations, no permission setting needed")
         return True
 
-    def get_wine_prefix_path(self, appid: str) -> Optional[str]:
+    def get_wine_prefix_path(self, appid: str, log_missing: bool = True) -> Optional[str]:
         """
         Get WINEPREFIX path via direct compatdata discovery.
 
         Args:
             appid: Steam AppID string
+            log_missing: Log an error when no prefix is found. Set False for callers
+                where absence is an expected state rather than a fault, such as the
+                dashboard polling a modlist that has not been configured yet.
 
         Returns:
             WINEPREFIX path string or None if not found
@@ -120,7 +123,11 @@ class NativeSteamOperationsService:
                     logger.debug(f"Found WINEPREFIX: {prefix_path}")
                     return str(prefix_path)
 
-            logger.error(f"WINEPREFIX not found for AppID {appid} in any compatdata location")
+            message = f"WINEPREFIX not found for AppID {appid} in any compatdata location"
+            if log_missing:
+                logger.error(message)
+            else:
+                logger.debug(message)
             return None
 
         except Exception as e:

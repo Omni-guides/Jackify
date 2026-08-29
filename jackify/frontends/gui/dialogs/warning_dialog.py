@@ -7,7 +7,7 @@ Matches Jackify theming and requires explicit user confirmation.
 
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QFrame, QSizePolicy, QTextEdit
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QFrame, QSizePolicy
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QIcon, QFont
@@ -22,8 +22,10 @@ class WarningDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Warning!")
         self.setModal(True)
-        # Increased height for better text display, scalable for 800p screens
-        self.setFixedSize(500, 460)
+        # Sized to the message rather than fixed - a clipped destructive warning is the one
+        # thing this dialog must never do
+        self.setMinimumWidth(500)
+        self.setMaximumWidth(560)
         self.confirmed = False
         self._failed_attempts = 0
         self._max_attempts = 3
@@ -40,11 +42,10 @@ class WarningDialog(QDialog):
         card.setFrameShape(QFrame.StyledPanel)
         card.setFrameShadow(QFrame.Raised)
         card.setMinimumWidth(440)
-        card.setMinimumHeight(320)
         card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         card_layout = QVBoxLayout(card)
-        card_layout.setSpacing(16)
-        card_layout.setContentsMargins(28, 28, 28, 28)
+        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(28, 20, 28, 22)
         card.setStyleSheet(
             "QFrame#warningCard { "
             "  background: #2d2323; "
@@ -80,22 +81,17 @@ class WarningDialog(QDialog):
         )
         card_layout.addWidget(title_label)
 
-        # Warning message (use a scrollable text area for long messages)
-        message_text = QTextEdit()
-        message_text.setReadOnly(True)
-        message_text.setPlainText(warning_message)
-        message_text.setMinimumHeight(80)
-        message_text.setMaximumHeight(160)
+        message_text = QLabel(warning_message)
+        message_text.setWordWrap(True)
+        message_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        message_text.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         message_text.setStyleSheet(
-            "QTextEdit { "
+            "QLabel { "
             "  font-size: 15px; "
             "  color: #e0e0e0; "
             "  background: transparent; "
             "  border: none; "
-            "  line-height: 1.3; "
-            "  margin-bottom: 6px; "
-            "  max-width: 400px; "
-            "  min-width: 200px; "
+            "  padding: 4px 6px 10px 6px; "
             "}"
         )
         card_layout.addWidget(message_text)

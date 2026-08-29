@@ -2,11 +2,12 @@
 ConfigureNewModlistScreen for Jackify GUI
 """
 import logging
+from pathlib import Path
 import warnings
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QTabWidget, QDialog, QListWidget, QListWidgetItem, QMessageBox, QProgressDialog, QCheckBox, QMainWindow
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer, QProcess, QMetaObject
 from PySide6.QtGui import QPixmap, QTextCursor
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import ansi_to_html, set_responsive_minimum
 # Progress reporting components
 from jackify.frontends.gui.widgets.progress_indicator import OverallProgressIndicator
@@ -37,18 +38,32 @@ from .screen_back_mixin import ScreenBackMixin
 from .install_modlist_ttw import TTWIntegrationMixin
 from .install_modlist_postinstall import PostInstallFeedbackMixin
 from .install_verifier_mixin import InstallVerifierMixin
+from .playbook_automation_mixin import PlaybookAutomationMixin
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 logger = logging.getLogger(__name__)
 
-class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegrationMixin, InstallVerifierMixin, ConfigureNewModlistUISetupMixin, ConfigureNewModlistConsoleMixin, ConfigureNewModlistWorkflowMixin, ConfigureNewModlistDialogsMixin, PostInstallFeedbackMixin, QWidget):
+class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegrationMixin, InstallVerifierMixin, ConfigureNewModlistUISetupMixin, ConfigureNewModlistConsoleMixin, ConfigureNewModlistWorkflowMixin, ConfigureNewModlistDialogsMixin, PostInstallFeedbackMixin, PlaybookAutomationMixin, QWidget):
     resize_request = Signal(str)
+
+    def request_prefill(self, modlist_name: str, install_dir: str) -> None:
+        """Pre-fill name and exe path from the registry, for the Dashboard's Reconfigure on a
+        modlist with no prefix."""
+        try:
+            if modlist_name:
+                self.modlist_name_edit.setText(modlist_name)
+            if not install_dir:
+                return
+            exe = Path(install_dir) / "ModOrganizer.exe"
+            self.install_dir_edit.setText(str(exe) if exe.is_file() else install_dir)
+        except Exception as e:
+            logger.debug("Configure New prefill skipped: %s", e)
 
     def cancel_and_cleanup(self):
         """Handle Cancel button - clean up processes and go back"""
-        if getattr(self, '_vnv_controller', None) is not None:
-            self._vnv_controller.cleanup()
-            self._vnv_controller = None
+        if getattr(self, '_playbook_controller', None) is not None:
+            self._playbook_controller.cleanup()
+            self._playbook_controller = None
         appid = str(getattr(self, 'context', {}).get('appid', '') or '')
         self._kill_prefix_wine_processes(appid)
         self.cleanup_processes()
@@ -79,10 +94,10 @@ class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegr
                         self._initiate_ttw_workflow(identified_name, install_dir)
                         return
 
-            # Check for VNV/MEW post-install automation after configuration
-            if install_dir and (
-                self._check_and_run_vnv_automation(modlist_name, install_dir)
-                or self._check_and_run_mew_automation(modlist_name, install_dir)
+            # Check for modlist post-install fixes (playbooks - VNV, MEW, etc.) after configuration
+            if install_dir and self._check_and_run_playbook_automation(
+                modlist_name, install_dir,
+                appid=getattr(self, '_current_appid', None), game_type=game_type,
             ):
                 self._pending_success_dialog_params = {
                     'modlist_name': modlist_name,
@@ -109,6 +124,7 @@ class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegr
                     'time_taken': time_taken,
                     'game_name': getattr(self, '_current_game_name', None),
                     'enb_detected': enb_detected,
+                    'playbook_warnings': list(getattr(self._playbook_controller, 'last_failure_notices', None) or []) if hasattr(self, '_playbook_controller') else [],
                 },
             )
         else:
@@ -170,7 +186,7 @@ class ConfigureNewModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, TTWIntegr
 
     def cleanup(self):
         """Clean up any running threads when the screen is closed"""
-        if getattr(self, '_vnv_controller', None) is not None:
-            self._vnv_controller.cleanup()
-            self._vnv_controller = None
+        if getattr(self, '_playbook_controller', None) is not None:
+            self._playbook_controller.cleanup()
+            self._playbook_controller = None
         self._park_all_threads()

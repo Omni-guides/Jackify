@@ -28,8 +28,7 @@ from jackify.shared.paths import get_jackify_data_dir
 class ModlistGalleryService:
     """Service for fetching and caching modlist metadata from jackify-engine"""
 
-    # REMOVED: CACHE_VALIDITY_DAYS - metadata is now always fetched fresh from engine
-    # Images are still cached indefinitely (managed separately)
+    # Metadata is always fetched fresh from engine; images are cached indefinitely (managed separately)
     _engine_call_lock = threading.Lock()
 
     def __init__(self):
@@ -110,10 +109,10 @@ class ModlistGalleryService:
         sort_by: str
     ) -> Optional[ModlistMetadataResponse]:
         """Call jackify-engine to fetch modlist metadata"""
-        # CRITICAL: Use thread lock to prevent concurrent engine calls
+        # Use thread lock to prevent concurrent engine calls
         # Multiple simultaneous calls could cause recursive spawning issues
         with self._engine_call_lock:
-            # CRITICAL: Get engine path BEFORE cleaning environment
+            # Get engine path BEFORE cleaning environment
             # get_jackify_engine_path() may need APPDIR to locate the engine
             engine_path = get_jackify_engine_path()
             if not engine_path:
@@ -129,7 +128,7 @@ class ModlistGalleryService:
                 cmd.append("--include-search-index")
 
             # Execute command
-            # CRITICAL: Use centralized clean environment to prevent AppImage recursive spawning
+            # Use centralized clean environment to prevent AppImage recursive spawning
             # Must happen AFTER engine path resolution
             from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
             clean_env = get_clean_subprocess_env()
@@ -296,9 +295,9 @@ class ModlistGalleryService:
 
         # Execute command
         try:
-            # CRITICAL: Use thread lock to prevent concurrent engine calls
+            # Use thread lock to prevent concurrent engine calls
             with self._engine_call_lock:
-                # CRITICAL: Get engine path BEFORE cleaning environment
+                # Get engine path BEFORE cleaning environment
                 # get_jackify_engine_path() may need APPDIR to locate the engine
                 engine_path = get_jackify_engine_path()
                 if not engine_path:
@@ -307,7 +306,7 @@ class ModlistGalleryService:
                 # Update cmd with resolved engine path
                 cmd[0] = str(engine_path)
                 
-                # CRITICAL: Use centralized clean environment to prevent AppImage recursive spawning
+                # Use centralized clean environment to prevent AppImage recursive spawning
                 # Must happen AFTER engine path resolution
                 from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
                 clean_env = get_clean_subprocess_env()
@@ -383,21 +382,6 @@ class ModlistGalleryService:
             shutil.rmtree(self.IMAGE_CACHE_DIR)
             self.IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    def get_installed_modlists(self) -> List[str]:
-        """
-        Get list of installed modlist machine URLs.
-
-        Returns:
-            List of machine URLs for installed modlists
-        """
-        # TODO: Integrate with existing modlist database/config
-        # For now, return empty list - will be implemented when integrated with existing modlist tracking
-        return []
-
-    def is_modlist_installed(self, machine_url: str) -> bool:
-        """Check if a modlist is installed"""
-        return machine_url in self.get_installed_modlists()
-    
     def load_tag_mappings(self) -> Dict[str, str]:
         """
         Load tag mappings from Wabbajack GitHub repository.

@@ -271,7 +271,12 @@ def apply_tool_config(
     (see nuget_signature_service.install_nuget_cert).
 
     install_fxc2_d3dcompiler=True replaces d3dcompiler_47.dll with the Mozilla
-    fxc2 build. Only appropriate for Skyrim SE/AE modlists using Community Shaders.
+    fxc2 build, needed for Community Shaders' shader compilation. Applied unconditionally
+    across all game types rather than gated to Skyrim: Community Shaders has an early
+    Fallout 4 port too (github.com/northaxosky/fallout4-community-shaders, unreleased as
+    of 2026-08), and fxc2 was confirmed to have no observable effect on a Fallout 4 prefix
+    that doesn't use it - gating by game type would just be a future footgun for no
+    current benefit.
 
     apply_engine_mscoree=False skips the SkyrimSE.exe-scoped native mscoree
     AppDefaults entry while still applying everything else (xEdit, Pandora, DLL

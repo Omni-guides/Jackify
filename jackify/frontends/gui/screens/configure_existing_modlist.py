@@ -3,7 +3,7 @@ import warnings
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import ansi_to_html, set_responsive_minimum
 # Progress reporting components
 from jackify.frontends.gui.widgets.progress_indicator import OverallProgressIndicator
@@ -31,14 +31,17 @@ from .configure_existing_modlist_workflow import ConfigureExistingModlistWorkflo
 from .configure_existing_modlist_shortcuts import ConfigureExistingModlistShortcutsMixin
 from .configure_existing_modlist_console import ConfigureExistingModlistConsoleMixin
 from .screen_back_mixin import ScreenBackMixin
+from .screen_focus_reclaim import FocusReclaimMixin
 from .install_modlist_ttw import TTWIntegrationMixin
 from .install_modlist_postinstall import PostInstallFeedbackMixin
 from .install_verifier_mixin import InstallVerifierMixin
+from .playbook_automation_mixin import PlaybookAutomationMixin
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 class ConfigureExistingModlistScreen(
     ThreadLifecycleMixin,
     ScreenBackMixin,
+    FocusReclaimMixin,
     TTWIntegrationMixin,
     InstallVerifierMixin,
     ConfigureExistingModlistUIMixin,
@@ -46,23 +49,24 @@ class ConfigureExistingModlistScreen(
     ConfigureExistingModlistShortcutsMixin,
     ConfigureExistingModlistConsoleMixin,
     PostInstallFeedbackMixin,
+    PlaybookAutomationMixin,
     QWidget,
 ):
     resize_request = Signal(str)
 
     def hideEvent(self, event):
-        if getattr(self, '_vnv_controller', None) is not None:
+        if getattr(self, '_playbook_controller', None) is not None:
             try:
-                self._vnv_controller.cleanup()
+                self._playbook_controller.cleanup()
             except Exception:
                 pass
         super().hideEvent(event)
 
     def cleanup_processes(self):
-        if getattr(self, '_vnv_controller', None) is not None:
+        if getattr(self, '_playbook_controller', None) is not None:
             try:
-                self._vnv_controller.cleanup()
-                self._vnv_controller = None
+                self._playbook_controller.cleanup()
+                self._playbook_controller = None
             except Exception:
                 pass
         if hasattr(self, 'file_progress_list'):
@@ -70,9 +74,9 @@ class ConfigureExistingModlistScreen(
 
     def cancel_and_cleanup(self):
         """Handle Cancel button - clean up processes and go back"""
-        if getattr(self, '_vnv_controller', None) is not None:
-            self._vnv_controller.cleanup()
-            self._vnv_controller = None
+        if getattr(self, '_playbook_controller', None) is not None:
+            self._playbook_controller.cleanup()
+            self._playbook_controller = None
         self._kill_prefix_wine_processes(str(getattr(self, '_current_appid', '') or ''))
         self.cleanup_processes()
         self.collapse_show_details_before_leave()
@@ -134,10 +138,10 @@ class ConfigureExistingModlistScreen(
                         self._initiate_ttw_workflow(identified_name, install_dir)
                         return
 
-            # Check for VNV/MEW post-install automation after configuration
-            if install_dir and (
-                self._check_and_run_vnv_automation(modlist_name, install_dir)
-                or self._check_and_run_mew_automation(modlist_name, install_dir)
+            # Check for modlist post-install fixes (playbooks - VNV, MEW, etc.) after configuration
+            if install_dir and self._check_and_run_playbook_automation(
+                modlist_name, install_dir,
+                appid=getattr(self, '_current_appid', None), game_type=game_type,
             ):
                 self._pending_success_dialog_params = {
                     'modlist_name': modlist_name,
@@ -164,6 +168,7 @@ class ConfigureExistingModlistScreen(
                     'time_taken': time_taken,
                     'game_name': getattr(self, '_current_game_name', None),
                     'enb_detected': enb_detected,
+                    'playbook_warnings': list(getattr(self._playbook_controller, 'last_failure_notices', None) or []) if hasattr(self, '_playbook_controller') else [],
                 },
             )
         else:
@@ -232,9 +237,9 @@ class ConfigureExistingModlistScreen(
         """Clean up any running threads when the screen is closed"""
         logger.debug("cleanup called - cleaning up ConfigurationThread")
 
-        if getattr(self, '_vnv_controller', None) is not None:
-            self._vnv_controller.cleanup()
-            self._vnv_controller = None
+        if getattr(self, '_playbook_controller', None) is not None:
+            self._playbook_controller.cleanup()
+            self._playbook_controller = None
         
         # Clean up config thread if running
         if hasattr(self, 'config_thread') and self.config_thread and self.config_thread.isRunning():

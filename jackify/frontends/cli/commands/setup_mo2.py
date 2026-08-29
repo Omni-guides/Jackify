@@ -7,6 +7,7 @@ CLI interface for downloading and configuring a standalone MO2 instance.
 import logging
 from pathlib import Path
 
+from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
 from jackify.backend.services.mo2_setup_service import MO2SetupService, _is_dangerous_path
 from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_SUCCESS, COLOR_ERROR
 
@@ -64,6 +65,48 @@ class SetupMO2Command:
             input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
             return
 
+        existing_appid = None
+        candidate_exe = install_dir / "ModOrganizer.exe"
+        prefix_service = AutomatedPrefixService()
+        conflict_result = prefix_service.handle_existing_shortcut_conflict(
+            shortcut_name, str(candidate_exe), str(install_dir)
+        )
+        if isinstance(conflict_result, list):
+            print(f"\n{COLOR_INFO}Jackify found an existing Steam shortcut for this Mod Organizer 2 setup:{COLOR_RESET}")
+            existing = conflict_result[0]
+            print(f"  Name: {existing.get('name', shortcut_name)}")
+            print(f"  Executable: {existing.get('exe', '')}")
+            print(f"  Start Directory: {existing.get('startdir', '')}")
+            print(f"\n{COLOR_PROMPT}Options:{COLOR_RESET}")
+            print("  1. Use existing shortcut (recommended)")
+            print("  2. Choose a different shortcut name")
+            print("  0. Cancel")
+            conflict_choice = input(f"{COLOR_PROMPT}Enter choice (0-2): {COLOR_RESET}").strip()
+            if conflict_choice == "1":
+                existing_appid = existing.get('appid')
+                if not existing_appid:
+                    print(f"{COLOR_ERROR}Could not determine the Steam AppID for the existing shortcut.{COLOR_RESET}")
+                    input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
+                    return
+                print(f"{COLOR_INFO}Reusing existing Steam shortcut with AppID {existing_appid}.{COLOR_RESET}")
+            elif conflict_choice == "2":
+                new_name = input(
+                    f"{COLOR_PROMPT}New shortcut name (or 'q' to cancel): {COLOR_RESET}"
+                ).strip()
+                if not new_name or new_name.lower() == 'q':
+                    print("Cancelled.")
+                    input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
+                    return
+                if new_name == shortcut_name:
+                    print(f"{COLOR_ERROR}Please enter a different name to resolve the conflict.{COLOR_RESET}")
+                    input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
+                    return
+                shortcut_name = new_name
+            else:
+                print("Cancelled.")
+                input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
+                return
+
         print(f"\n{COLOR_INFO}Starting MO2 setup...{COLOR_RESET}\n")
 
         def _progress(msg: str):
@@ -73,6 +116,7 @@ class SetupMO2Command:
         success, app_id, error_msg = service.setup_mo2(
             install_dir=install_dir,
             shortcut_name=shortcut_name,
+            existing_appid=int(existing_appid) if existing_appid else None,
             progress_callback=_progress,
         )
 

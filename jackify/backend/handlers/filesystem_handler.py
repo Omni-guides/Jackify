@@ -519,7 +519,7 @@ class FileSystemHandler(
                 "bg3": os.path.join("Larian Studios", "Baldur's Gate 3"),
             }
 
-            # CRITICAL: Create game-specific directories in Wine prefix
+            # Create game-specific directories in Wine prefix
             # Required for USVFS to virtualize profile INIs on first launch
             from ..handlers.path_handler import PathHandler
             path_handler = PathHandler()

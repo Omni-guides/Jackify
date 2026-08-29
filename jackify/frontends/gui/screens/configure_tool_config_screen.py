@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 from jackify.frontends.gui.services.message_service import MessageService
-from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
 from jackify.frontends.gui.utils import set_responsive_minimum
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,6 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         super().__init__(parent)
         self.stacked_widget = stacked_widget
         self.additional_tasks_index = additional_tasks_index
-        self.debug = DEBUG_BORDERS
         self._shortcuts: list = []
         self._loader: Optional[_ShortcutLoaderThread] = None
         self._apply_thread: Optional[_ApplyThread] = None
@@ -74,8 +73,6 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         main_vbox.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         main_vbox.setContentsMargins(50, 50, 50, 0)
         main_vbox.setSpacing(12)
-        if self.debug:
-            self.setStyleSheet("border: 2px solid magenta;")
 
         # --- Header ---
         header_widget = QWidget()
@@ -104,8 +101,6 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         header_layout.addSpacing(12)
         header_widget.setLayout(header_layout)
         header_widget.setFixedHeight(120)
-        if self.debug:
-            header_widget.setStyleSheet("border: 2px solid pink;")
         main_vbox.addWidget(header_widget)
 
         # --- Upper section: form (left) + tabs (right) ---
@@ -184,15 +179,11 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         btn_row_widget = QWidget()
         btn_row_widget.setLayout(btn_row)
         btn_row_widget.setMaximumHeight(50)
-        if self.debug:
-            btn_row_widget.setStyleSheet("border: 2px solid red;")
         self.btn_row_widget = btn_row_widget
 
         user_config_widget = QWidget()
         user_config_widget.setLayout(user_config_vbox)
         user_config_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        if self.debug:
-            user_config_widget.setStyleSheet("border: 2px solid orange;")
 
         # Right: Activity + Process Monitor tabs
         self._activity_log = QTextEdit()
@@ -221,8 +212,6 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         process_monitor_widget = QWidget()
         process_monitor_widget.setLayout(process_vbox)
         process_monitor_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        if self.debug:
-            process_monitor_widget.setStyleSheet("border: 2px solid purple;")
         self.process_monitor_widget = process_monitor_widget
 
         self.activity_tabs = QTabWidget()
@@ -236,8 +225,6 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         self.activity_tabs.setContentsMargins(0, 0, 0, 0)
         self.activity_tabs.setDocumentMode(False)
         self.activity_tabs.setTabPosition(QTabWidget.North)
-        if self.debug:
-            self.activity_tabs.setStyleSheet("border: 2px solid cyan;")
 
         self.activity_tabs.addTab(self._activity_log, "Activity")
         self.activity_tabs.addTab(process_monitor_widget, "Process Monitor")
@@ -250,8 +237,6 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         upper_section_widget.setLayout(upper_hbox)
         upper_section_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         upper_section_widget.setMaximumHeight(280)
-        if self.debug:
-            upper_section_widget.setStyleSheet("border: 2px solid green;")
         main_vbox.addWidget(upper_section_widget)
 
         # --- Status banner ---
@@ -287,8 +272,6 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         self.console.setMinimumHeight(0)
         self.console.setMaximumHeight(0)
         self.console.setFontFamily("monospace")
-        if self.debug:
-            self.console.setStyleSheet("border: 2px solid yellow;")
 
         main_vbox.addWidget(self.console, stretch=1)
         main_vbox.addWidget(btn_row_widget, alignment=Qt.AlignHCenter)

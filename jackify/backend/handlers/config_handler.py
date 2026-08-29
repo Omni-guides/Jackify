@@ -63,7 +63,6 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
             "modlist_install_base_dir": os.path.expanduser("~/Games"),  # Configurable base directory for modlist installations
             "modlist_downloads_base_dir": os.path.expanduser("~/Games/Modlist_Downloads"),  # Configurable base directory for downloads
             "jackify_data_dir": None,  # Configurable Jackify data directory (default: ~/Jackify)
-            "use_winetricks_for_components": True,  # DEPRECATED: Migrated to component_installation_method. Kept for backward compatibility.
             "component_installation_method": "native",  # "native" (default), "winetricks", or "system_protontricks"
             "game_proton_path": None,  # Proton version for game shortcuts (can be any Proton 9+), separate from install proton
             "proton_path": None,  # Install Proton path (for jackify-engine) - None means auto-detect
@@ -174,7 +173,8 @@ class ConfigHandler(ConfigEncryptionMixin, ConfigDirectoriesMixin, ConfigProtonM
                 "hoolamike_version",
                 "api_key_fallback_enabled",
                 "proton_version",  # Display string only, path stored in proton_path
-                "game_proton_version"  # Display string only, path stored in game_proton_path
+                "game_proton_version",  # Display string only, path stored in game_proton_path
+                "use_winetricks_for_components"  # Superseded by component_installation_method
             ]
 
             removed_count = 0

@@ -7,6 +7,7 @@ Uses backend service for complete workflow orchestration
 import logging
 from pathlib import Path
 
+from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
 from jackify.backend.services.wabbajack_installer_service import WabbajackInstallerService
 from jackify.shared.colors import COLOR_PROMPT, COLOR_RESET, COLOR_INFO, COLOR_SUCCESS, COLOR_ERROR
 
@@ -52,6 +53,44 @@ class InstallWabbajackCommand:
             print("Installation cancelled.")
             return
 
+        existing_appid = None
+        candidate_exe = install_dir / "Wabbajack.exe"
+        prefix_service = AutomatedPrefixService()
+        conflict_result = prefix_service.handle_existing_shortcut_conflict(
+            shortcut_name, str(candidate_exe), str(install_dir)
+        )
+        if isinstance(conflict_result, list):
+            print(f"\n{COLOR_INFO}Jackify found an existing Steam shortcut for this Wabbajack setup:{COLOR_RESET}")
+            existing = conflict_result[0]
+            print(f"  Name: {existing.get('name', shortcut_name)}")
+            print(f"  Executable: {existing.get('exe', '')}")
+            print(f"  Start Directory: {existing.get('startdir', '')}")
+            print(f"\n{COLOR_PROMPT}Options:{COLOR_RESET}")
+            print("  1. Use existing shortcut (recommended)")
+            print("  2. Choose a different shortcut name")
+            print("  0. Cancel")
+            choice = input(f"{COLOR_PROMPT}Enter choice (0-2): {COLOR_RESET}").strip()
+            if choice == "1":
+                existing_appid = existing.get('appid')
+                if not existing_appid:
+                    print(f"{COLOR_ERROR}Could not determine the Steam AppID for the existing shortcut.{COLOR_RESET}")
+                    return
+                print(f"{COLOR_INFO}Reusing existing Steam shortcut with AppID {existing_appid}.{COLOR_RESET}")
+            elif choice == "2":
+                new_name = input(
+                    f"{COLOR_PROMPT}New shortcut name (or 'q' to cancel): {COLOR_RESET}"
+                ).strip()
+                if not new_name or new_name.lower() == 'q':
+                    print("Installation cancelled.")
+                    return
+                if new_name == shortcut_name:
+                    print(f"{COLOR_ERROR}Please enter a different name to resolve the conflict.{COLOR_RESET}")
+                    return
+                shortcut_name = new_name
+            else:
+                print("Installation cancelled.")
+                return
+
         # Execute installation using backend service
         print(f"\n{COLOR_INFO}Starting Wabbajack installation...{COLOR_RESET}\n")
 
@@ -73,6 +112,7 @@ class InstallWabbajackCommand:
             install_folder=install_dir,
             shortcut_name=shortcut_name,
             enable_gog=True,
+            existing_appid=int(existing_appid) if existing_appid else None,
             progress_callback=progress_callback,
             log_callback=log_callback
         )

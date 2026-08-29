@@ -22,13 +22,21 @@ class ModlistCard(QFrame):
         self.setFrameShape(QFrame.StyledPanel)
         self.setFrameShadow(QFrame.Raised)
         self.setCursor(Qt.PointingHandCursor)
+        # Matches the Dashboard card's hover treatment - brighter, thicker border rather than
+        # a size change, since these cards are fixed-size inside a reflowing grid too.
+        # Selector must be the class name, not "QFrame" - QLabel is itself a QFrame subclass,
+        # so a bare "QFrame" rule cascades onto every label in the card, not just the card.
+        self.setStyleSheet(
+            "ModlistCard { background-color: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px; } "
+            "ModlistCard:hover { background-color: #333333; border: 1px solid #5a9fd6; }"
+        )
         
         # Steam Deck-specific sizing (1280x800 screen)
         if self.is_steamdeck:
-            self.setFixedSize(250, 270)  # Smaller cards for Steam Deck
+            self.setFixedSize(250, 245)  # Smaller cards for Steam Deck
             image_width, image_height = 230, 130  # Smaller images, maintaining 16:9 ratio
         else:
-            self.setFixedSize(300, 320)  # Standard size
+            self.setFixedSize(300, 292)  # Standard size
             image_width, image_height = 280, 158  # Standard image size
         
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -100,7 +108,6 @@ class ModlistCard(QFrame):
             size_info.setWordWrap(True)  # Allow wrapping if text is too long
             layout.addWidget(size_info)
 
-        # Removed addStretch() to eliminate wasted space
         self.setLayout(layout)
 
         # Load image

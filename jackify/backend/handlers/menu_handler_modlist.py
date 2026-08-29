@@ -6,7 +6,7 @@ ModlistMenuHandler class. Lazy-imports MenuHandler to avoid circular import.
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Callable, List, Dict, Optional
 
 from jackify.shared.colors import (
     COLOR_PROMPT, COLOR_SELECTION, COLOR_RESET, COLOR_INFO, COLOR_ERROR,
@@ -17,7 +17,6 @@ from .filesystem_handler import FileSystemHandler
 from .path_handler import PathHandler
 from .vdf_handler import VDFHandler
 from .resolution_handler import ResolutionHandler
-from jackify.shared.ui_utils import print_section_header
 
 logger = logging.getLogger(__name__)
 
@@ -58,29 +57,6 @@ class ModlistMenuHandler:
             except Exception:
                 self.steamdeck = False
             self.modlist_handler = None
-
-    def show_modlist_menu(self):
-        while True:
-            os.system('cls' if os.name == 'nt' else 'clear')
-            # Banner display handled by frontend
-            print_section_header('Modlist Configuration')
-            print(f"{COLOR_SELECTION}1.{COLOR_RESET} Configure a New modlist not yet in Steam")
-            print(f"{COLOR_SELECTION}2.{COLOR_RESET} Configure a modlist already in Steam")
-            print(f"{COLOR_SELECTION}0.{COLOR_RESET} Return to Main Menu")
-            choice = input(f"\n{COLOR_PROMPT}Enter your selection (0-2): {COLOR_RESET}")
-            if choice == "1":
-                if not self._configure_new_modlist():
-                    return False
-            elif choice == "2":
-                if not self._configure_existing_modlist():
-                    return False
-            elif choice == "0":
-                logger.info("Returning to main menu from Modlist Configuration menu.")
-                return False
-            else:
-                logger.warning(f"Invalid menu selection: {choice}")
-                print("\nInvalid selection. Please try again.")
-                input("\nPress Enter to continue...")
 
     def _get_mo2_path(self) -> Optional[str]:
         """
@@ -441,12 +417,33 @@ class ModlistMenuHandler:
                 self.logger.info("User cancelled selection from list via Ctrl+C.")
                 return None
                 
-    def run_modlist_configuration_phase(self, context: dict) -> bool:
+    def run_modlist_configuration_phase(self, context: dict,
+                                         status_callback: Optional[Callable[[str], None]] = None,
+                                         gui_mode: bool = False) -> bool:
         """
         Shared configuration phase for both new and existing modlists.
         Expects context dict with keys: name, appid, path (at minimum).
+
+        status_callback, when provided, receives status/progress text instead of it
+        being printed to the terminal - used by the GUI in place of the old
+        sys.stdout-redirection hack.
         """
         import os
+
+        def _status(*args, **kwargs):
+            if status_callback:
+                text = " ".join(str(a) for a in args)
+                clean = text.replace('\r', '').strip()
+                if clean and clean != "Current Task: ":
+                    try:
+                        from jackify.frontends.gui.utils import ansi_to_html
+                        status_callback(ansi_to_html(clean))
+                    except ImportError:
+                        import re
+                        status_callback(re.sub(r'\x1b\[[0-9;]*[mK]', '', clean))
+            else:
+                print(*args, **kwargs)
+
         self.logger.debug(f"[DEBUG] Entering run_modlist_configuration_phase with context: {context}")
         # Write nxmhandler.ini to suppress MO2's NXM Handling popup on first launch.
         # This must happen before MO2 runs for the first time, so do it here rather than
@@ -467,11 +464,8 @@ class ModlistMenuHandler:
         set_modlist_result = self.modlist_handler.set_modlist(context)
         self.logger.debug(f"[DEBUG] set_modlist returned: {set_modlist_result}")
 
-        # Check GUI mode early to avoid input() calls in GUI context
-        gui_mode = os.environ.get('JACKIFY_GUI_MODE') == '1'
-
         if not set_modlist_result:
-            print(f"{COLOR_ERROR}\nError setting up context for configuration.{COLOR_RESET}")
+            _status(f"{COLOR_ERROR}\nError setting up context for configuration.{COLOR_RESET}")
             self.logger.error(f"set_modlist failed for {context.get('name')}")
             if not gui_mode:
                 input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
@@ -512,9 +506,8 @@ class ModlistMenuHandler:
             return True
 
         self.logger.info(f"Starting configuration steps for {context.get('name')}")
-        print()  # Add padding before status line
+        _status()  # Add padding before status line
         status_line = ""
-        gui_mode = os.environ.get('JACKIFY_GUI_MODE') == '1'
         def update_status(msg):
             nonlocal status_line
             filtered_prefixes = (
@@ -531,23 +524,23 @@ class ModlistMenuHandler:
             ):
                 return
             if status_line:
-                print("\r" + " " * len(status_line), end="\r")
+                _status("\r" + " " * len(status_line), end="\r")
             if gui_mode:
-                print(msg, flush=True)
+                _status(msg, flush=True)
             else:
                 status_line = f"\r{COLOR_INFO}{msg}{COLOR_RESET}"
-                print(status_line, end="", flush=True)
-        if not self.modlist_handler._execute_configuration_steps(status_callback=update_status):
+                _status(status_line, end="", flush=True)
+        if not self.modlist_handler._execute_configuration_steps(status_callback=update_status, defer_playbooks=True):
             if status_line:
-                print()
+                _status()
             self.logger.error(f"Core configuration steps failed for {context.get('name')}")
-            print(f"{COLOR_ERROR}\nModlist configuration failed. Check logs for details.{COLOR_RESET}")
+            _status(f"{COLOR_ERROR}\nModlist configuration failed. Check logs for details.{COLOR_RESET}")
             # Only wait for input in CLI mode, not GUI mode
             if not gui_mode:
                 input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
             return False
         if status_line:
-            print()
+            _status()
         
         # Configure ENB for Linux compatibility (non-blocking).
         # In GUI mode, modlist_service.py handles ENB after this function returns,
@@ -572,140 +565,25 @@ class ModlistMenuHandler:
             except Exception as e:
                 self.logger.warning(f"ENB configuration skipped due to error: {e}")
 
-        # Run modlist-specific post-install automation (e.g., VNV) before showing completion
-        # Only in CLI mode - GUI handles this in install_modlist.py
+        # Run modlist post-install fixes (playbooks - VNV, MEW, etc.) before showing completion.
+        # Only in CLI mode - GUI handles this via PlaybookAutomationController.
         if not gui_mode:
-            from jackify.backend.services.vnv_integration_helper import (
-                run_vnv_automation_if_applicable,
-                should_offer_vnv_automation,
-            )
-            from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
-            from jackify.backend.services.vnv_post_install_service import VNVPostInstallService
-            from jackify.backend.handlers.path_handler import PathHandler
-            from jackify.frontends.cli.commands.vnv_manual_downloads import (
-                build_vnv_cli_manual_file_callback,
-                create_vnv_cli_progress_callback,
-                ensure_vnv_cli_manual_downloads,
-            )
-            modlist_name = context.get('name', '')
-            modlist_path = Path(context.get('path', ''))
-
             try:
-                def _confirm_vnv(description: str) -> bool:
-                    print(f"\n{description}\n")
-                    try:
-                        user_input = input(f"{COLOR_PROMPT}Run VNV post-install automation now? (Y/n): {COLOR_RESET}").strip().lower()
-                    except (EOFError, KeyboardInterrupt):
-                        return False
-                    return user_input in ("", "y", "yes")
-                if should_offer_vnv_automation(modlist_name, modlist_path):
-                    game_paths = PathHandler().find_vanilla_game_paths()
-                    resolved_game_root = game_paths.get('Fallout New Vegas')
-                    vnv_service = VNVPostInstallService(
-                        modlist_install_location=modlist_path,
-                        game_root=resolved_game_root or modlist_path,
-                        ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                    )
-                    completed = vnv_service.check_already_completed()
-                    all_vnv_steps_done = (
-                        completed['root_mods']
-                        and completed['4gb_patch']
-                        and completed['bsa_decompressed']
-                    )
-                    if all_vnv_steps_done:
-                        print(f"{COLOR_INFO}VNV post-install steps are already complete.{COLOR_RESET}")
-                    elif _confirm_vnv(vnv_service.get_automation_description()):
-                        if not ensure_vnv_cli_manual_downloads(vnv_service, output_callback=print):
-                            print(f"{COLOR_WARNING}VNV manual downloads were not completed. Skipping VNV automation.{COLOR_RESET}")
-                        else:
-                            progress_callback, close_progress = create_vnv_cli_progress_callback(print)
-                            try:
-                                automation_ran, error = run_vnv_automation_if_applicable(
-                                    modlist_name=modlist_name,
-                                    modlist_install_location=modlist_path,
-                                    game_root=None,  # Will be auto-detected
-                                    ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                                    progress_callback=progress_callback,
-                                    manual_file_callback=build_vnv_cli_manual_file_callback(vnv_service, output_callback=print),
-                                    confirmation_callback=lambda _description: True,
-                                )
-                            finally:
-                                close_progress()
-                            if automation_ran and not error:
-                                print(f"{COLOR_INFO}VNV post-install automation completed.{COLOR_RESET}")
-                            if error:
-                                print(f"{COLOR_WARNING}VNV automation encountered an error: {error}{COLOR_RESET}")
-                                print(f"{COLOR_INFO}You can complete these steps manually by following: https://vivanewvegas.moddinglinked.com/wabbajack.html{COLOR_RESET}")
-                    else:
-                        print(f"{COLOR_INFO}VNV automation skipped by user.{COLOR_RESET}")
-            except Exception as e:
-                self.logger.debug(f"VNV automation check skipped: {e}")
-                # Not an error - just means VNV automation wasn't applicable
+                from jackify.backend.services.playbook.hook_wiring import (
+                    build_configuration_hook_context, get_registry, playbooks_disabled,
+                )
+                from jackify.frontends.cli.commands.playbook_automation import run_playbook_automation_cli
 
-            from jackify.backend.services.mew_integration_helper import (
-                run_mew_automation_if_applicable,
-                should_offer_mew_automation,
-            )
-            from jackify.backend.services.mew_post_install_service import MEWPostInstallService
-
-            try:
-                def _confirm_mew(description: str) -> bool:
-                    print(f"\n{description}\n")
-                    try:
-                        user_input = input(f"{COLOR_PROMPT}Run MEW post-install automation now? (Y/n): {COLOR_RESET}").strip().lower()
-                    except (EOFError, KeyboardInterrupt):
-                        return False
-                    return user_input in ("", "y", "yes")
-                if should_offer_mew_automation(modlist_name, modlist_path):
-                    game_paths = PathHandler().find_vanilla_game_paths()
-                    resolved_game_root = game_paths.get('Fallout New Vegas')
-                    mew_service = MEWPostInstallService(
-                        modlist_install_location=modlist_path,
-                        game_root=resolved_game_root or modlist_path,
-                        ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                    )
-                    completed = mew_service.check_already_completed()
-                    all_mew_steps_done = (
-                        completed['root_mods']
-                        and completed['4gb_patch']
-                        and completed['bsa_decompressed']
-                        and completed['radio_fix']
-                    )
-                    if all_mew_steps_done:
-                        print(f"{COLOR_INFO}MEW post-install steps are already complete.{COLOR_RESET}")
-                    elif _confirm_mew(mew_service.get_automation_description()):
-                        if not ensure_vnv_cli_manual_downloads(mew_service.fnv_tools, output_callback=print):
-                            print(f"{COLOR_WARNING}MEW manual downloads were not completed. Skipping MEW automation.{COLOR_RESET}")
-                        else:
-                            progress_callback, close_progress = create_vnv_cli_progress_callback(print)
-                            try:
-                                _mew_appid = context.get('appid') or getattr(self.modlist_handler, 'appid', None)
-                                if not _mew_appid:
-                                    _mew_appid = self.shortcut_handler.get_appid_for_shortcut(
-                                        modlist_name, str(modlist_path / "ModOrganizer.exe")
-                                    )
-                                automation_ran, error = run_mew_automation_if_applicable(
-                                    modlist_name=modlist_name,
-                                    modlist_install_location=modlist_path,
-                                    game_root=None,  # Will be auto-detected
-                                    appid=_mew_appid,
-                                    ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                                    progress_callback=progress_callback,
-                                    manual_file_callback=build_vnv_cli_manual_file_callback(mew_service.fnv_tools, output_callback=print),
-                                    confirmation_callback=lambda _description: True,
-                                )
-                            finally:
-                                close_progress()
-                            if automation_ran and not error:
-                                print(f"{COLOR_INFO}MEW post-install automation completed.{COLOR_RESET}")
-                            if error:
-                                print(f"{COLOR_WARNING}MEW automation encountered an error: {error}{COLOR_RESET}")
-                                print(f"{COLOR_INFO}You can complete these steps manually by following: https://mojaveexpressguide.com/docs/Installation{COLOR_RESET}")
-                    else:
-                        print(f"{COLOR_INFO}MEW automation skipped by user.{COLOR_RESET}")
+                if not playbooks_disabled():
+                    built = build_configuration_hook_context(self.modlist_handler)
+                    if built is not None:
+                        identity, step_ctx, install_key = built
+                        run_playbook_automation_cli(
+                            "post_configure", get_registry(), identity, step_ctx, install_key, output=print,
+                        )
             except Exception as e:
-                self.logger.debug(f"MEW automation check skipped: {e}")
-                # Not an error - just means MEW automation wasn't applicable
+                self.logger.debug(f"Playbook automation check skipped: {e}")
+                # Not an error - just means no playbook applied
 
         if not gui_mode:
             try:
@@ -724,34 +602,34 @@ class ModlistMenuHandler:
         completion_log_file = "Configure_Existing_Modlist_workflow.log" if is_existing_flow else "Configure_New_Modlist_workflow.log"
 
         if not context.get('suppress_completion_banner'):
-            print("")
-            print("")
-            print("")
-            print("=" * 35)
-            print("= Configuration phase complete =")
-            print("=" * 35)
-            print("")
-            print(completion_title)
-            print(f"• You should now be able to Launch '{context.get('name')}' through Steam")
-            print("• Congratulations and enjoy the game!")
-            print("")
-        
+            _status("")
+            _status("")
+            _status("")
+            _status("=" * 35)
+            _status("= Configuration phase complete =")
+            _status("=" * 35)
+            _status("")
+            _status(completion_title)
+            _status(f"• You should now be able to Launch '{context.get('name')}' through Steam")
+            _status("• Congratulations and enjoy the game!")
+            _status("")
+
         if not context.get('suppress_completion_banner'):
             if enb_detected:
-                print(f"{COLOR_WARNING}ENB DETECTED{COLOR_RESET}")
-                print("")
-                print("If you plan on using ENB as part of this modlist, you will need to use")
-                print("one of the following Proton versions, otherwise you will have issues:")
-                print("")
-                print("  (in order of recommendation)")
-                print(f"  {COLOR_SUCCESS}• Proton-CachyOS{COLOR_RESET}")
-                print(f"  {COLOR_INFO}• GE-Proton{COLOR_RESET}")
-                print(f"  {COLOR_WARNING}• Proton 9 from Valve{COLOR_RESET}")
-                print("")
-                print(f"{COLOR_WARNING}Note: Valve's Proton 10 has known ENB compatibility issues.{COLOR_RESET}")
-                print("")
+                _status(f"{COLOR_WARNING}ENB DETECTED{COLOR_RESET}")
+                _status("")
+                _status("If you plan on using ENB as part of this modlist, you will need to use")
+                _status("one of the following Proton versions, otherwise you will have issues:")
+                _status("")
+                _status("  (in order of recommendation)")
+                _status(f"  {COLOR_SUCCESS}• Proton-CachyOS{COLOR_RESET}")
+                _status(f"  {COLOR_INFO}• GE-Proton{COLOR_RESET}")
+                _status(f"  {COLOR_WARNING}• Proton 9 from Valve{COLOR_RESET}")
+                _status("")
+                _status(f"{COLOR_WARNING}Note: Valve's Proton 10 has known ENB compatibility issues.{COLOR_RESET}")
+                _status("")
             from jackify.shared.paths import get_jackify_logs_dir
-            print(f"Detailed log available at: {get_jackify_logs_dir()}/{completion_log_file}")
+            _status(f"Detailed log available at: {get_jackify_logs_dir()}/{completion_log_file}")
 
         try:
             install_path = context.get('path')

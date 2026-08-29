@@ -11,6 +11,10 @@ from typing import Optional, Tuple
 from .logging_handler import LoggingHandler
 from .subprocess_utils import get_clean_subprocess_env
 
+# Restores progress logging the tool's own tracing filter drops by default (its
+# bin-crate targets aren't covered by "ttw_installer=info"); RUST_LOG overrides that.
+_TTW_RUST_LOG = "warn,ttw_installer=info,mpi_installer=info,mpi_installer_gui=info"
+
 
 class TTWInstallerBackendMixin:
     """Mixin providing TTW installation process and integration for TTWInstallerHandler."""
@@ -141,7 +145,7 @@ class TTWInstallerBackendMixin:
         ]
         self.logger.info("Executing TTW_Linux_Installer: %s", ' '.join(cmd))
         try:
-            env = get_clean_subprocess_env()
+            env = get_clean_subprocess_env(extra_env={'RUST_LOG': _TTW_RUST_LOG})
             output_fh = open(output_file, 'w', encoding='utf-8', buffering=1)
             exe_dir = str(self.ttw_installer_executable_path.parent)
             process = subprocess.Popen(
@@ -228,7 +232,7 @@ class TTWInstallerBackendMixin:
         ]
         self.logger.info("Executing TTW_Linux_Installer: %s", ' '.join(cmd))
         try:
-            env = get_clean_subprocess_env()
+            env = get_clean_subprocess_env(extra_env={'RUST_LOG': _TTW_RUST_LOG})
             exe_dir = str(self.ttw_installer_executable_path.parent)
             process = subprocess.Popen(
                 cmd, cwd=exe_dir, env=env,

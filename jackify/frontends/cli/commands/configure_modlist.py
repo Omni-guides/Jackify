@@ -97,72 +97,9 @@ class ConfigureModlistCommand:
             logger.error("TTW post-install prompt failed: %s", e, exc_info=True)
             print(f"{COLOR_WARNING}TTW integration prompt failed. Check logs for details.{COLOR_RESET}")
 
-        # VNV
-        try:
-            from jackify.backend.services.vnv_integration_helper import (
-                run_vnv_automation_if_applicable,
-                should_offer_vnv_automation,
-            )
-            if should_offer_vnv_automation(modlist_name, Path(install_dir)):
-                def _confirm_vnv(description: str) -> bool:
-                    print(f"\n{description}\n")
-                    try:
-                        ans = input(f"{COLOR_PROMPT}Run VNV post-install automation now? (Y/n): {COLOR_RESET}").strip().lower()
-                    except (EOFError, KeyboardInterrupt):
-                        return False
-                    return ans in ("", "y", "yes")
-
-                from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
-                automation_ran, vnv_error = run_vnv_automation_if_applicable(
-                    modlist_name=modlist_name,
-                    modlist_install_location=Path(install_dir),
-                    game_root=None,
-                    ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                    progress_callback=print,
-                    manual_file_callback=None,
-                    confirmation_callback=_confirm_vnv,
-                )
-                if automation_ran and not vnv_error:
-                    print(f"{COLOR_INFO}VNV post-install automation completed.{COLOR_RESET}")
-                if vnv_error:
-                    print(f"{COLOR_WARNING}VNV automation encountered an error: {vnv_error}{COLOR_RESET}")
-        except Exception as e:
-            logger.error("VNV post-install automation failed: %s", e, exc_info=True)
-            print(f"{COLOR_WARNING}VNV automation could not be completed. Check logs for details.{COLOR_RESET}")
-
-        # MEW
-        try:
-            from jackify.backend.services.mew_integration_helper import (
-                run_mew_automation_if_applicable,
-                should_offer_mew_automation,
-            )
-            if should_offer_mew_automation(modlist_name, Path(install_dir)):
-                def _confirm_mew(description: str) -> bool:
-                    print(f"\n{description}\n")
-                    try:
-                        ans = input(f"{COLOR_PROMPT}Run MEW post-install automation now? (Y/n): {COLOR_RESET}").strip().lower()
-                    except (EOFError, KeyboardInterrupt):
-                        return False
-                    return ans in ("", "y", "yes")
-
-                from jackify.backend.services.automated_prefix_service import AutomatedPrefixService
-                automation_ran, mew_error = run_mew_automation_if_applicable(
-                    modlist_name=modlist_name,
-                    modlist_install_location=Path(install_dir),
-                    game_root=None,
-                    appid=app_id,
-                    ttw_installer_path=AutomatedPrefixService.get_ttw_installer_path(),
-                    progress_callback=print,
-                    manual_file_callback=None,
-                    confirmation_callback=_confirm_mew,
-                )
-                if automation_ran and not mew_error:
-                    print(f"{COLOR_INFO}MEW post-install automation completed.{COLOR_RESET}")
-                if mew_error:
-                    print(f"{COLOR_WARNING}MEW automation encountered an error: {mew_error}{COLOR_RESET}")
-        except Exception as e:
-            logger.error("MEW post-install automation failed: %s", e, exc_info=True)
-            print(f"{COLOR_WARNING}MEW automation could not be completed. Check logs for details.{COLOR_RESET}")
+        # Modlist post-install fixes (playbooks - VNV, MEW, etc.) already ran inside
+        # _execute_legacy_configuration() -> run_modlist_configuration_phase(), which every
+        # branch of _configure_new_modlist() funnels through - do not run them a second time here.
 
         # JContainers
         try:

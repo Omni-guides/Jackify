@@ -5,7 +5,7 @@ InstallModlistScreen for Jackify GUI
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QLineEdit, QPushButton, QGridLayout, QFileDialog, QTextEdit, QSizePolicy, QTabWidget, QDialog, QMessageBox, QProgressDialog, QApplication, QCheckBox, QStyledItemDelegate, QStyle, QFrame
 from PySide6.QtCore import Qt, QSize, QThread, Signal, QTimer, QProcess, QMetaObject, QUrl
 from PySide6.QtGui import QPixmap, QTextCursor, QPainter, QFont
-from ..shared_theme import JACKIFY_COLOR_BLUE, DEBUG_BORDERS
+from ..shared_theme import JACKIFY_COLOR_BLUE
 from ..utils import ansi_to_html, strip_ansi_control_codes, set_responsive_minimum, _get_sidebar_urls
 from ..widgets.unsupported_game_dialog import UnsupportedGameDialog
 from jackify.frontends.gui.widgets.file_progress_list import FileProgressList

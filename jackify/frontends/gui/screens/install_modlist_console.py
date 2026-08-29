@@ -168,8 +168,8 @@ class ConsoleOutputMixin:
                 )
                 self._safe_append_text(guidance)
         
-        # R&D: Always write output to console buffer so it's available when user toggles Show Details
-        # The console visibility is controlled by the checkbox, not whether we write to it
+        # Always write output to the console buffer - visibility is controlled by the Show
+        # Details checkbox separately, not by whether we write to it
         self._safe_append_text(message)
 
     def _setup_scroll_tracking(self):

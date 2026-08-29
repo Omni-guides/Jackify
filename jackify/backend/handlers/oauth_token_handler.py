@@ -65,7 +65,6 @@ class OAuthTokenHandler:
             # Convert to JSON
             json_data = json.dumps(token_data, indent=2)
 
-            # Encrypt using Fernet
             encrypted = self._encrypt_data(json_data)
 
             if not encrypted:

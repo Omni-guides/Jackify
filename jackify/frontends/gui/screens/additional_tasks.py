@@ -8,144 +8,178 @@ import logging
 from typing import Optional
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QGridLayout
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QFrame, QGridLayout, QScrollArea
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPixmap
 
 from jackify.backend.models.configuration import SystemInfo
-from ..shared_theme import JACKIFY_COLOR_BLUE
+from ..screens.modlist_dashboard_card import CARD_HEIGHT, CARD_WIDTH, IMAGE_HEIGHT, IMAGE_WIDTH
 from ..utils import set_responsive_minimum
 from ..mixins.thread_lifecycle_mixin import ThreadLifecycleMixin
 
 logger = logging.getLogger(__name__)
 
+# Distinct from Tools Hub's engine/tool tile colours (_TILE_ENGINE/_TILE_TOOL in
+# tools_hub_card.py) - these tiles represent one-off actions, not installable things.
+_TILE_ACTION = "#3a4a5a"
+
+
+class _ActionTile(QFrame):
+    """Clickable action tile - same compact icon-card shape as the Dashboard and Tools Hub
+    cards, but with the action's full name painted directly into the tile (word-wrapped)
+    instead of misleading 2-3 letter initials ("Setup Mod Organizer 2" -> "SMO")."""
+    clicked = Signal()
+
+    def __init__(self, title: str, description: str, parent=None):
+        super().__init__(parent)
+        self.setFrameShape(QFrame.StyledPanel)
+        self.setStyleSheet(
+            "_ActionTile { background-color: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px; } "
+            "_ActionTile:hover { background-color: #333333; border: 1px solid #5a9fd6; }"
+        )
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(CARD_WIDTH, CARD_HEIGHT)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        tile_label = QLabel()
+        tile_label.setFixedSize(IMAGE_WIDTH, IMAGE_HEIGHT)
+        tile_label.setAlignment(Qt.AlignCenter)
+        tile_label.setStyleSheet("background: #1c1c1c; border-radius: 4px; border: none;")
+        tile_label.setPixmap(self._name_pixmap(title, tile_label.size()))
+        layout.addWidget(tile_label, alignment=Qt.AlignHCenter)
+
+        desc_label = QLabel(description)
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #999; font-size: 11px; background: transparent; border: none;")
+        layout.addWidget(desc_label)
+        layout.addStretch(1)
+
+    @staticmethod
+    def _name_pixmap(title: str, size) -> QPixmap:
+        base = QColor(_TILE_ACTION)
+        pixmap = QPixmap(size)
+        painter = QPainter(pixmap)
+        gradient = QLinearGradient(0, 0, size.width(), size.height())
+        gradient.setColorAt(0.0, base.lighter(130))
+        gradient.setColorAt(1.0, base.darker(140))
+        painter.fillRect(pixmap.rect(), gradient)
+        painter.setPen(QColor(255, 255, 255, 230))
+        font = QFont("Sans", 15, QFont.Bold)
+        painter.setFont(font)
+        text_rect = pixmap.rect().adjusted(14, 10, -14, -10)
+        painter.drawText(text_rect, Qt.AlignCenter | Qt.TextWordWrap, title)
+        painter.end()
+        return pixmap
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
 
 class AdditionalTasksScreen(ThreadLifecycleMixin, QWidget):
     """Additional Tasks screen for automation and standalone tools."""
 
-    def __init__(self, stacked_widget=None, main_menu_index=0, system_info: Optional[SystemInfo] = None,
-                 install_mo2_screen_index: int = 9):
+    def __init__(self, stacked_widget=None, system_info: Optional[SystemInfo] = None,
+                 install_mo2_screen_index: int = 9, game_downgrade_screen_index: int = 13):
         super().__init__()
         self.stacked_widget = stacked_widget
-        self.main_menu_index = main_menu_index
         self.system_info = system_info or SystemInfo(is_steamdeck=False)
         self.install_mo2_screen_index = install_mo2_screen_index
-        
+        self.game_downgrade_screen_index = game_downgrade_screen_index
+
         self._setup_ui()
+
+    MENU_ITEMS = [
+        ("Run Install Verifier", "run_verifier", "Check an installed modlist for common configuration problems"),
+        ("Browse Crash Logs", "crash_logs", "Find and open crash logs for an installed modlist"),
+        ("Create Diagnostic Bundle", "diagnostic_bundle", "Package logs and system info for support reporting"),
+        ("Configure Tool Compatibility", "tool_config", "Apply xEdit, Pandora and DLL fixes to an existing modlist prefix"),
+        ("Setup Mod Organizer 2", "setup_mo2", "Download and configure a standalone MO2 instance"),
+        ("Install Wabbajack", "wabbajack_install", "Install Wabbajack.exe via Proton (automated setup)"),
+        ("Downgrade Game Version", "downgrade_game", "Downgrade Skyrim SE or Fallout 4 to a script-extender-compatible build"),
+    ]
 
     def _setup_ui(self):
         """Set up the user interface following ModlistTasksScreen pattern"""
         layout = QVBoxLayout()
-        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setContentsMargins(30, 24, 30, 16)
         layout.setSpacing(12)  # Match main menu spacing
-        
+
         # Header section
         self._setup_header(layout)
-        
-        # Menu buttons section
+
+        # Menu buttons section - scrollable so a full grid never gets clipped by the
+        # window chrome (e.g. on Steam Deck's 1280x800), matching Dashboard/Tools Hub.
         self._setup_menu_buttons(layout)
-        
-        # Bottom spacer
-        layout.addStretch()
+
         self.setLayout(layout)
 
     def _setup_header(self, layout):
         """Set up the header section"""
-        header_widget = QWidget()
-        header_layout = QVBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(2)
-
-        # Title
-        title = QLabel("<b>Additional Tasks & Tools</b>")
-        title.setStyleSheet(f"font-size: 20px; color: {JACKIFY_COLOR_BLUE};")
-        title.setAlignment(Qt.AlignHCenter)
-        header_layout.addWidget(title)
-
-        header_layout.addSpacing(10)
-
-        # Description area with fixed height
         desc = QLabel("Wabbajack installer, MO2 setup, and additional tools.")
         desc.setWordWrap(True)
         desc.setStyleSheet("color: #ccc; font-size: 13px;")
         desc.setAlignment(Qt.AlignHCenter)
-        desc.setMaximumHeight(50)  # Fixed height for description zone
-        header_layout.addWidget(desc)
+        layout.addWidget(desc)
+        layout.addSpacing(12)
 
-        header_layout.addSpacing(12)
-
-        # Separator
-        sep = QLabel()
-        sep.setFixedHeight(2)
-        sep.setFixedWidth(400)  # Match button width
-        sep.setStyleSheet("background: #fff;")
-        header_layout.addWidget(sep, alignment=Qt.AlignHCenter)
-
-        header_layout.addSpacing(10)
-
-        header_widget.setLayout(header_layout)
-        header_widget.setFixedHeight(120)  # Fixed total header height
-        layout.addWidget(header_widget)
-    
     def _setup_menu_buttons(self, layout):
-        """Set up the menu buttons section"""
-        # Menu options
-        MENU_ITEMS = [
-            ("Run Install Verifier", "run_verifier", "Check an installed modlist for common configuration problems"),
-            ("Configure Tool Compatibility", "tool_config", "Apply xEdit, Pandora and DLL fixes to an existing modlist prefix"),
-            ("Setup Mod Organizer 2", "setup_mo2", "Download and configure a standalone MO2 instance"),
-            ("Install Wabbajack", "wabbajack_install", "Install Wabbajack.exe via Proton (automated setup)"),
-            ("Create Diagnostic Bundle", "diagnostic_bundle", "Package logs and system info for support reporting"),
-            ("Return to Main Menu", "return_main_menu", "Go back to the main menu"),
-        ]
-        
-        # Create grid layout for buttons (mirror ModlistTasksScreen pattern)
-        button_grid = QGridLayout()
-        button_grid.setSpacing(12)
-        button_grid.setAlignment(Qt.AlignHCenter)
+        """Set up the scrollable, responsive card grid."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        button_width = 400
-        button_height = 40
+        grid_widget = QWidget()
+        grid_widget.setStyleSheet("background: transparent;")
+        self._button_grid = QGridLayout()
+        self._button_grid.setSpacing(12)
+        self._button_grid.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        grid_widget.setLayout(self._button_grid)
 
-        for i, (label, action_id, description) in enumerate(MENU_ITEMS):
-            # Create button
-            btn = QPushButton(label)
-            btn.setFixedSize(button_width, button_height)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: #4a5568;
-                    color: white;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 13px;
-                    font-weight: bold;
-                    text-align: center;
-                }}
-                QPushButton:hover {{
-                    background-color: #5a6578;
-                }}
-                QPushButton:pressed {{
-                    background-color: {JACKIFY_COLOR_BLUE};
-                }}
-            """)
-            btn.clicked.connect(lambda checked, a=action_id: self._handle_button_click(a))
+        self._tiles = []
+        for label, action_id, description in self.MENU_ITEMS:
+            tile = _ActionTile(label, description)
+            tile.clicked.connect(lambda checked=False, a=action_id: self._handle_button_click(a))
+            self._tiles.append(tile)
 
-            # Description label
-            desc_label = QLabel(description)
-            desc_label.setAlignment(Qt.AlignHCenter)
-            desc_label.setStyleSheet("color: #999; font-size: 11px;")
-            desc_label.setWordWrap(True)
-            desc_label.setFixedWidth(button_width)
+        self._scroll_area = scroll
+        scroll.setWidget(grid_widget)
+        layout.addWidget(scroll, stretch=1)
 
-            # Add to grid (button row, then description row)
-            button_grid.addWidget(btn, i * 2, 0, Qt.AlignHCenter)
-            button_grid.addWidget(desc_label, i * 2 + 1, 0, Qt.AlignHCenter)
+        self._lay_out_grid()
 
-        layout.addLayout(button_grid)
+    def _lay_out_grid(self):
+        """Responsive column count based on available width - same approach the Dashboard
+        and Tools Hub use for their own card grids."""
+        available_width = self._scroll_area.viewport().width()
+        if available_width <= 0:
+            available_width = self.width() - 60
+        if available_width <= 0:
+            available_width = 900  # not yet sized (e.g. first-ever showEvent)
+        spacing = self._button_grid.spacing()
+        columns = max(1, (available_width + spacing) // (CARD_WIDTH + spacing))
+        columns = min(columns, len(self._tiles) or 1)
 
-    # Removed _create_menu_button; using same pattern as ModlistTasksScreen
+        for tile in self._tiles:
+            self._button_grid.removeWidget(tile)
+        for i, tile in enumerate(self._tiles):
+            row, col = divmod(i, columns)
+            self._button_grid.addWidget(tile, row, col)
+        for col in range(columns):
+            self._button_grid.setColumnStretch(col, 0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_button_grid"):
+            self._lay_out_grid()
 
     def _handle_button_click(self, action_id):
         """Handle button clicks"""
@@ -159,8 +193,15 @@ class AdditionalTasksScreen(ThreadLifecycleMixin, QWidget):
             self._show_tool_config()
         elif action_id == "diagnostic_bundle":
             self._run_diagnostic_bundle()
-        elif action_id == "return_main_menu":
-            self._return_to_main_menu()
+        elif action_id == "crash_logs":
+            self._browse_crash_logs()
+        elif action_id == "downgrade_game":
+            self._show_downgrade_game()
+
+    def _browse_crash_logs(self):
+        """Pick a modlist, then pick one of its crash logs to open."""
+        from ..dialogs.crash_log_dialog import browse_crash_logs
+        browse_crash_logs(self)
 
     def _show_wabbajack_installer(self):
         """Navigate to Wabbajack installer screen"""
@@ -176,6 +217,11 @@ class AdditionalTasksScreen(ThreadLifecycleMixin, QWidget):
     def _show_tool_config(self):
         if self.stacked_widget:
             self.stacked_widget.setCurrentIndex(11)
+
+    def _show_downgrade_game(self):
+        """Navigate to the Downgrade Game Version screen"""
+        if self.stacked_widget:
+            self.stacked_widget.setCurrentIndex(self.game_downgrade_screen_index)
 
     def _run_install_verifier(self):
         """Prompt user to pick a modlist, run the verifier, and show results."""
@@ -369,14 +415,21 @@ class AdditionalTasksScreen(ThreadLifecycleMixin, QWidget):
         create_btn.clicked.connect(_on_create)
         dlg.exec()
 
-    def _return_to_main_menu(self):
-        """Return to main menu"""
-        if self.stacked_widget:
-            self.stacked_widget.setCurrentIndex(self.main_menu_index)
-
     def showEvent(self, event):
         """Called when the widget becomes visible - resize to compact size"""
         super().showEvent(event)
+        # _lay_out_grid() ran once at construction time, before this screen had ever been
+        # sized inside the stacked widget, so it read a too-small fallback viewport width.
+        # Switching stacked-widget pages doesn't fire resizeEvent (the widget's size doesn't
+        # actually change), so re-run it here now that we're visible - same reason
+        # Dashboard's _lay_out_grid() is called from its own showEvent. Deferred via
+        # singleShot(0) rather than called directly: showEvent can fire before the scroll
+        # area's viewport has actually been resized to its final width (confirmed - reading
+        # it synchronously here can still see a stale, too-small value), so this waits for
+        # the current event loop pass to finish settling layout first.
+        if hasattr(self, "_button_grid"):
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self._lay_out_grid)
         try:
             main_window = self.window()
             if main_window:

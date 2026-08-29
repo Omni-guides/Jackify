@@ -143,6 +143,37 @@ def get_clean_subprocess_env(extra_env=None):
         env.update(extra_env)
     return env
 
+_active_process_groups = set()
+_active_process_groups_lock = threading.Lock()
+
+
+def register_process_group(pgid):
+    """Track a process group started outside ProcessManager (e.g. a raw Popen
+    call site) so it can be killed by PID instead of pattern-matched later."""
+    with _active_process_groups_lock:
+        _active_process_groups.add(pgid)
+
+
+def unregister_process_group(pgid):
+    """Stop tracking a process group once its owner has cleaned it up."""
+    with _active_process_groups_lock:
+        _active_process_groups.discard(pgid)
+
+
+def kill_all_registered_process_groups(sig=signal.SIGKILL):
+    """Kill every currently tracked process group. Used by emergency/shutdown
+    cleanup paths that have no reference to the specific process that spawned
+    each group, replacing pattern-based pkill calls."""
+    with _active_process_groups_lock:
+        pgids = list(_active_process_groups)
+    for pgid in pgids:
+        try:
+            os.killpg(pgid, sig)
+        except Exception:
+            pass
+        unregister_process_group(pgid)
+
+
 def increase_file_descriptor_limit(target_limit=1048576):
     """
     Temporarily increase the file descriptor limit for the current process.
@@ -237,11 +268,10 @@ class ProcessManager:
             )
         self.process_group_pid = os.getpgid(self.proc.pid)
 
-    def cancel(self, timeout_terminate=2, timeout_kill=1, max_cleanup_attempts=3):
+    def cancel(self, timeout_terminate=2, timeout_kill=1):
         """
         Attempt to robustly terminate the process and its children.
         """
-        cleanup_attempts = 0
         try:
             if self.proc:
                 # Terminate process group first so child tools don't survive parent exit.
@@ -281,14 +311,6 @@ class ProcessManager:
                     pass
                 except Exception:
                     pass
-
-                # Last resort: pkill by command name (kept bounded).
-                while cleanup_attempts < max_cleanup_attempts:
-                    try:
-                        subprocess.run(['pkill', '-f', os.path.basename(self.cmd[0])], timeout=5, capture_output=True)
-                    except Exception:
-                        pass
-                    cleanup_attempts += 1
         finally:
             # Always close pipes - unblocks threads blocked on read(1) or iterating stderr
             if self._pty_master_fd is not None:

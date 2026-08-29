@@ -5,6 +5,10 @@ import time
 from ..utils import strip_ansi_control_codes
 
 
+_ASSET_PROGRESS_RE = re.compile(r'Assets:\s*(\d+)/(\d+)')
+_BSA_TOTAL_RE = re.compile(r'Found (\d+) BSA targets')
+
+
 class TTWOutputMixin:
     """Mixin providing output and progress signal handlers for InstallTTWScreen."""
 
@@ -16,12 +20,15 @@ class TTWOutputMixin:
             self._ttw_last_activity_update = 0
             self._ttw_bsa_total = 0
             self._ttw_bsa_done = 0
+            self._ttw_asset_current = 0
+            self._ttw_asset_total = 0
             self.ttw_start_time = time.time()
 
         lines_to_display = []
         html_fragments = []
         show_details_due_to_error = False
         bsa_progress_changed = False
+        asset_progress_changed = False
 
         for cleaned in messages:
             if not cleaned:
@@ -31,7 +38,7 @@ class TTWOutputMixin:
 
             try:
                 if not self._ttw_bsa_total:
-                    bsa_total_match = re.search(r'(\d+)\s+output BSAs', cleaned)
+                    bsa_total_match = _BSA_TOTAL_RE.search(cleaned)
                     if bsa_total_match:
                         self._ttw_bsa_total = int(bsa_total_match.group(1))
                         bsa_progress_changed = True
@@ -43,21 +50,28 @@ class TTWOutputMixin:
 
             is_error = 'error:' in lower_cleaned and 'succeeded' not in lower_cleaned and '0 failed' not in lower_cleaned
             is_warning = 'warning:' in lower_cleaned
-            is_bsa_progress = cleaned.startswith('[BSA]')
-            is_bsa_done = is_bsa_progress and ('... ok' in lower_cleaned or '... failed' in lower_cleaned)
+            is_bsa_done = 'built ready bsa:' in lower_cleaned
             if is_bsa_done:
                 self._ttw_bsa_done += 1
                 bsa_progress_changed = True
-            is_milestone = is_bsa_progress or any(
+            is_milestone = any(
                 kw in lower_cleaned for kw in ['===', 'complete', 'finished', 'validation', 'configuration valid']
             )
-            is_file_op = not is_bsa_progress and any(
+            is_file_op = any(
                 ext in lower_cleaned for ext in ['.ogg', '.mp3', '.bsa', '.dds', '.nif', '.kf', '.hkx']
             )
             is_noise = cleaned.strip().upper() in ['OK', 'OK.', 'OK!', 'DONE', 'DONE.', 'SUCCESS', 'SUCCESS.']
 
             if is_error and 'cannot get directory path for location type' in lower_cleaned:
                 self._ttw_unclean_game_dir_detected = True
+
+            asset_match = _ASSET_PROGRESS_RE.search(cleaned)
+            if asset_match:
+                current, total = int(asset_match.group(1)), int(asset_match.group(2))
+                if total and (total != self._ttw_asset_total or current > self._ttw_asset_current):
+                    self._ttw_asset_total = total
+                    self._ttw_asset_current = max(self._ttw_asset_current, current)
+                    asset_progress_changed = True
 
             should_show = (is_error or is_warning or is_milestone) or (self.show_details_checkbox.isChecked() and not is_file_op and not is_noise)
 
@@ -76,6 +90,12 @@ class TTWOutputMixin:
             if (current_time - self._ttw_last_activity_update) >= 0.3:
                 percent = int(self._ttw_bsa_done / self._ttw_bsa_total * 100)
                 self._update_ttw_phase("Building archives", self._ttw_bsa_done, self._ttw_bsa_total, percent)
+                self._ttw_last_activity_update = current_time
+        elif asset_progress_changed and self._ttw_asset_total:
+            current_time = time.time()
+            if (current_time - self._ttw_last_activity_update) >= 0.3:
+                percent = int(self._ttw_asset_current / self._ttw_asset_total * 100)
+                self._update_ttw_phase("Processing assets", self._ttw_asset_current, self._ttw_asset_total, percent)
                 self._ttw_last_activity_update = current_time
 
         if html_fragments or lines_to_display:
