@@ -1,8 +1,6 @@
 """Execution workflow methods for InstallModlistScreen (Mixin)."""
 
 from pathlib import Path
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QMessageBox
 import logging
 import os
 
@@ -21,87 +19,11 @@ class InstallWorkflowExecutionMixin:
     def _ensure_clf3_installed(self) -> bool:
         """
         If CLF3 is already installed, return True immediately.
-        If not, show a download dialog and install it, returning True on success.
+        If not, prompt and install it via the same path Tools Hub uses, returning True on
+        success (including the Nexus-Premium/manual-download outcomes, not just GitHub).
         """
-        from jackify.backend.services.tool_registry import ToolRegistry
-        status = ToolRegistry().get_status("clf3")
-        if status and status.installed:
-            return True
-
-        reply = QMessageBox.question(
-            self,
-            "CLF3 Not Installed",
-            "The experimental engine (CLF3) is not installed.\n\n"
-            "Download and install it now to continue?",
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if reply != QMessageBox.Yes:
-            return False
-
-        return self._download_clf3_with_dialog()
-
-    def _download_clf3_with_dialog(self) -> bool:
-        """Download CLF3 in a modal dialog with a pulsing progress bar. Returns True on success."""
-
-        class _Clf3InstallThread(QThread):
-            finished_signal = Signal(bool, str)
-
-            def run(self):
-                try:
-                    ok, msg = ToolRegistry().install("clf3")
-                    self.finished_signal.emit(ok, msg)
-                except Exception as exc:
-                    self.finished_signal.emit(False, str(exc))
-
-        from jackify.backend.services.tool_registry import ToolRegistry
-        from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Installing CLF3")
-        dlg.setModal(True)
-        dlg.setMinimumWidth(360)
-        layout = QVBoxLayout(dlg)
-        layout.setSpacing(12)
-        layout.setContentsMargins(16, 16, 16, 16)
-
-        label = QLabel("Downloading CLF3 (experimental engine)...")
-        label.setStyleSheet("color: #ccc; font-size: 13px;")
-        layout.addWidget(label)
-
-        bar = QProgressBar()
-        bar.setRange(0, 0)
-        bar.setTextVisible(False)
-        bar.setFixedHeight(6)
-        bar.setStyleSheet(f"""
-            QProgressBar {{ border: none; background-color: #333; border-radius: 3px; }}
-            QProgressBar::chunk {{ background-color: {JACKIFY_COLOR_BLUE}; border-radius: 3px; }}
-        """)
-        layout.addWidget(bar)
-
-        result = [False, ""]
-
-        thread = _Clf3InstallThread()
-
-        def on_done(ok: bool, msg: str):
-            result[0] = ok
-            result[1] = msg
-            dlg.accept()
-
-        thread.finished_signal.connect(on_done)
-        thread.start()
-        dlg.exec()
-        thread.wait(5000)
-
-        if not result[0]:
-            QMessageBox.critical(
-                self,
-                "CLF3 Install Failed",
-                f"Could not install CLF3:\n\n{result[1]}",
-            )
-            return False
-
-        label.setText("CLF3 installed.")
-        return True
+        from jackify.frontends.gui.services.tool_install_prompt import ensure_tool_installed
+        return ensure_tool_installed(self, "clf3", "CLF3")
 
     def validate_and_start_install(self):
         import time
@@ -218,6 +140,8 @@ class InstallWorkflowExecutionMixin:
         self.install_thread.manual_download_list_received.connect(self.on_manual_download_list_received)
         self.install_thread.progress_state_manager = self.progress_state_manager
         self.install_thread.finished.connect(self.install_thread.deleteLater)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+        register_managed_thread(self.install_thread)
         self.install_thread.start()
 
     def on_manual_download_list_received(self, events: list) -> None:

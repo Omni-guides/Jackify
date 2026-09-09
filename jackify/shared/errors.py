@@ -255,6 +255,90 @@ def game_not_found_for_modlist(game_name: str, detail: Optional[str] = None) -> 
     )
 
 
+def game_file_mismatch_error(archive_name: str, detail: Optional[str] = None) -> InstallError:
+    name = (archive_name or "a required file").strip()
+    return InstallError(
+        title="Game File Doesn't Match This Modlist",
+        message=f"'{name}' comes from your own game installation, not a download, and doesn't "
+                f"match what this modlist expects.",
+        suggestion="This usually means the game has been updated since the modlist was built.",
+        solutions=[
+            "Check Steam for a recent update to the base game.",
+            "Use the Downgrade Game Version tool (Additional Tasks) to install the version this modlist expects.",
+            "If the modlist has since been updated for the new game version, update to the latest modlist version.",
+        ],
+        technical=format_technical_context(detail=detail, context={"archive_name": name}),
+    )
+
+
+def missing_archives_error(message: str, context: Optional[dict] = None) -> InstallError:
+    """Build the user-facing error for the engine's structured `missing_archives` type.
+
+    Distinguishes real download failures from GameFileSource mismatches (and a single
+    mismatch from a systemic one) without asserting corrupt-install vs needs-downgrade -
+    the engine can't tell those apart, so neither can Jackify.
+    """
+    context = context or {}
+    download_failures = context.get("download_failures") or []
+    game_file_mismatches = context.get("game_file_mismatches") or []
+    game_file_total = context.get("game_file_total") or len(game_file_mismatches)
+
+    parts: List[str] = []
+    solutions: List[str] = []
+    title = "Missing or Mismatched Files"
+
+    if game_file_mismatches:
+        mismatch_count = len(game_file_mismatches)
+        versions = {(m.get("game_version") or "").strip() for m in game_file_mismatches}
+        versions.discard("")
+        version_hint = f" (this modlist expects game version {next(iter(versions))})" if len(versions) == 1 else ""
+
+        if mismatch_count == 1:
+            title = "Game File Doesn't Match This Modlist"
+            name = (game_file_mismatches[0].get("name") or "a required file").strip()
+            parts.append(
+                f"'{name}' comes from your own game installation, not a download, and doesn't "
+                f"match what this modlist expects{version_hint}."
+            )
+        else:
+            title = "Game Files Don't Match This Modlist"
+            parts.append(
+                f"{mismatch_count} of {game_file_total} game files do not match what this "
+                f"modlist expects{version_hint}. This can mean either a corrupted game install or "
+                f"that the game needs downgrading to the version this modlist expects."
+            )
+        solutions.extend([
+            "Check the modlist's own documentation, Nexus page, or Discord/support channel to "
+            "confirm which base game version it requires - mod authors don't always update this "
+            "after a game patch.",
+            "If Steam has updated the game past the version the modlist requires, use the "
+            "Downgrade Game Version tool (Additional Tasks) to install that version.",
+            "If the modlist has already been updated for the current game version, update to the "
+            "latest modlist version instead of downgrading.",
+        ])
+
+    if download_failures:
+        if not game_file_mismatches:
+            title = "Download Failures"
+        names = ", ".join((d.get("name") or "unknown") for d in download_failures[:5])
+        if len(download_failures) > 5:
+            names += f", and {len(download_failures) - 5} more"
+        prefix = "In addition, " if parts else ""
+        parts.append(f"{prefix}{len(download_failures)} file(s) failed to download: {names}.")
+        solutions.extend([
+            "Re-run the install - Wabbajack resumes and will reattempt failed downloads.",
+            "Check your internet connection and that Nexus Mods is reachable at nexusmods.com.",
+        ])
+
+    return InstallError(
+        title=title,
+        message=" ".join(parts) or (message or "One or more archives could not be resolved."),
+        suggestion="See the specific files and reasons listed below.",
+        solutions=solutions or ["Re-run the install after addressing the issue above."],
+        technical=format_technical_context(context=context),
+    )
+
+
 def configuration_failed(detail: str, context: Optional[dict] = None) -> ConfigError:
     return ConfigError(
         title="Post-Install Configuration Failed",

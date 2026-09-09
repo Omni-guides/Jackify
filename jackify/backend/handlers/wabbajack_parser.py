@@ -140,6 +140,32 @@ class WabbajackParser:
         except Exception:
             return None
 
+    def get_archive_source_type(self, wabbajack_path: Path, archive_name: str) -> Optional[str]:
+        """
+        Look up one archive's download-state type by name in a .wabbajack file's Archives list.
+
+        Used to tell a real Nexus/HTTP download apart from a GameFileSource archive (the
+        modlist's own copy of the user's game files) when an engine error only names the
+        archive, not its source - e.g. "GameFileSourceDownloader, Wabbajack.Lib".
+
+        Returns the State's $type string, or None if not found or unreadable.
+        """
+        try:
+            with zipfile.ZipFile(wabbajack_path, 'r') as zip_file:
+                modlist_files = [f for f in zip_file.namelist() if f in ['modlist', 'modlist.json']]
+                if not modlist_files:
+                    return None
+                with zip_file.open(modlist_files[0]) as f:
+                    data = json.load(f)
+            for archive in data.get('Archives', []):
+                if archive.get('Name') == archive_name:
+                    state = archive.get('State') or {}
+                    return state.get('$type')
+            return None
+        except Exception as e:
+            self.logger.debug(f"Could not read archive source type for {archive_name!r} from {wabbajack_path}: {e}")
+            return None
+
     def is_supported_game(self, game_type: str) -> bool:
         """
         Check if a game type is supported by Jackify's post-install configuration.

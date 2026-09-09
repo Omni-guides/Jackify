@@ -233,9 +233,12 @@ class UpdateDialog(ThreadLifecycleMixin, QDialog):
         self.skip_button.setEnabled(False)
         
         # Start download thread
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self.download_thread = UpdateDownloadThread(self.update_service, self.update_info)
         self.download_thread.progress_updated.connect(self.update_progress)
         self.download_thread.download_finished.connect(self.download_completed)
+        register_managed_thread(self.download_thread)
         self.download_thread.start()
     
     def update_progress(self, downloaded: int, total: int):

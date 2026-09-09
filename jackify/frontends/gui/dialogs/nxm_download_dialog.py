@@ -323,8 +323,11 @@ class NxmDownloadDialog(ThreadLifecycleMixin, QDialog):
         dlg.show()
 
     def _fetch_mod_name(self) -> None:
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._name_thread = _ModNameFetchThread(self.nxm, self)
         self._name_thread.name_ready.connect(self._on_mod_name_ready)
+        register_managed_thread(self._name_thread)
         self._name_thread.start()
 
     def _on_mod_name_ready(self, name: str) -> None:
@@ -402,9 +405,12 @@ class NxmDownloadDialog(ThreadLifecycleMixin, QDialog):
             return
 
         self._set_downloading(True)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._thread = _DownloadThread(self.nxm, download_dir, token, method, self)
         self._thread.progress.connect(self._on_progress)
         self._thread.finished.connect(self._on_download_finished)
+        register_managed_thread(self._thread)
         self._thread.start()
 
     def _get_auth(self) -> Tuple[Optional[str], str]:

@@ -175,6 +175,8 @@ class TTWWorkflowMixin:
         self.install_thread.progress_received.connect(self.on_installation_progress, Qt.QueuedConnection)
         self.install_thread.installation_finished.connect(self.on_installation_finished, Qt.QueuedConnection)
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+        register_managed_thread(self.install_thread)
         self.install_thread.start()
         QApplication.processEvents()
 

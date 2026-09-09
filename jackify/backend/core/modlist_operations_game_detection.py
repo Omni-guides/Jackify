@@ -20,36 +20,25 @@ class ModlistOperationsGameDetectionMixin:
         Returns:
             Jackify game type string or None if detection fails
         """
+        from jackify.backend.services.game_type_detection import detect_pre_install
+
         if wabbajack_file_path:
             self.logger.info(f"Detecting game type from .wabbajack file: {wabbajack_file_path}")
-            game_type = self.wabbajack_parser.parse_wabbajack_game_type(wabbajack_file_path)
+            game_type = detect_pre_install(wabbajack_path=wabbajack_file_path)
             if game_type:
                 self.logger.info(f"Detected game type from .wabbajack file: {game_type}")
-                return game_type
             else:
                 self.logger.warning(f"Could not detect game type from .wabbajack file: {wabbajack_file_path}")
-                return None
+            return game_type
         elif modlist_info and 'game' in modlist_info:
-            game_name = modlist_info['game'].lower()
+            game_name = modlist_info['game']
             self.logger.info(f"Detecting game type from modlist info: {game_name}")
-
-            game_mapping = {
-                'skyrim special edition': 'skyrim',
-                'skyrim': 'skyrim',
-                'fallout 4': 'fallout4',
-                'fallout new vegas': 'falloutnv',
-                'oblivion': 'oblivion',
-                'starfield': 'starfield',
-                'oblivion remastered': 'oblivion_remastered'
-            }
-
-            game_type = game_mapping.get(game_name)
+            game_type = detect_pre_install(gallery_info=modlist_info)
             if game_type:
                 self.logger.info(f"Mapped game name '{game_name}' to game type: {game_type}")
-                return game_type
             else:
                 self.logger.warning(f"Unknown game name in modlist info: {game_name}")
-                return None
+            return game_type
         else:
             self.logger.warning("No modlist info or .wabbajack file path provided for game detection")
             return None

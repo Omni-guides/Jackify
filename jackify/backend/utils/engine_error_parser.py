@@ -1,10 +1,11 @@
 import json
 import re
+from pathlib import Path
 from typing import Optional
 from jackify.shared.errors import (
     JackifyError, InstallError, OAuthError,
     oauth_expired, wabbajack_install_failed, format_technical_context,
-    game_not_found_for_modlist,
+    game_not_found_for_modlist, game_file_mismatch_error, missing_archives_error,
 )
 
 _HTTP_TIMEOUT_RE = re.compile(
@@ -16,6 +17,10 @@ _NEXUS_DOWNLOAD_RE = re.compile(
     r"Game:\s*([A-Za-z0-9]+),\s*ModID:\s*(\d+)",
     re.IGNORECASE,
 )
+
+_MISSING_ARCHIVE_RE = re.compile(r"Required archive '([^']+)' could not be located")
+
+_GAME_FILE_SOURCE_TYPE = "GameFileSourceDownloader, Wabbajack.Lib"
 
 _NEXUS_GAME_SLUGS = {
     "skyrimspecialedition": "skyrimspecialedition",
@@ -169,6 +174,7 @@ _TYPE_MAP = {
         ],
         technical=_ctx_detail(ctx),
     ),
+    "missing_archives": lambda msg, ctx: missing_archives_error(msg, ctx),
     "download_stalled": lambda msg, ctx: InstallError(
         "Downloads Stalled",
         msg,
@@ -217,6 +223,32 @@ def parse_engine_error_line(line: str) -> Optional[JackifyError]:
     if factory:
         return factory(message, context)
     return wabbajack_install_failed(f"[{error_type}] {message}")
+
+
+def refine_engine_error(error: Optional[JackifyError], message: str, wabbajack_path) -> Optional[JackifyError]:
+    """
+    Sharpen a generic missing-archive error into a game-file-mismatch error when the
+    named archive is a GameFileSource (the modlist's own copy of the user's game files,
+    not a real download) - identified by reading the archive's own .wabbajack file, since
+    the engine's error message alone doesn't distinguish the two.
+
+    Returns `error` unchanged if it doesn't match, the path is unavailable, or the lookup
+    fails for any reason.
+    """
+    if error is None or not wabbajack_path:
+        return error
+    match = _MISSING_ARCHIVE_RE.search(message or "")
+    if not match:
+        return error
+    archive_name = match.group(1)
+    try:
+        from jackify.backend.handlers.wabbajack_parser import WabbajackParser
+        source_type = WabbajackParser().get_archive_source_type(Path(wabbajack_path), archive_name)
+    except Exception:
+        return error
+    if source_type == _GAME_FILE_SOURCE_TYPE:
+        return game_file_mismatch_error(archive_name, detail=message)
+    return error
 
 
 def error_from_exit_code(exit_code: int, detail: str = "", context: Optional[dict] = None) -> Optional[JackifyError]:

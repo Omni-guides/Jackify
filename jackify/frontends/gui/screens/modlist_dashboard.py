@@ -231,8 +231,11 @@ class ModlistDashboardScreen(ThreadLifecycleMixin, FocusReclaimMixin, QWidget):
             return
         self.check_updates_button.setEnabled(False)
         self.check_updates_button.setText("Checking...")
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._version_thread = GalleryVersionFetchThread()
         self._version_thread.versions_ready.connect(self._on_versions_ready)
+        register_managed_thread(self._version_thread)
         self._version_thread.start()
 
     def _on_versions_ready(
@@ -483,11 +486,14 @@ class ModlistDashboardScreen(ThreadLifecycleMixin, FocusReclaimMixin, QWidget):
             card.setEnabled(False)
 
         self._show_uninstall_progress(entry)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._uninstall_thread = UninstallThread(entry, parent=self)
         self._uninstall_thread.progress.connect(self._on_uninstall_progress)
         self._uninstall_thread.finished_uninstall.connect(
             lambda success, message: self._on_uninstall_done(entry, success, message)
         )
+        register_managed_thread(self._uninstall_thread)
         self._uninstall_thread.start()
 
     def _show_uninstall_progress(self, entry: InstallEntry):

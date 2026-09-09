@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jackify"
+dynamic = ["version", "dependencies"]
+description = "Manage Wabbajack modlists on Linux/Steam Deck"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+requires-python = ">=3.8"
+
+[project.scripts]
+jackify = "jackify.frontends.cli.__main__:main"
+jackify-gui = "jackify.frontends.gui.main:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "jackify.__version__" }
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["jackify*"]

@@ -21,6 +21,8 @@ from jackify.backend.handlers.config_handler import ConfigHandler
 
 from .modlist_operations_discovery import ModlistOperationsDiscoveryMixin
 from .modlist_operations_configuration_cli import ModlistOperationsConfigurationCLIMixin
+from .modlist_operations_engine_cli import ModlistOperationsEngineCLIMixin
+from .modlist_operations_post_install_cli import ModlistOperationsPostInstallCLIMixin
 from .modlist_operations_game_detection import ModlistOperationsGameDetectionMixin
 from .modlist_operations_nexus import ModlistOperationsNexusMixin
 from jackify.backend.services.update_detection import (
@@ -141,9 +143,30 @@ def get_jackify_engine_path():
     # Return source path as final fallback
     return engine_path
 
+
+def get_jackify_engine_installed_version(engine_path: str):
+    """Query the actual jackify-engine binary for its version, rather than trusting cached
+    Tools Hub metadata. The AppImage's own bootstrap script (build_appimage_simple.sh's
+    AppRun) can silently replace this binary with a newer bundled build on launch, entirely
+    outside Tools Hub's knowledge - a manifest string alone can go stale."""
+    try:
+        result = subprocess.run(
+            [engine_path, "--version"], capture_output=True, text=True, timeout=5,
+        )
+        # A local/dev build reports "X.Y.Z+<git-hash>" (semver build metadata) - Tools Hub's
+        # card is a narrow, right-aligned label sized for a plain release tag like "v0.5.8",
+        # and silently clips the version number itself off-screen for the much longer
+        # hash-suffixed form. The hash isn't meaningful to a user here anyway.
+        version = result.stdout.strip().split("+", 1)[0]
+        return version or None
+    except Exception:
+        return None
+
 class ModlistInstallCLI(
     ModlistOperationsDiscoveryMixin,
     ModlistOperationsConfigurationCLIMixin,
+    ModlistOperationsEngineCLIMixin,
+    ModlistOperationsPostInstallCLIMixin,
     ModlistOperationsGameDetectionMixin,
     ModlistOperationsNexusMixin,
 ):

@@ -56,9 +56,8 @@ _WARNING_STATUSES = {STATUS_MISSING_DLL, STATUS_FAILED, STATUS_UNSUPPORTED_BUILD
 
 # Games this patch is currently scoped to: Skyrim SE, Fallout 4, and their VR variants.
 # FNV/Oblivion/etc are 32-bit games not yet tested against this patch - left untouched
-# until confirmed safe. Covers both game-type key spellings used across the codebase
-# (steamgriddb_service's "fo4"/"skyrim" vs verify_install's "fallout4"/"skyrim").
-_SUPPORTED_GAME_TYPES = {"skyrim", "skyrimse", "skyrimvr", "fo4", "fallout4", "fallout4vr"}
+# until confirmed safe. "skyrimse" kept defensively alongside the canonical "skyrim" key.
+_SUPPORTED_GAME_TYPES = {"skyrim", "skyrimse", "skyrimvr", "fallout4", "fallout4vr"}
 
 
 def is_supported_game_type(game_type: Optional[str]) -> bool:

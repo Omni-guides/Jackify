@@ -92,44 +92,17 @@ class ModlistDetectionMixin:
             self.game_var_full = "Unknown"
             return False
 
-        # Define mapping from loader executable to full game name
-        loader_to_game = {
-            "skse64_loader.exe": "Skyrim Special Edition",
-            "f4se_loader.exe": "Fallout 4",
-            "nvse_loader.exe": "Fallout New Vegas",
-            "obse_loader.exe": "Oblivion"
-        }
+        from jackify.backend.services.game_type_detection import detect_from_install
+        from jackify.backend.models.game_types import GAME_DISPLAY_NAMES
 
-        # Short name lookup
-        short_name_lookup = {
-            "Skyrim Special Edition": "Skyrim",
-            "Fallout 4": "Fallout",
-            "Fallout New Vegas": "FNV",
-            "Oblivion": "Oblivion"
-        }
-
-        try:
-            with open(self.modlist_ini, 'r', encoding='utf-8', errors='ignore') as f:
-                ini_content = f.read().lower()
-        except Exception as e:
-            self.logger.error(f"Error reading ModOrganizer.ini ({self.modlist_ini}): {e}")
-            self.game_var = "Unknown"
-            self.game_var_full = "Unknown"
-            return False
-
-        found_game = None
-        for loader, game_name in loader_to_game.items():
-            if loader in ini_content:
-                found_game = game_name
-                self.logger.info(f"Detected game type '{found_game}' based on finding '{loader}' in ModOrganizer.ini")
-                break
-
-        if found_game:
-            self.game_var_full = found_game
-            self.game_var = short_name_lookup.get(found_game, found_game.split()[0])
+        game_type = detect_from_install(self.modlist_dir)
+        if game_type:
+            self.game_var = game_type
+            self.game_var_full = GAME_DISPLAY_NAMES.get(game_type, game_type)
+            self.logger.info(f"Detected game type '{self.game_var_full}' from {self.modlist_ini}")
             return True
         else:
-            self.logger.warning(f"Could not detect game type from ModOrganizer.ini content. Check INI for known loaders (skse64, f4se, nvse, obse).")
+            self.logger.warning("Could not detect game type from ModOrganizer.ini content.")
             self.game_var = "Unknown"
             self.game_var_full = "Unknown"
             return False

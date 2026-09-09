@@ -1,11 +1,25 @@
 {
-  "SkyrimSE": ["MUJointFix"],
-  "Fallout4": ["MCM Booster"],
-  "FalloutNV": [],
-  "Fallout3": [],
-  "SkyrimVR": [],
-  "Fallout4VR": [],
-  "EnderalSE": [],
-  "Oblivion": [],
-  "Starfield": []
+  "manifest_version": 1,
+  "SkyrimSE": {
+    "mod_fixes": [
+      {
+        "mod": "Dialogue History",
+        "create_dirs": [
+          "users/steamuser/Documents/My Games/Skyrim Special Edition/Saves/DialogueHistory"
+        ]
+      }
+    ]
+  },
+  "Fallout4": {
+    "mod_fixes": [
+      { "mod": "MCM Booster", "disable": true }
+    ]
+  },
+  "FalloutNV": { "mod_fixes": [] },
+  "Fallout3": { "mod_fixes": [] },
+  "SkyrimVR": { "mod_fixes": [] },
+  "Fallout4VR": { "mod_fixes": [] },
+  "Enderal": { "mod_fixes": [] },
+  "Oblivion": { "mod_fixes": [] },
+  "Starfield": { "mod_fixes": [] }
 }

@@ -11,7 +11,7 @@ import logging
 import os
 
 from jackify.backend.services.steam_restart_service import ensure_flatpak_steam_filesystem_access
-from jackify.backend.models.game_types import GAME_DISPLAY_NAMES, GAME_NAME_TO_TYPE
+from jackify.backend.models.game_types import GAME_DISPLAY_NAMES
 from jackify.shared.errors import install_dir_create_failed
 
 logger = logging.getLogger(__name__)
@@ -256,7 +256,8 @@ class InstallWorkflowValidationMixin:
                 readme_url = self.selected_modlist_info.get('readme_url')
                 game_name = self.selected_modlist_info.get('game', '')
                 logger.debug(f"Detected game_name from selected_modlist_info: '{game_name}'")
-                game_type = GAME_NAME_TO_TYPE.get(game_name.lower())
+                from jackify.backend.services.game_type_detection import detect_pre_install
+                game_type = detect_pre_install(gallery_info={'game': game_name})
                 logger.debug(f"Mapped game_name '{game_name}' to game_type: '{game_type}'")
                 if not game_type:
                     game_type = 'unknown'

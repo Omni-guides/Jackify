@@ -126,7 +126,8 @@ def _download_via_nexus(tool: CatalogTool, auth_service: NexusAuthService, dest_
     if not token:
         logger.warning("No Nexus authentication available for %s", tool.id)
         return None
-    success, path, message = NexusDownloadService(token).download_latest_file(
+    is_oauth = auth_service.get_auth_method() == "oauth"
+    success, path, message = NexusDownloadService(token, is_oauth=is_oauth).download_latest_file(
         tool.game_domain, tool.mod_id, dest_dir, file_name_filter=tool.file_filter,
     )
     if not success:

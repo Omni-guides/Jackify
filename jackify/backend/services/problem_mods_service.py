@@ -34,18 +34,44 @@ _CANONICAL_TO_MANIFEST_KEY = {
 }
 
 
+def _unwrap_manifest_payload(payload) -> tuple:
+    """(version, games dict) from a manifest payload. A missing/absent manifest_version is
+    always 0, so it can never outrank a genuinely versioned bundled manifest - see
+    manifest_versioning.is_newer."""
+    if isinstance(payload, dict):
+        try:
+            version = int(payload.get("manifest_version", 0) or 0)
+        except (TypeError, ValueError):
+            version = 0
+        games = {k: v for k, v in payload.items() if k != "manifest_version"}
+        return version, games
+    return 0, {}
+
+
+def _read_bundled_payload() -> dict:
+    with open(_BUNDLED_MANIFEST_PATH, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 def _load_bundled_manifest() -> dict:
     try:
-        with open(_BUNDLED_MANIFEST_PATH, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            return data
+        _, games = _unwrap_manifest_payload(_read_bundled_payload())
+        return games
     except Exception as e:
         logger.debug("Bundled problem mods manifest load failed: %s", e)
     return {}
 
 
-_manifest_cache: Optional[dict] = None
+def _bundled_manifest_version() -> int:
+    try:
+        version, _ = _unwrap_manifest_payload(_read_bundled_payload())
+        return version
+    except Exception:
+        return 0
+
+
+_BUNDLED_MANIFEST_VERSION: int = _bundled_manifest_version()
+_manifest_cache: Optional[dict] = _load_bundled_manifest() or None
 
 
 def _disk_cache_path() -> Path:
@@ -56,44 +82,62 @@ def _load_disk_cache() -> Optional[dict]:
     path = _disk_cache_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            return data
+            payload = json.load(fh)
+        version, games = _unwrap_manifest_payload(payload)
+        from jackify.backend.services.manifest_versioning import is_newer
+        if not is_newer(version, _BUNDLED_MANIFEST_VERSION):
+            logger.debug(
+                "Ignoring problem mods disk cache (version %s, bundled is %s)",
+                version, _BUNDLED_MANIFEST_VERSION,
+            )
+            return None
+        return games
     except Exception:
         pass
     return None
 
 
-def _save_disk_cache(data: dict) -> None:
+def _save_disk_cache(version: int, games: dict) -> None:
     path = _disk_cache_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".problem_mods_", suffix=".tmp")
+        payload = {"manifest_version": version, **games}
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
+            json.dump(payload, fh, indent=2)
         os.replace(tmp, path)
     except Exception as e:
         logger.debug("Problem mods manifest disk save failed: %s", e)
 
 
 def fetch_remote_manifest() -> Optional[dict]:
-    """Fetch the remote problem mods manifest. Returns parsed dict or None on failure."""
+    """Fetch the remote problem mods manifest. Returns the games dict, or None on failure or
+    if the remote isn't newer than what's already bundled in this build (see
+    manifest_versioning.is_newer)."""
     try:
         resp = requests.get(PROBLEM_MODS_MANIFEST_URL, timeout=8, verify=True)
         resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, dict):
-            return data
+        payload = resp.json()
+        version, games = _unwrap_manifest_payload(payload)
+        from jackify.backend.services.manifest_versioning import is_newer
+        if not is_newer(version, _BUNDLED_MANIFEST_VERSION):
+            logger.info(
+                "Remote problem mods manifest (version %s) is not newer than bundled (version %s) - ignoring",
+                version, _BUNDLED_MANIFEST_VERSION,
+            )
+            return None
+        _save_disk_cache(version, games)
+        return games
     except Exception as e:
         logger.debug("Problem mods manifest fetch failed: %s", e)
     return None
 
 
 def apply_remote_manifest(data: dict) -> None:
-    """Store fetched manifest in memory and persist to disk."""
+    """Store fetched manifest in memory. fetch_remote_manifest() already version-gated it and
+    persisted to disk, so this only updates the in-session cache."""
     global _manifest_cache
     _manifest_cache = data
-    _save_disk_cache(data)
 
 
 def _effective_manifest() -> dict:
@@ -126,6 +170,27 @@ def _get_mod_fixes(game_type: str) -> List[dict]:
 def get_problem_mods(game_type: str) -> List[str]:
     """Return names of mods flagged for disabling for the given game type."""
     return [fix["mod"] for fix in _get_mod_fixes(game_type) if fix.get("disable")]
+
+
+def detect_game_type_from_install_dir(install_dir: str) -> str:
+    """Read ModOrganizer.ini directly for the modlist's actual game type.
+
+    Ground truth for mod-fix lookups - a caller's own game_type value (registry
+    metadata, GUI pre-install validation state) can be stale or wrong for the
+    specific modlist on disk, causing fixes to silently no-op.
+    """
+    try:
+        ini = os.path.join(install_dir, "ModOrganizer.ini")
+        if os.path.isfile(ini):
+            from jackify.backend.handlers.modlist_handler import ModlistHandler
+            handler = ModlistHandler({})
+            handler.modlist_ini = ini
+            handler.modlist_dir = install_dir
+            if handler._detect_game_variables():
+                return handler.game_var_full or ""
+    except Exception as e:
+        logger.debug("Game type detection failed: %s", e)
+    return ""
 
 
 def get_enabled_mods(modlist_txt_path: Path) -> set:

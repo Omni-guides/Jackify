@@ -1,0 +1,20 @@
+{
+  "playbooks": [
+    {
+      "playbook_id": "viva-new-vegas",
+      "sha256": "f5cdd7f7c411bece7151e08af13e1d5e81659f18692a5ffd8cfd6f2aec062fe7"
+    },
+    {
+      "playbook_id": "mojave-express",
+      "sha256": "0fe601e51eda6910ce34ce845f2aadf9d85c340fb974387285a80d10254e7746"
+    },
+    {
+      "playbook_id": "begin-again",
+      "sha256": "4cd93ce11d3cd1fda614f9c6952d4f87f0374977724428108acd0069c8f45b35"
+    },
+    {
+      "playbook_id": "nuclear-sunset",
+      "sha256": "63f1b5cdc3289c9397a3342bd5a9a2bceab11564fabe9a302e51292ba1625530"
+    }
+  ]
+}

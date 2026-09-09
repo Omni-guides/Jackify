@@ -224,7 +224,8 @@ class ModlistInstallCLITTWMixin:
                 success, message = ttw_installer_handler.install_ttw_installer()
 
                 if not success:
-                    print(f"{COLOR_ERROR}Failed to install TTW_Linux_Installer: {message}{COLOR_RESET}")
+                    from .ttw_installer_handler import describe_install_failure
+                    print(f"{COLOR_ERROR}Failed to install TTW_Linux_Installer: {describe_install_failure(message)}{COLOR_RESET}")
                     return
 
                 print(f"{COLOR_INFO}TTW_Linux_Installer installed successfully.{COLOR_RESET}")

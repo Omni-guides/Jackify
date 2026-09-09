@@ -85,7 +85,7 @@ class AdditionalMenuHandler:
 
     def _execute_ttw_install(self, cli_instance):
         """Execute TTW installation using TTW_Linux_Installer handler"""
-        from ....backend.handlers.ttw_installer_handler import TTWInstallerHandler
+        from ....backend.handlers.ttw_installer_handler import TTWInstallerHandler, describe_install_failure
         from ....backend.models.configuration import SystemInfo
         from ....shared.colors import COLOR_ERROR, COLOR_WARNING, COLOR_SUCCESS, COLOR_INFO, COLOR_PROMPT
         from pathlib import Path
@@ -104,7 +104,7 @@ class AdditionalMenuHandler:
             success, message = ttw_installer_handler.install_ttw_installer()
             if not success:
                 print(f"{COLOR_ERROR}Failed to install TTW_Linux_Installer. Cannot proceed with TTW installation.{COLOR_RESET}")
-                print(f"{COLOR_ERROR}Error: {message}{COLOR_RESET}")
+                print(f"{COLOR_ERROR}{describe_install_failure(message)}{COLOR_RESET}")
                 input("Press Enter to return to menu...")
                 return
 

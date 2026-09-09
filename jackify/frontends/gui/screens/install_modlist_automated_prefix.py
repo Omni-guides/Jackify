@@ -157,6 +157,8 @@ class AutomatedPrefixHandlersMixin:
             self.prefix_thread.show_progress_dialog.connect(self.show_steam_restart_progress)
             self.prefix_thread.hide_progress_dialog.connect(self.hide_steam_restart_progress)
             self.prefix_thread.conflict_detected.connect(self.show_shortcut_conflict_dialog)
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+            register_managed_thread(self.prefix_thread)
             self.prefix_thread.start()
             
         except Exception as e:

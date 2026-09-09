@@ -18,6 +18,12 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from jackify.backend.services.manifest_versioning import is_newer
+from jackify.backend.services.tool_manifest_cache import (
+    disk_cache_path as _disk_cache_path,
+    save_disk_cache as _save_disk_cache,
+    unwrap_manifest_payload as _unwrap_manifest_payload,
+)
 from jackify.shared.paths import get_jackify_data_dir
 
 logger = logging.getLogger(__name__)
@@ -67,9 +73,9 @@ class ToolStatus:
     @property
     def can_downgrade(self) -> bool:
         return (
-            self.installed
-            and self.definition.can_downgrade
+            self.definition.can_downgrade
             and self.definition.pinned_version is None
+            and self.definition.github_repo is not None
         )
 
 
@@ -100,14 +106,15 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
         tool_id="ttw_installer",
         display_name="TTW Linux Installer",
         description="Automates Tale of Two Wastelands installation on Linux. Required for the TTW workflow.",
-        github_repo="SulfurNitride/TTW_Linux_Installer",
-        asset_patterns=[r"mpi-installer-linux.*\.(zip|tar\.gz)"],
+        # Nexus-only distribution (SulfurNitride confirmed 2026-09-09) - no github_repo, the
+        # GitHub release pipeline never reliably attached Linux assets and is retired.
+        asset_patterns=[],
         executable_names=["mpi_installer"],
         tier=1,
         can_uninstall=True,
         can_launch=True,
         nexus_mod_id=1657,
-        nexus_file_filter="mpi",
+        nexus_file_filter=None,  # file name is release-note-style, not name-stable; only one build on the page
     ),
     ToolDefinition(
         tool_id="radium",
@@ -154,31 +161,16 @@ TOOL_MANIFEST_URL = "https://raw.githubusercontent.com/Omni-guides/Jackify/main/
 _BUNDLED_MANIFEST_PATH = Path(__file__).parent / "tools_manifest.json"
 
 
-def _disk_cache_path() -> Path:
-    from jackify.shared.paths import get_jackify_data_dir
-    return get_jackify_data_dir() / "manifests" / "tools_manifest.json"
-
-
-def _save_disk_cache(entries: list) -> None:
-    import tempfile
-    path = _disk_cache_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tools_manifest_", suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(entries, fh, indent=2)
-        os.replace(tmp, path)
-    except Exception as e:
-        logger.debug("Tool manifest disk save failed: %s", e)
-
-
 def _load_disk_cache() -> Optional[List[ToolDefinition]]:
     path = _disk_cache_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            entries = json.load(fh)
-        if isinstance(entries, list):
-            return _parse_manifest_entries(entries, source="disk cache")
+            payload = json.load(fh)
+        version, entries = _unwrap_manifest_payload(payload)
+        if not is_newer(version, _BUNDLED_MANIFEST_VERSION):
+            logger.debug("Ignoring tool manifest disk cache (v%s, bundled v%s)", version, _BUNDLED_MANIFEST_VERSION)
+            return None
+        return _parse_manifest_entries(entries, source="disk cache")
     except FileNotFoundError:
         logger.debug("No tool manifest disk cache at %s", path)
     except Exception as e:
@@ -244,30 +236,40 @@ def _parse_manifest_entries(entries: list, source: str = "unknown") -> Optional[
     return definitions
 
 
+try:
+    with open(_BUNDLED_MANIFEST_PATH, "r", encoding="utf-8") as _fh:
+        _BUNDLED_MANIFEST_VERSION, _bundled_entries = _unwrap_manifest_payload(json.load(_fh))
+except Exception as _e:
+    logger.warning("Bundled tool manifest load failed, falling back to code definitions: %s", _e)
+    _BUNDLED_MANIFEST_VERSION, _bundled_entries = 0, []
+
+
 def _load_bundled_manifest() -> Optional[List[ToolDefinition]]:
-    try:
-        with open(_BUNDLED_MANIFEST_PATH, "r", encoding="utf-8") as fh:
-            entries = json.load(fh)
-        if not isinstance(entries, list):
-            return None
-        return _parse_manifest_entries(entries, source="bundled")
-    except Exception as e:
-        logger.warning("Bundled tool manifest load failed, falling back to code definitions: %s", e)
-        return None
+    return _parse_manifest_entries(_bundled_entries, source="bundled") if _bundled_entries else None
 
 
 _manifest_cache: Optional[List[ToolDefinition]] = _load_bundled_manifest()
 
+# _TOOL_MAP above was seeded from TOOL_DEFINITIONS alone, before a manifest-only tool (no code
+# counterpart, e.g. jackify-game-downgrader) could be known - every _TOOL_MAP-keyed method
+# silently failed "Unknown tool" for one until a remote fetch happened to find something newer
+# and called apply_remote_manifest(), which in the common case never happens all session.
+if _manifest_cache is not None:
+    _TOOL_MAP = {t.tool_id: t for t in _manifest_cache}
+
 
 def fetch_remote_manifest() -> Optional[List[ToolDefinition]]:
-    """Fetch the remote tool manifest. Returns parsed definitions or None on failure."""
+    """Fetch the remote tool manifest. None on failure, or if not newer than bundled (see
+    manifest_versioning.is_newer)."""
     try:
         resp = requests.get(TOOL_MANIFEST_URL, timeout=8, verify=True)
         resp.raise_for_status()
-        entries = resp.json()
-        if not isinstance(entries, list):
+        payload = resp.json()
+        version, entries = _unwrap_manifest_payload(payload)
+        if not is_newer(version, _BUNDLED_MANIFEST_VERSION):
+            logger.info("Remote tool manifest (v%s) not newer than bundled (v%s) - ignoring", version, _BUNDLED_MANIFEST_VERSION)
             return None
-        _save_disk_cache(entries)
+        _save_disk_cache(version, entries)
         return _parse_manifest_entries(entries, source="remote")
     except Exception as e:
         logger.warning("Tool manifest fetch failed, using cached or bundled definitions: %s", e)
@@ -310,24 +312,6 @@ def _write_manifest(tool_id: str, data: dict) -> None:
     mp = _manifest_path(tool_id)
     mp.parent.mkdir(parents=True, exist_ok=True)
     mp.write_text(json.dumps(data, indent=2))
-
-
-def _ttw_status_from_config() -> Tuple[bool, Optional[str], Optional[Path]]:
-    try:
-        search_dirs = [
-            TOOLS_BASE_DIR / "ttw_installer",
-            get_jackify_data_dir() / "TTW_Linux_Installer",  # legacy location
-        ]
-        for tool_dir in search_dirs:
-            exe = tool_dir / "mpi_installer"
-            if exe.is_file():
-                manifest = _read_manifest("ttw_installer")
-                version = manifest.get("installed_version")
-                return True, version, exe
-        return False, None, None
-    except Exception as e:
-        logger.debug("TTW status check failed: %s", e)
-        return False, None, None
 
 
 def fetch_latest_release_info(github_repo: str, pinned_version: Optional[str] = None) -> Optional[dict]:
@@ -540,16 +524,15 @@ def _download_and_extract(
 
 
 _NEXUS_NOT_ELIGIBLE = "NEXUS_NOT_ELIGIBLE"
+_NEXUS_LOGIN_REQUIRED = "NEXUS_LOGIN_REQUIRED"
 
 
 def _try_nexus_download(defn: ToolDefinition, target_dir: Path) -> Tuple[bool, Optional[Path], str, Optional[str]]:
     """Attempt Nexus CDN download for premium users.
 
-    Returns (success, file_path, message, version).
-    message is _NEXUS_NOT_ELIGIBLE when the user is not authenticated or not premium,
-    indicating a manual download dialog should be offered. Any other failure message
-    means the user is premium but the download itself failed.
-    version is the Nexus file version string on success, None otherwise.
+    Returns (success, file_path, message, version). message is _NEXUS_LOGIN_REQUIRED with no
+    Nexus session, _NEXUS_NOT_ELIGIBLE when logged in but not premium (manual download dialog
+    offered for that one); any other message means premium but the download itself failed.
     """
     if not defn.nexus_mod_id:
         return False, None, _NEXUS_NOT_ELIGIBLE, None
@@ -560,12 +543,12 @@ def _try_nexus_download(defn: ToolDefinition, target_dir: Path) -> Tuple[bool, O
         auth = NexusAuthService()
         token = auth.get_auth_token()
         if not token:
-            return False, None, _NEXUS_NOT_ELIGIBLE, None
+            return False, None, _NEXUS_LOGIN_REQUIRED, None
         is_oauth = auth.get_auth_method() == "oauth"
         is_premium, _ = NexusPremiumService().check_premium_status(token, is_oauth=is_oauth)
         if not is_premium:
             return False, None, _NEXUS_NOT_ELIGIBLE, None
-        svc = NexusDownloadService(token)
+        svc = NexusDownloadService(token, is_oauth=is_oauth)
         nexus_version = svc.get_latest_file_version(
             defn.nexus_game_domain, defn.nexus_mod_id,
             file_name_filter=defn.nexus_file_filter,
@@ -614,7 +597,7 @@ class ToolRegistry:
             token = auth.get_auth_token()
             if not token:
                 return None
-            return NexusDownloadService(token).get_latest_file_version(
+            return NexusDownloadService(token, is_oauth=auth.get_auth_method() == "oauth").get_latest_file_version(
                 defn.nexus_game_domain, defn.nexus_mod_id,
                 file_name_filter=defn.nexus_file_filter,
             )
@@ -663,7 +646,9 @@ class ToolRegistry:
                 _extract_nested_archives(install_dir)
             tag = pin or nexus_version or "nexus"
         elif not defn.github_repo:
-            if nexus_msg == _NEXUS_NOT_ELIGIBLE:
+            if nexus_msg == _NEXUS_LOGIN_REQUIRED:
+                return False, _NEXUS_LOGIN_REQUIRED
+            elif nexus_msg == _NEXUS_NOT_ELIGIBLE:
                 nexus_url = (
                     f"https://www.nexusmods.com/{defn.nexus_game_domain}/mods/{defn.nexus_mod_id}"
                     if defn.nexus_mod_id else ""
@@ -728,15 +713,23 @@ class ToolRegistry:
             except Exception:
                 pass
 
+        if tool_id == "ttw_installer" and exe_path:
+            from jackify.backend.handlers.ttw_installer_handler import sync_manual_install_state
+            sync_manual_install_state(exe_path.parent)
+
+        # Manual download grabs the mod's current latest file, so the same lookup recovers it.
+        from jackify.backend.services.tool_version_compare import guess_version_from_filename
+        tag = self.check_latest_version(tool_id) or guess_version_from_filename(archive_path.name) or "manual"
+
         manifest = _read_manifest(tool_id)
         _write_manifest(tool_id, {
-            "installed_version": "manual",
+            "installed_version": tag,
             "previous_version": manifest.get("installed_version"),
             "binary_path": str(exe_path) if exe_path else None,
             "install_dir": str(install_dir),
         })
 
-        logger.info("Installed %s from local archive %s", defn.display_name, archive_path.name)
+        logger.info("Installed %s %s from local archive %s", defn.display_name, tag, archive_path.name)
         return True, f"{defn.display_name} installed"
 
     def update(self, tool_id: str) -> Tuple[bool, str]:
@@ -843,19 +836,24 @@ class ToolRegistry:
             return False, f"{defn.display_name} cannot be uninstalled - Jackify depends on it"
 
         import shutil
-        tool_dir = TOOLS_BASE_DIR / tool_id
-        if tool_dir.exists():
-            try:
-                shutil.rmtree(tool_dir)
-            except Exception as e:
-                return False, f"Uninstall failed: {e}"
+        dirs_to_remove = [TOOLS_BASE_DIR / tool_id]
+        if tool_id == "ttw_installer":
+            from jackify.backend.handlers.ttw_installer_handler import DEFAULT_TTW_INSTALLER_DIR
+            dirs_to_remove.append(DEFAULT_TTW_INSTALLER_DIR)  # legacy pre-migration location
+        for tool_dir in dirs_to_remove:
+            if tool_dir.exists():
+                try:
+                    shutil.rmtree(tool_dir)
+                except Exception as e:
+                    return False, f"Uninstall failed: {e}"
 
         logger.info("Uninstalled %s", defn.display_name)
         return True, f"{defn.display_name} uninstalled"
 
     def get_binary_path(self, tool_id: str) -> Optional[Path]:
         if tool_id == "ttw_installer":
-            _, _, binary = _ttw_status_from_config()
+            from jackify.backend.handlers.ttw_installer_handler import status_from_config
+            _, _, binary = status_from_config()
             return binary
         manifest = _read_manifest(tool_id)
         bp = manifest.get("binary_path")
@@ -871,7 +869,8 @@ class ToolRegistry:
 
     def _build_status(self, defn: ToolDefinition) -> ToolStatus:
         if defn.tool_id == "ttw_installer":
-            installed, version, binary = _ttw_status_from_config()
+            from jackify.backend.handlers.ttw_installer_handler import status_from_config
+            installed, version, binary = status_from_config()
             return ToolStatus(
                 definition=defn,
                 installed=installed,
@@ -885,17 +884,18 @@ class ToolRegistry:
         binary_path = Path(binary_path_str) if binary_path_str else None
         installed = installed_version is not None and (binary_path is None or binary_path.is_file())
 
-        if not installed and defn.tool_id == "jackify-engine":
+        if defn.tool_id == "jackify-engine":
             try:
-                from jackify.backend.core.modlist_operations import get_jackify_engine_path
-                bundled = Path(get_jackify_engine_path())
-                if bundled.is_file():
+                from jackify.backend.core import modlist_operations as _mo
+                real_path = Path(_mo.get_jackify_engine_path())
+                if real_path.is_file():
                     installed = True
-                    binary_path = bundled
-                    if not installed_version:
-                        version_file = bundled.parent / "version.txt"
-                        if version_file.is_file():
-                            installed_version = version_file.read_text().strip() or None
+                    binary_path = real_path
+                    real_version = _mo.get_jackify_engine_installed_version(str(real_path))
+                    if real_version:
+                        installed_version = real_version
+                    elif not installed_version and (real_path.parent / "version.txt").is_file():
+                        installed_version = (real_path.parent / "version.txt").read_text().strip() or None
             except Exception:
                 pass
 

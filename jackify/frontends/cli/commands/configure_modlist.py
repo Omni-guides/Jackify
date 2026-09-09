@@ -123,6 +123,39 @@ class ConfigureModlistCommand:
         except Exception as e:
             logger.warning("JContainers fix check failed (non-fatal): %s", e)
 
+        # Problem mods (disable known-bad mods, create required prefix dirs)
+        try:
+            from jackify.backend.services.install_verifier_service import resolve_pfx_for_appid
+            from jackify.backend.services.problem_mods_service import (
+                disable_problem_mods,
+                create_prefix_dirs,
+                get_enabled_mods,
+            )
+            all_disabled: list = []
+            all_enabled_mods: set = set()
+            for modlist_txt in Path(install_dir).glob("profiles/*/modlist.txt"):
+                disabled = disable_problem_mods(modlist_txt, game_type)
+                for name in disabled:
+                    if name not in all_disabled:
+                        all_disabled.append(name)
+                all_enabled_mods |= get_enabled_mods(modlist_txt)
+            if all_disabled:
+                print(f"{COLOR_INFO}Disabled known-problematic mod(s): {', '.join(all_disabled)}{COLOR_RESET}")
+                logger.info(
+                    "Disabled %d problem mod(s) (%s): %s",
+                    len(all_disabled), game_type, ", ".join(all_disabled),
+                )
+            pm_pfx = resolve_pfx_for_appid(str(app_id)) if app_id else None
+            if pm_pfx and all_enabled_mods:
+                created = create_prefix_dirs(pm_pfx, game_type, all_enabled_mods)
+                if created:
+                    logger.info(
+                        "Created %d prefix dir(s) (%s): %s",
+                        len(created), game_type, ", ".join(created),
+                    )
+        except Exception as e:
+            logger.warning("Problem mods fix check failed (non-fatal): %s", e)
+
         # Steam artwork
         if app_id:
             try:
@@ -180,18 +213,8 @@ class ConfigureModlistCommand:
     # ------------------------------------------------------------------
 
     def _detect_game_type(self, install_dir: str) -> str:
-        try:
-            ini = os.path.join(install_dir, "ModOrganizer.ini")
-            if os.path.isfile(ini):
-                from jackify.backend.handlers.modlist_handler import ModlistHandler
-                handler = ModlistHandler({})
-                handler.modlist_ini = ini
-                handler.modlist_dir = install_dir
-                if handler._detect_game_variables():
-                    return handler.game_var_full or ""
-        except Exception as e:
-            logger.debug("Game type detection failed: %s", e)
-        return ""
+        from jackify.backend.services.problem_mods_service import detect_game_type_from_install_dir
+        return detect_game_type_from_install_dir(install_dir)
 
     def _lookup_app_id(self, install_dir: str) -> Optional[str]:
         try:

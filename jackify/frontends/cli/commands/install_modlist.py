@@ -325,6 +325,10 @@ class InstallModlistCommand:
         elif context.get('game_type'):
             game_type = context['game_type']
 
+        # Persist so configuration_phase() has a pre-install value available before
+        # ModOrganizer.ini exists on disk (e.g. for the pre-finalize registry/meta write).
+        context['game_type'] = game_type
+
         issues = validate_install_request(
             modlist_name=context.get('modlist_name'),
             install_dir=context.get('install_dir'),

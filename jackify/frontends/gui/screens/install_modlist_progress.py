@@ -470,6 +470,8 @@ class ProgressHandlersMixin:
                         install_date=_datetime.datetime.now().isoformat(timespec="seconds"),
                         jackify_version=_jackify_version_for_registry,
                     )
+                    from jackify.backend.services.profile_backup_service import backup_modlist_profiles
+                    backup_modlist_profiles(thread.install_dir)
                     if gallery_image_path:
                         try:
                             from jackify.backend.services.dashboard_images import save_image_from_path

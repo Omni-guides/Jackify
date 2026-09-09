@@ -362,9 +362,12 @@ class FileProgressList(QWidget):
         # Skip if a worker is already running to avoid pileup
         if self._cpu_worker and self._cpu_worker.isRunning():
             return
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._cpu_worker = _CpuWorker(self._last_cpu_percent, self._cpu_process_cache, self._child_process_cache)
         self._cpu_worker.result.connect(self._on_cpu_result)
         self._cpu_worker.caches_updated.connect(self._on_cpu_caches)
+        register_managed_thread(self._cpu_worker)
         self._cpu_worker.start()
 
     def _on_cpu_result(self, text: str):

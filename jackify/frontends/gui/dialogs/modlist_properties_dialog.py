@@ -11,9 +11,9 @@ import logging
 from typing import Optional
 
 from PySide6.QtCore import QThread, QTimer, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPixmap
+from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+    QComboBox, QDialog, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel,
     QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
@@ -30,86 +30,9 @@ from jackify.backend.services.install_registry import InstallEntry
 from ..services.message_service import MessageService
 from ..shared_theme import COLOR_BTN_BACK, COLOR_BTN_INSTALL, JACKIFY_COLOR_BLUE
 from ..utils import get_screen_geometry, set_responsive_minimum
+from .modlist_properties_widgets import BannerLabel, ElidedValueLabel
 
 logger = logging.getLogger(__name__)
-
-
-class _BannerLabel(QLabel):
-    """Banner that re-crops on its own resize - the dialog's resizeEvent fires before the
-    layout has resized this label, so cropping from there uses a stale width."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._source: Optional[QPixmap] = None
-
-    def set_source(self, pixmap: Optional[QPixmap]):
-        self._source = pixmap
-        self._rescale()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._rescale()
-
-    def _rescale(self):
-        if self._source is None or self._source.isNull():
-            return
-        target = self.size()
-        if target.width() <= 0 or target.height() <= 0:
-            return
-        scaled = self._source.scaled(
-            target, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
-        )
-        x = max(0, (scaled.width() - target.width()) // 2)
-        y = max(0, (scaled.height() - target.height()) // 2)
-        cropped = scaled.copy(x, y, target.width(), target.height())
-
-        # A center-crop against the dialog's flush top edge (no titlebar gap) reads as an
-        # abrupt cut, especially when the source art has content near its own top edge - a
-        # short fade into black eases the transition without a hard line.
-        fade_height = min(40, target.height())
-        if fade_height > 0:
-            painter = QPainter(cropped)
-            gradient = QLinearGradient(0, 0, 0, fade_height)
-            gradient.setColorAt(0.0, QColor(0, 0, 0, 140))
-            gradient.setColorAt(1.0, QColor(0, 0, 0, 0))
-            painter.fillRect(0, 0, target.width(), fade_height, gradient)
-            painter.end()
-
-        self.setPixmap(cropped)
-
-
-class _ElidedValueLabel(QLabel):
-    """Single-line detail value: elided to fit, full text on hover, click to copy.
-
-    Never wraps - a wrapped path makes the row height depend on path length and dialog width,
-    which clipped the grid. Elides in the middle to keep the drive root and the folder name.
-    """
-    clicked = Signal()
-
-    def __init__(self, text: str, copy_text: Optional[str] = None, parent=None):
-        super().__init__(parent)
-        self._full_text = text
-        # Hover shows what a click will copy
-        self.setToolTip(copy_text if copy_text is not None else text)
-        self.setCursor(Qt.PointingHandCursor)
-        # Ignored width, or a long path widens the dialog instead of eliding
-        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.setFixedHeight(self.fontMetrics().height() + 2)
-        self._apply_elide()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._apply_elide()
-
-    def _apply_elide(self):
-        elided = self.fontMetrics().elidedText(self._full_text, Qt.ElideMiddle, max(0, self.width()))
-        if elided != self.text():
-            super().setText(elided)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit()
-        super().mousePressEvent(event)
 
 
 # Same rationale as playbook_automation_controller.py's _ORPHANED_WORKERS: this dialog is
@@ -125,6 +48,8 @@ def _park_if_running(thread: Optional[QThread]) -> None:
     if thread is not None and thread.isRunning():
         _ORPHANED_THREADS.add(thread)
         thread.finished.connect(lambda t=thread: _ORPHANED_THREADS.discard(t))
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+        register_managed_thread(thread)
 
 
 class _ProtonChangeThread(QThread):
@@ -145,6 +70,25 @@ class _ProtonChangeThread(QThread):
         self.finished_change.emit(success, message)
 
 
+class _Mo2SkipThread(QThread):
+    finished_toggle = Signal(bool, str)
+
+    def __init__(self, install_dir: str, modlist_name: str, binary_title: Optional[str], parent=None):
+        super().__init__(parent)
+        self._install_dir = install_dir
+        self._modlist_name = modlist_name
+        self._binary_title = binary_title
+
+    def run(self):
+        from jackify.backend.services.modlist_properties_service import toggle_mo2_skip
+        try:
+            success, message = toggle_mo2_skip(self._install_dir, self._modlist_name, self._binary_title)
+        except Exception as e:
+            logger.error("MO2 Skip toggle failed: %s", e, exc_info=True)
+            success, message = False, str(e)
+        self.finished_toggle.emit(success, message)
+
+
 class ModlistPropertiesDialog(QDialog):
     """install_id, action - reuses the same action vocabulary the dashboard card used to emit
     directly (configure/open_dir/uninstall), so the dashboard's existing dispatch handles it
@@ -160,6 +104,7 @@ class ModlistPropertiesDialog(QDialog):
         self._status = status
         self._proton_thread: Optional[_ProtonChangeThread] = None
         self._verify_thread: Optional["VerifierThread"] = None
+        self._mo2_skip_thread: Optional[_Mo2SkipThread] = None
         self._copy_hint: Optional[QLabel] = None
         self.setWindowTitle(entry.modlist_name)
         set_responsive_minimum(self, min_width=640, min_height=560)
@@ -171,6 +116,7 @@ class ModlistPropertiesDialog(QDialog):
         thread must survive the dialog closing - see _ORPHANED_THREADS above."""
         _park_if_running(self._proton_thread)
         _park_if_running(self._verify_thread)
+        _park_if_running(self._mo2_skip_thread)
         super().done(result)
 
     def _apply_initial_size(self):
@@ -195,7 +141,7 @@ class ModlistPropertiesDialog(QDialog):
         banner_layout.setSpacing(0)
         banner_container.setLayout(banner_layout)
 
-        self.banner_label = _BannerLabel()
+        self.banner_label = BannerLabel()
         self.banner_label.setMinimumHeight(140)
         self.banner_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         # Not setScaledContents - it fills by distorting. Scaled to cover and cropped instead.
@@ -277,6 +223,15 @@ class ModlistPropertiesDialog(QDialog):
         open_dir_btn.setStyleSheet(_ACTION_BTN_FONT)
         open_dir_btn.clicked.connect(self._on_open_dir)
         action_row.addWidget(open_dir_btn)
+        self._mo2_skip_btn = QPushButton()
+        self._mo2_skip_btn.setStyleSheet(_ACTION_BTN_FONT)
+        self._mo2_skip_btn.setToolTip(
+            "Skip straight past MO2's own launcher window to a chosen executable "
+            "(e.g. the modlist's script extender) when launched from Steam."
+        )
+        self._mo2_skip_btn.clicked.connect(self._on_toggle_mo2_skip)
+        self._refresh_mo2_skip_button()
+        action_row.addWidget(self._mo2_skip_btn)
         if supports_crash_logs(self._entry.game_type):
             extender = get_extender_name(self._entry.game_type)
             open_logs_btn = QPushButton(f"Open {extender} Log Directory")
@@ -284,6 +239,10 @@ class ModlistPropertiesDialog(QDialog):
             open_logs_btn.clicked.connect(self._on_open_extender_logs)
             action_row.addWidget(open_logs_btn)
         body_layout.addLayout(action_row)
+        self._mo2_skip_status_label = QLabel("")
+        self._mo2_skip_status_label.setStyleSheet("color: #999; font-size: 11px;")
+        self._mo2_skip_status_label.setVisible(False)
+        body_layout.addWidget(self._mo2_skip_status_label)
 
         bottom_row = QHBoxLayout()
         uninstall_btn = QPushButton("Uninstall this list")
@@ -368,7 +327,7 @@ class ModlistPropertiesDialog(QDialog):
                 label.setToolTip(field.hint)
             grid.addWidget(label, row, 0)
 
-            value = _ElidedValueLabel(field.display, copy_text=field.copy_value)
+            value = ElidedValueLabel(field.display, copy_text=field.copy_value)
             if field.hint:
                 value.setToolTip(f"{field.copy_value}\n\n{field.hint}")
             value.setStyleSheet("color: #ddd; font-size: 12px; border: none;")
@@ -464,6 +423,80 @@ class ModlistPropertiesDialog(QDialog):
         else:
             self._proton_status_label.setText(f"Failed: {message}")
 
+    def _refresh_mo2_skip_button(self):
+        from jackify.backend.services.modlist_properties_service import mo2_skip_status
+        try:
+            enabled = mo2_skip_status(self._entry.install_dir, self._entry.modlist_name)
+        except Exception as e:
+            logger.debug("Could not read MO2 Skip status: %s", e)
+            enabled = False
+        self._mo2_skip_enabled = enabled
+        self._mo2_skip_btn.setText("Remove MO2 Skip" if enabled else "Add MO2 Skip")
+
+    def _on_toggle_mo2_skip(self):
+        binary_title = None
+        if not getattr(self, '_mo2_skip_enabled', False):
+            from pathlib import Path
+            from jackify.backend.handlers.mo2_custom_executables import list_launch_candidates
+            ini_path = Path(self._entry.install_dir) / "ModOrganizer.ini"
+            candidates = list_launch_candidates(ini_path)
+            if not candidates:
+                MessageService.warning(
+                    self, "No Executable Found",
+                    "Could not find a launchable executable in this modlist's ModOrganizer.ini.",
+                )
+                return
+            if len(candidates) == 1:
+                binary_title = candidates[0]["title"]
+            else:
+                titles = [c["title"] for c in candidates]
+                choice, ok = QInputDialog.getItem(
+                    self, "Choose Executable",
+                    "Which executable should Steam launch straight into?",
+                    titles, 0, False,
+                )
+                if not ok or not choice:
+                    return
+                binary_title = choice
+
+        from jackify.shared.messages import STEAM_RESTART_WARNING
+        if self._mo2_skip_enabled:
+            action = "Remove"
+            explanation = "This restores the normal launch - Steam will open Mod Organizer 2 itself instead of jumping straight into the game."
+        else:
+            action = "Add"
+            explanation = (
+                f"This makes the modlist's Steam shortcut launch straight into '{binary_title}', "
+                "skipping Mod Organizer 2's own window. It always uses whichever profile MO2 last "
+                "had active - to change mods or switch profiles, remove the skip first (same "
+                "button), make your changes, then re-add it."
+            )
+        reply = MessageService.question(
+            self,
+            "Restart Steam?",
+            f"{explanation}\n\n{action}ing MO2 Skip requires restarting Steam. "
+            f"{STEAM_RESTART_WARNING} Continue?",
+            safety_level="medium",
+        )
+        if reply == QMessageBox.No:
+            return
+
+        self._mo2_skip_btn.setEnabled(False)
+        self._mo2_skip_status_label.setText("Applying (Steam will restart)...")
+        self._mo2_skip_status_label.setVisible(True)
+        # Unparented deliberately - see _ORPHANED_THREADS above.
+        self._mo2_skip_thread = _Mo2SkipThread(self._entry.install_dir, self._entry.modlist_name, binary_title)
+        self._mo2_skip_thread.finished_toggle.connect(self._on_mo2_skip_changed)
+        self._mo2_skip_thread.start()
+
+    def _on_mo2_skip_changed(self, success: bool, message: str):
+        self._mo2_skip_btn.setEnabled(True)
+        if success:
+            self._refresh_mo2_skip_button()
+            self._mo2_skip_status_label.setText(message or "MO2 Skip updated.")
+        else:
+            self._mo2_skip_status_label.setText(f"Failed: {message}")
+
     def _on_change_artwork(self):
         from pathlib import Path
         start_dir = str(Path.home() / "Downloads")
@@ -528,7 +561,10 @@ class ModlistPropertiesDialog(QDialog):
             dlg = VerificationResultsDialog(results, parent=self)
             dlg.exec()
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._verify_thread.finished.connect(_on_done)
+        register_managed_thread(self._verify_thread)
         self._verify_thread.start()
 
     def _on_update(self):

@@ -1,0 +1,72 @@
+{
+  "tools": {
+    "fnv-4gb-patcher": {
+      "display_name": "4GB Patcher",
+      "revision": 1,
+      "source": "nexus",
+      "game_domain": "newvegas",
+      "mod_id": 62552,
+      "file_filter": "proton",
+      "extract": true,
+      "select": { "name_contains": ["fallout", "patcher", "fnv"], "fallback": "first_file" },
+      "chmod_exec": true,
+      "run": {
+        "args": [],
+        "timeout_seconds": 60,
+        "success_when": { "type": "file_exists", "path": "{game_root}/FalloutNV_backup.exe" }
+      },
+      "manual_download": {
+        "title": "4GB Patcher Required",
+        "instructions": "Automatic download failed (requires Nexus Premium).\n\nPlease download the Linux 4GB Patcher manually:\n\n1. Visit: https://www.nexusmods.com/newvegas/mods/62552\n\n2. Download the file named 'FNV4GB for Linux'\n\n3. Select the downloaded file below"
+      }
+    },
+    "fnv-4gb-patcher-stock-copy": {
+      "display_name": "4GB Patcher",
+      "revision": 1,
+      "source": "nexus",
+      "game_domain": "newvegas",
+      "mod_id": 62552,
+      "file_filter": "proton",
+      "extract": true,
+      "select": { "name_contains": ["fallout", "patcher", "fnv"], "fallback": "first_file" },
+      "chmod_exec": true,
+      "run": {
+        "args": [],
+        "timeout_seconds": 60,
+        "success_when": { "type": "file_exists", "path": "{modlist_dir}/[NoDelete] Stock New Vegas/FalloutNV_backup.exe" }
+      },
+      "manual_download": {
+        "title": "4GB Patcher Required",
+        "instructions": "Automatic download failed (requires Nexus Premium).\n\nPlease download the Linux 4GB Patcher manually:\n\n1. Visit: https://www.nexusmods.com/newvegas/mods/62552\n\n2. Download the file named 'FNV4GB for Linux'\n\n3. Select the downloaded file below"
+      }
+    },
+    "fnv-bsa-decompressor": {
+      "display_name": "BSA Decompressor",
+      "revision": 1,
+      "source": "nexus",
+      "game_domain": "newvegas",
+      "mod_id": 65854,
+      "file_filter": ".zip",
+      "extract": true,
+      "select": { "extension": ".mpi", "recursive": true },
+      "run_via_tool": "ttw_installer",
+      "run": {
+        "args": ["install", "--mpi", "{acquired}", "--fnv", "{game_root}", "--dest", "{game_root}"],
+        "timeout_seconds": 600,
+        "progress_pattern": "Progress:\\s*(?P<percent>\\d+)%\\s*-\\s*(?P<detail>.*)",
+        "progress_label": "Decompressing BSA files",
+        "success_when": {
+          "all": [
+            { "type": "exit_code", "values": [0] },
+            { "type": "output_contains", "text": "=== Installation Complete ===" }
+          ]
+        }
+      },
+      "manual_download": {
+        "title": "BSA Decompressor Required",
+        "instructions": "Automatic download failed (requires Nexus Premium).\n\nPlease download the FNV BSA Decompressor package manually:\n\n1. Visit: https://www.nexusmods.com/newvegas/mods/65854\n\n2. Download the zip package\n\n3. Select the downloaded archive below"
+      }
+    }
+  },
+  "assets": {}
+}

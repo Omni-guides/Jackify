@@ -16,32 +16,10 @@ class ConfigureExistingModlistWorkflowMixin:
 
     def _detect_game_type_from_mo2_ini(self, install_dir: str) -> str:
         """Detect game type for the verifier from ModOrganizer.ini."""
-        try:
-            from jackify.backend.handlers.modlist_handler import ModlistHandler
-            special = ModlistHandler().detect_special_game_type(install_dir)
-            if special == 'fnv':
-                return 'falloutnv'
-            if special:
-                return special
-        except Exception as e:
-            logger.warning("Special game type detection failed: %s", e)
-
-        # detect_special_game_type only covers non-default games; read gameName= directly
-        try:
-            from pathlib import Path
-            mo2_ini = Path(install_dir) / "ModOrganizer.ini"
-            if mo2_ini.exists():
-                for raw_line in mo2_ini.read_text(errors='ignore').splitlines():
-                    line = raw_line.strip().lower()
-                    if line.startswith("gamename="):
-                        val = line[len("gamename="):]
-                        if "fallout 4" in val:
-                            return "fallout4"
-                        if "skyrim" in val:
-                            return "skyrim"
-        except Exception as e:
-            logger.warning("ModOrganizer.ini gameName read failed: %s", e)
-
+        from jackify.backend.services.game_type_detection import detect_from_install
+        game_type = detect_from_install(install_dir)
+        if game_type:
+            return game_type
         logger.warning("Could not determine game type for %s, verifier will run generic checks only", install_dir)
         return 'unknown'
 
@@ -214,6 +192,8 @@ class ConfigureExistingModlistWorkflowMixin:
             self.config_thread.configuration_complete.connect(self.on_configuration_complete)
             self.config_thread.error_occurred.connect(self.on_configuration_error)
             self.config_thread.steam_restart_needed.connect(self._on_steam_restart_needed)  # (app_name, exe_path, dl_path)
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+            register_managed_thread(self.config_thread)
             self.config_thread.start()
             
         except Exception as e:

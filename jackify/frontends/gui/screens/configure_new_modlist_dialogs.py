@@ -254,10 +254,13 @@ class ConfigureNewModlistDialogsMixin:
             self._restore_controls_after_shortcut_dialog_abort()
             self._prefix_repair_thread = None
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._prefix_repair_thread = _PrefixRepairThread(shortcut_name, install_dir, mo2_exe_path, appid)
         self._prefix_repair_thread.progress_update.connect(self._safe_append_text)
         self._prefix_repair_thread.repair_complete.connect(_on_complete)
         self._prefix_repair_thread.error_occurred.connect(_on_error)
+        register_managed_thread(self._prefix_repair_thread)
         self._prefix_repair_thread.start()
 
     def retry_automated_workflow_with_new_name(self, new_name):

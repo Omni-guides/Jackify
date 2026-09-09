@@ -236,8 +236,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         ]
         if not targets:
             return
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._icon_thread = IconFetchThread(targets)
         self._icon_thread.icon_ready.connect(self._on_icon_ready)
+        register_managed_thread(self._icon_thread)
         self._icon_thread.start()
 
     def _on_icon_ready(self, tool_id: str, path) -> None:
@@ -248,8 +251,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
     def _start_manifest_fetch(self):
         if self._manifest_thread and self._manifest_thread.isRunning():
             return
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._manifest_thread = ManifestFetchThread()
         self._manifest_thread.manifest_ready.connect(self._on_manifest_ready)
+        register_managed_thread(self._manifest_thread)
         self._manifest_thread.start()
 
     def _on_manifest_ready(self, definitions: List[ToolDefinition]):
@@ -265,8 +271,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
     def _start_version_check(self):
         if self._version_thread and self._version_thread.isRunning():
             return
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._version_thread = VersionCheckThread()
         self._version_thread.version_ready.connect(self._on_version_ready)
+        register_managed_thread(self._version_thread)
         self._version_thread.start()
 
     def _on_version_ready(self, tool_id: str, tag: str):
@@ -323,8 +332,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
                 "install": "Installing...", "update": "Updating...", "uninstall": "Removing...",
             }
             card.set_busy(True, label_map.get(action, "Working..."))
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._action_thread = ToolActionThread(tool_id, action)
         self._action_thread.finished_signal.connect(self._on_action_finished)
+        register_managed_thread(self._action_thread)
         self._action_thread.start()
 
     def _on_action_finished(self, tool_id: str, success: bool, message: str):
@@ -335,6 +347,16 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             if card:
                 card.set_busy(False)
             self._start_nexus_manual_install(tool_id, message[len("NEXUS_MANUAL_REQUIRED:"):])
+            return
+
+        if not success and message == "NEXUS_LOGIN_REQUIRED":
+            if card:
+                card.set_busy(False)
+            MessageService.warning(
+                self, "Nexus Login Required",
+                "You are not logged into Nexus Mods. Open Settings and connect your Nexus "
+                "Mods account, then try again.",
+            )
             return
 
         if success:
@@ -366,8 +388,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         card = self._cards.get(tool_id)
         if card:
             card.set_busy(True, "Installing...")
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._action_thread = ArchiveInstallThread(tool_id, archive)
         self._action_thread.finished_signal.connect(self._on_action_finished)
+        register_managed_thread(self._action_thread)
         self._action_thread.start()
 
     def _on_update_all(self):
@@ -388,8 +413,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
         card = self._cards.get(tool_id)
         if card:
             card.set_busy(True, "Updating...")
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._action_thread = ToolActionThread(tool_id, "update")
         self._action_thread.finished_signal.connect(self._on_update_all_step)
+        register_managed_thread(self._action_thread)
         self._action_thread.start()
 
     def _on_update_all_step(self, tool_id: str, success: bool, message: str):
@@ -413,8 +441,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             return
         if card:
             card.set_busy(True, "Fetching releases...")
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._release_thread = ReleaseFetchThread(tool_id, status.definition.github_repo)
         self._release_thread.releases_ready.connect(self._on_releases_ready)
+        register_managed_thread(self._release_thread)
         self._release_thread.start()
 
     def _on_releases_ready(self, tool_id: str, releases: list):
@@ -431,8 +462,11 @@ class ToolsHubScreen(ThreadLifecycleMixin, QWidget):
             return
         if card:
             card.set_busy(True, "Changing version...")
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._action_thread = ToolActionThread(tool_id, "install", version=version)
         self._action_thread.finished_signal.connect(self._on_action_finished)
+        register_managed_thread(self._action_thread)
         self._action_thread.start()
 
     def _show_version_picker(self, tool_id: str, releases: list, current_version: Optional[str]) -> Optional[str]:

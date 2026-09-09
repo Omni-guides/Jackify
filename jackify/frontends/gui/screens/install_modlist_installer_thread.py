@@ -12,7 +12,7 @@ from typing import Optional
 from PySide6.QtCore import QThread, Signal
 import logging
 
-from jackify.backend.utils.engine_error_parser import parse_engine_error_line, error_from_exit_code, nexus_url_from_error_line
+from jackify.backend.utils.engine_error_parser import parse_engine_error_line, error_from_exit_code, nexus_url_from_error_line, refine_engine_error
 from jackify.backend.utils.cc_content_detector import is_cc_content_error, extract_cc_filename, is_creation_kit_missing_error
 from jackify.shared.errors import JackifyError, cc_content_missing, creation_kit_missing
 from jackify.shared.progress_models import InstallationPhase
@@ -184,7 +184,7 @@ class InstallerThread(QThread):
 
                 error = parse_engine_error_line(line)
                 if error and self.last_error is None:
-                    self.last_error = error
+                    self.last_error = refine_engine_error(error, error.message, self.modlist)
                     try:
                         obj = json.loads(line)
                         if obj.get("type") == "disk_full":

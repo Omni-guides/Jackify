@@ -420,14 +420,9 @@ class ModlistMenuHandler:
     def run_modlist_configuration_phase(self, context: dict,
                                          status_callback: Optional[Callable[[str], None]] = None,
                                          gui_mode: bool = False) -> bool:
-        """
-        Shared configuration phase for both new and existing modlists.
-        Expects context dict with keys: name, appid, path (at minimum).
-
-        status_callback, when provided, receives status/progress text instead of it
-        being printed to the terminal - used by the GUI in place of the old
-        sys.stdout-redirection hack.
-        """
+        """Shared configuration phase for both new and existing modlists. Expects context dict
+        with keys: name, appid, path (at minimum). status_callback, when provided, receives
+        status/progress text instead of printing to the terminal - used by the GUI."""
         import os
 
         def _status(*args, **kwargs):
@@ -596,6 +591,11 @@ class ModlistMenuHandler:
             except Exception as ttw_err:
                 self.logger.error("TTW post-config prompt failed: %s", ttw_err, exc_info=True)
                 print(f"{COLOR_WARNING}TTW integration prompt failed. Check logs for details.{COLOR_RESET}")
+
+        # JContainers/problem-mod fixes - CLI-only (GUI has its own via InstallVerifierMixin).
+        if not gui_mode:
+            from jackify.backend.services.post_configure_fixes_cli import apply_jcontainers_and_problem_mods_fixes
+            apply_jcontainers_and_problem_mods_fixes(context.get('path', ''), context.get('appid'))
 
         is_existing_flow = context.get("modlist_source") == "existing"
         completion_title = "Modlist Configuration complete!" if is_existing_flow else "Modlist Install and Configuration complete!"

@@ -106,8 +106,11 @@ class ModlistGalleryLoadingMixin:
                     self.finished.emit(None, str(e))
 
         # Create and start background thread
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._loader_thread = ModlistLoaderThread(self.gallery_service)
         self._loader_thread.finished.connect(self._on_modlists_loaded)
+        register_managed_thread(self._loader_thread)
         self._loader_thread.start()
 
 
@@ -363,8 +366,11 @@ class ModlistGalleryLoadingMixin:
                 except Exception:
                     self.finished_signal.emit(None)
         
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._validation_thread = ValidationUpdateThread(self.gallery_service)
         self._validation_thread.finished_signal.connect(self._on_validation_updated)
+        register_managed_thread(self._validation_thread)
         self._validation_thread.start()
 
 

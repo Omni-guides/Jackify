@@ -18,18 +18,23 @@ class NexusDownloadService:
 
     NEXUS_API_BASE = "https://api.nexusmods.com/v1"
 
-    def __init__(self, auth_token: str):
+    def __init__(self, auth_token: str, is_oauth: bool = True):
         """
         Initialize Nexus download service.
 
         Args:
-            auth_token: OAuth access token or API key
+            auth_token: OAuth access token or legacy personal API key
+            is_oauth: True for an OAuth access token (Bearer auth); False for a legacy
+                personal API key, which the v1 REST API only accepts via the apikey header -
+                sending it as a Bearer token 401s (see NexusPremiumService._fetch, which
+                already branches the same way for these same two auth methods).
         """
         self.auth_token = auth_token
-        self.headers = {
-            "Authorization": f"Bearer {auth_token}",
-            "User-Agent": "jackify"
-        }
+        self.headers = {"User-Agent": "jackify"}
+        if is_oauth:
+            self.headers["Authorization"] = f"Bearer {auth_token}"
+        else:
+            self.headers["apikey"] = auth_token
 
     def get_mod_files(self, game_domain: str, mod_id: int) -> Optional[list]:
         """
@@ -54,6 +59,16 @@ class NexusDownloadService:
             logger.info(f"Found {len(files)} files for mod {mod_id}")
             return files
 
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 401:
+                # An expired/invalid Nexus session is routine (any never-connected or
+                # since-revoked account hits this on every background version check) - the
+                # console handler shows ERROR-level regardless of context, which would put
+                # a raw auth failure in front of every user who hasn't logged into Nexus yet.
+                logger.warning(f"Nexus session not valid, could not get mod files for mod {mod_id}")
+            else:
+                logger.error(f"Failed to get mod files: {e}")
+            return None
         except Exception as e:
             logger.error(f"Failed to get mod files: {e}")
             return None

@@ -66,9 +66,12 @@ class ModlistSelectionMixin:
         cli_game_type = game_type_map.get(game_type, "other")
         log_path = self.modlist_log_path
         # Use backend service directly - NO CLI CALLS
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self.fetch_thread = ModlistFetchThread(
             cli_game_type, log_path, mode='list-modlists')
         self.fetch_thread.result.connect(self.on_modlists_fetched)
+        register_managed_thread(self.fetch_thread)
         self.fetch_thread.start()
 
     def on_modlists_fetched(self, modlist_infos, error):
@@ -258,10 +261,13 @@ class ModlistSelectionMixin:
                 except Exception as e:
                     self.finished.emit(None, str(e))
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._update_prefill_thread = _UpdatePrefillThread(ModlistGalleryService())
         self._update_prefill_thread.finished.connect(
             lambda resp, err: self._on_update_prefill_metadata_loaded(resp, err, machine_url)
         )
+        register_managed_thread(self._update_prefill_thread)
         self._update_prefill_thread.start()
 
     def _on_update_prefill_metadata_loaded(self, metadata_response, error, machine_url: str) -> None:

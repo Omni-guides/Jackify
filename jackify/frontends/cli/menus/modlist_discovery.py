@@ -337,33 +337,20 @@ def run_interactive_discovery(instance) -> Optional[Dict]:
 
     instance._display_summary()
 
+    from jackify.backend.services.game_type_detection import detect_pre_install
+
     game_type = None
     game_name = None
     if instance.context.get('modlist_source_type') == 'online_list':
         game_name = instance.context.get('modlist_game', '')
-        game_mapping = {
-            'skyrim special edition': 'skyrim',
-            'skyrim': 'skyrim',
-            'fallout 4': 'fallout4',
-            'fallout new vegas': 'falloutnv',
-            'oblivion': 'oblivion',
-            'starfield': 'starfield',
-            'oblivion remastered': 'oblivion_remastered'
-        }
-        game_type = game_mapping.get(game_name.lower())
-        if not game_type:
-            game_type = 'unknown'
+        game_type = detect_pre_install(gallery_info={'game': game_name}) or 'unknown'
     elif instance.context.get('modlist_source_type') == 'local_file':
         wabbajack_path = instance.context.get('modlist_value')
         if wabbajack_path:
-            result = instance.wabbajack_parser.parse_wabbajack_game_type(Path(wabbajack_path))
-            if result:
-                if isinstance(result, tuple):
-                    game_type, raw_game_type = result
-                    game_name = raw_game_type if game_type == 'unknown' else game_type
-                else:
-                    game_type = result
-                    game_name = game_type
+            game_type = detect_pre_install(wabbajack_path=Path(wabbajack_path))
+            if game_type:
+                game_name = game_type
+                instance.context['game_type'] = game_type
 
     if game_type and not instance.wabbajack_parser.is_supported_game(game_type):
         print("\n" + "─" * 46)

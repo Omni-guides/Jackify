@@ -173,7 +173,9 @@ class MainWindowUIMixin:
         )
         if not status or not status.installed or not status.installed_version or tag == "unknown":
             return
-        if tag.lstrip("v") != status.installed_version.lstrip("v"):
+        from jackify.backend.services.tool_version_compare import is_tool_update_available
+
+        if is_tool_update_available(tag, status.installed_version):
             logger.info("Startup tools update check: flagging Tools Hub tab (%s has an update)", tool_id)
             self._app_header.set_needs_attention(10, True)
 

@@ -33,10 +33,10 @@ def _get_api_key() -> str:
 GAME_STEAM_APP_IDS = {
     "skyrim":              "489830",
     "skyrimvr":            "611670",
-    "fo4":                 "377160",
+    "fallout4":            "377160",
     "fallout4vr":          "611660",
-    "fnv":                 "22380",
-    "fo3":                 "22300",
+    "falloutnv":           "22380",
+    "fallout3":            "22300",
     "oblivion":            "22330",
     "oblivion_remastered": "2623190",
     "enderal":             "976620",
@@ -82,75 +82,15 @@ def _download(url: str, dest: Path) -> bool:
 
 
 def detect_game_type_from_modlist(modlist_dir: str) -> Optional[str]:
-    """Read gameName= from ModOrganizer.ini and return the Jackify game type key.
+    """Detect the Jackify game type key from the modlist's own ModOrganizer.ini.
 
-    Covers all supported game types. Returns None if the ini cannot be read or
-    the game is not in GAME_STEAM_APP_IDS.
+    Covers all supported game types. Returns None if the ini cannot be read or the game type
+    cannot be determined.
     """
     if not modlist_dir:
         return None
-    try:
-        from pathlib import Path as _Path
-        mo2_ini = _Path(modlist_dir) / "ModOrganizer.ini"
-        if not mo2_ini.exists():
-            mo2_ini = _Path(modlist_dir) / "files" / "ModOrganizer.ini"
-        if not mo2_ini.exists():
-            return None
-        content = mo2_ini.read_text(errors='ignore').lower()
-        game_name_value = ""
-        for _line in content.splitlines():
-            stripped = _line.strip()
-            if "=" not in stripped:
-                continue
-            key, value = stripped.split("=", 1)
-            if key.strip().lower() == "gamename":
-                game_name_value = value.strip()
-                break
-        gn = game_name_value.strip()
-        if gn:
-            if 'skyrim vr' in gn or 'skyrimvr' in gn:
-                return "skyrimvr"
-            if 'fallout 4 vr' in gn or 'fallout4vr' in gn:
-                return "fallout4vr"
-            if 'skyrim special edition' in gn:
-                return "skyrim"
-            if 'fallout new vegas' in gn or 'falloutnv' in gn or 'new vegas' in gn or gn == 'ttw':
-                return "fnv"
-            if 'fallout3' in gn or ('fallout 3' in gn and 'fallout 4' not in gn):
-                return "fo3"
-            if 'fallout 4' in gn:
-                return "fo4"
-            if 'starfield' in gn:
-                return "starfield"
-            if 'oblivion remastered' in gn:
-                return "oblivion_remastered"
-            if 'oblivion' in gn:
-                return "oblivion"
-            if 'enderal' in gn:
-                return "enderal"
-            if 'cyberpunk' in gn or 'cp2077' in gn:
-                return "cp2077"
-            if "baldur" in gn or 'bg3' in gn:
-                return "bg3"
-        else:
-            # gameName= absent - fall back to content scan for common markers
-            if 'skyrim special edition' in content or 'skse64_loader' in content:
-                return "skyrim"
-            if 'nvse_loader' in content or 'falloutnv' in content:
-                return "fnv"
-            if 'fose_loader' in content:
-                return "fo3"
-            if 'f4se_loader' in content:
-                return "fo4"
-            if 'baldur' in content or 'bg3' in content:
-                return "bg3"
-            if 'cyberpunk' in content or 'cp2077' in content:
-                return "cp2077"
-            if 'starfield' in content:
-                return "starfield"
-    except Exception as e:
-        logger.debug(f"detect_game_type_from_modlist failed for {modlist_dir}: {e}")
-    return None
+    from jackify.backend.services.game_type_detection import detect_from_install
+    return detect_from_install(modlist_dir)
 
 
 def fetch_artwork(game_type: str, dest_dir: Path, skip_existing: bool = False) -> int:

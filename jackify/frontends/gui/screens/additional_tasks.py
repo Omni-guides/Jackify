@@ -344,7 +344,10 @@ class AdditionalTasksScreen(ThreadLifecycleMixin, QWidget):
             dlg = VerificationResultsDialog(results, parent=self)
             dlg.exec()
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._verifier_ondemand_thread.done.connect(_on_done)
+        register_managed_thread(self._verifier_ondemand_thread)
         self._verifier_ondemand_thread.start()
 
     def _run_diagnostic_bundle(self):
@@ -397,8 +400,11 @@ class AdditionalTasksScreen(ThreadLifecycleMixin, QWidget):
             create_btn.setEnabled(False)
             cancel_btn.setEnabled(False)
             status_label.setText("Collecting logs and system info...")
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
             self._diag_thread = _BundleThread(parent=self)
             self._diag_thread.done.connect(_on_done)
+            register_managed_thread(self._diag_thread)
             self._diag_thread.start()
 
         def _on_done(bundle_path, error):

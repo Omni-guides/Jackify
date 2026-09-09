@@ -50,32 +50,9 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
             self._start_focus_reclaim_retries()
 
     def _detect_game_type_from_mo2_ini(self, install_dir: str) -> str:
-        """Detect game type by checking ModOrganizer.ini for loader executables."""
-        from pathlib import Path
-        mo2_ini = Path(install_dir) / "ModOrganizer.ini"
-        if not mo2_ini.exists():
-            return 'skyrim'  # Fallback to most common
-        
-        try:
-            content = mo2_ini.read_text(encoding='utf-8', errors='ignore').lower()
-            
-            if 'skse64_loader.exe' in content or 'skyrim special edition' in content:
-                return 'skyrim'
-            elif 'f4se_loader.exe' in content or 'fallout 4' in content:
-                return 'fallout4'
-            elif 'nvse_loader.exe' in content or 'fallout new vegas' in content:
-                return 'falloutnv'
-            elif 'obse_loader.exe' in content or 'oblivion' in content:
-                return 'oblivion'
-            elif 'starfield' in content:
-                return 'starfield'
-            elif 'enderal' in content:
-                return 'enderal'
-            else:
-                return 'skyrim'
-        except Exception as e:
-            logger.warning(f"Error detecting game type from ModOrganizer.ini: {e}")
-            return 'skyrim'
+        """Detect game type from the modlist's own ModOrganizer.ini."""
+        from jackify.backend.services.game_type_detection import detect_from_install
+        return detect_from_install(install_dir) or 'skyrim'  # Fallback to most common
 
     def on_configuration_complete(self, success, message, modlist_name, enb_detected=False):
         """Handle configuration completion on main thread"""
@@ -504,10 +481,13 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                         self.error_occurred.emit(str(e))
             
             # Start configuration thread
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
             self.config_thread = ConfigThread(updated_context, is_steamdeck, detect_game_type_func)
             self.config_thread.progress_update.connect(self.on_configuration_progress)
             self.config_thread.configuration_complete.connect(self.on_configuration_complete)
             self.config_thread.error_occurred.connect(self.on_configuration_error)
+            register_managed_thread(self.config_thread)
             self.config_thread.start()
             
         except Exception as e:
@@ -551,10 +531,13 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                 self.config_thread = None
             
             # Start new config thread
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
             self.config_thread = self._create_config_thread(updated_context)
             self.config_thread.progress_update.connect(self.on_configuration_progress)
             self.config_thread.configuration_complete.connect(self.on_configuration_complete)
             self.config_thread.error_occurred.connect(self.on_configuration_error)
+            register_managed_thread(self.config_thread)
             self.config_thread.start()
             
         except Exception as e:

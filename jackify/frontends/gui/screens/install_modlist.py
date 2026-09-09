@@ -260,8 +260,11 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
                     logger.debug(f"Gallery cache preload error: {str(e)}")
         
         # Start thread (non-blocking, invisible to user)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._gallery_cache_preload_thread = GalleryCachePreloadThread()
         # Don't connect finished signal - we don't need to do anything, just let it run
+        register_managed_thread(self._gallery_cache_preload_thread)
         self._gallery_cache_preload_thread.start()
         
         logger.debug("Started background gallery cache preload")

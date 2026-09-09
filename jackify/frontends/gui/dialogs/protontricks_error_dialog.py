@@ -271,8 +271,11 @@ class ProtontricksErrorDialog(ThreadLifecycleMixin, QDialog):
         self.status_label.setText("Installing Flatpak protontricks...")
         
         # Start installation thread
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self.install_thread = FlatpakInstallThread(self.detection_service)
         self.install_thread.finished.connect(self._on_install_finished)
+        register_managed_thread(self.install_thread)
         self.install_thread.start()
 
     def _on_install_finished(self, success, message):

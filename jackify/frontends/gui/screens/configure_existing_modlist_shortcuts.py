@@ -96,9 +96,12 @@ class ConfigureExistingModlistShortcutsMixin:
             self._old_loaders = [t for t in self._old_loaders if t.isRunning()]
 
         # Start background thread
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._shortcut_loader = ShortcutLoaderThread()
         self._shortcut_loader.finished_signal.connect(self._on_shortcuts_loaded)
         self._shortcut_loader.error_signal.connect(self._on_shortcuts_error)
+        register_managed_thread(self._shortcut_loader)
         self._shortcut_loader.start()
 
     def _on_shortcuts_loaded(self, shortcuts):

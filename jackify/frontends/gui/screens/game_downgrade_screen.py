@@ -8,7 +8,9 @@ GameDowngradePromptDriver rather than a terminal - see that module for why a pla
 is sufficient. Available from Additional Tasks.
 """
 
+import json
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -17,8 +19,8 @@ from typing import Optional
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QGridLayout, QHBoxLayout,
-    QLabel, QLineEdit, QMessageBox, QPushButton, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout,
+    QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout,
+    QLabel, QMessageBox, QPushButton, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout,
     QWidget,
 )
 
@@ -28,65 +30,9 @@ from jackify.frontends.gui.shared_theme import JACKIFY_COLOR_BLUE
 from jackify.frontends.gui.utils import set_responsive_minimum
 from jackify.frontends.gui.widgets.file_progress_list import FileProgressList
 from jackify.frontends.gui.dialogs import SuccessDialog
+from jackify.frontends.gui.screens.game_downgrade_dialogs import _AnswerDialog, _LoginDialog
 
 logger = logging.getLogger(__name__)
-
-
-class _AnswerDialog(QDialog):
-    """Small modal for one line of input - plain text or password-masked."""
-
-    def __init__(self, title: str, label: str, password: bool = False, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setMinimumWidth(360)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(label))
-        self._field = QLineEdit()
-        if password:
-            self._field.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self._field)
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self._field.setFocus()
-
-    def value(self) -> str:
-        return self._field.text()
-
-
-class _LoginDialog(QDialog):
-    """Modal asking for both Steam username and password in one go."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Steam Login")
-        self.setMinimumWidth(360)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Enter your Steam login for steamcmd:"))
-
-        note = QLabel("Jackify never stores or logs your Steam credentials.")
-        note.setWordWrap(True)
-        note.setStyleSheet("color: #aaa; font-size: 11px;")
-        layout.addWidget(note)
-
-        layout.addWidget(QLabel("Username:"))
-        self._username_field = QLineEdit()
-        layout.addWidget(self._username_field)
-
-        layout.addWidget(QLabel("Password:"))
-        self._password_field = QLineEdit()
-        self._password_field.setEchoMode(QLineEdit.Password)
-        layout.addWidget(self._password_field)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self._username_field.setFocus()
-
-    def values(self) -> tuple:
-        return self._username_field.text().strip(), self._password_field.text()
 
 
 class GameDowngradeScreen(ThreadLifecycleMixin, QWidget):
@@ -416,19 +362,52 @@ class GameDowngradeScreen(ThreadLifecycleMixin, QWidget):
             self._game_combo.addItem(name, userData=key)
         self._game_combo.setCurrentIndex(0)
 
+    # Maps the downgrader's own game_key to Jackify's game_type, for the two full-game (non
+    # Creation Kit) entries only - CK component restores are tracked purely via state.json.
+    _RESTORE_GAME_TYPES = {"skyrim_se": "skyrim", "fallout4": "fallout4"}
+
     def _has_restore_state(self, game_key: str) -> bool:
         """Best-effort local check for a pending downgrade to restore, so the button can be
         greyed out up front instead of running the full Steam shutdown/restart cycle just to
-        learn there was nothing to restore (that round trip previously took several minutes
-        for a no-op). This reaches into game_downgrade/data/<game>/state.json, an internal
-        detail of a separate tool rather than a documented interface - if that layout ever
-        changes, this fails safe (treated as nothing to restore), not as an app error."""
-        if not self._binary_path:
+        learn there was nothing to restore. Mirrors the downgrader's own two-part check
+        (cli.py's _backup_candidates): state.json in <state dir>/<game>/ (game_downgrade/
+        paths.py's game_data_dir()) OR a sibling "<game folder> (<version>)" backup folder
+        beside the real install - a full-game downgrade backs up as a sibling folder, not
+        into state dir, so state.json alone misses it. Reaches into internals of a separate
+        tool - if that layout changes again, this fails safe (nothing to restore)."""
+        try:
+            override = os.environ.get("JGD_STATE_DIR")
+            base = (
+                Path(override).expanduser() if override
+                else Path(os.environ.get("XDG_STATE_HOME", "~/.local/state")).expanduser()
+                / "jackify-game-downgrader"
+            )
+            if (base / game_key / "state.json").is_file():
+                return True
+        except OSError:
+            pass
+        return self._has_sibling_backup(game_key)
+
+    def _has_sibling_backup(self, game_key: str) -> bool:
+        game_type = self._RESTORE_GAME_TYPES.get(game_key)
+        if not game_type or not self._binary_path:
             return False
         try:
-            install_dir = Path(self._binary_path).parent
-            return (install_dir / "game_downgrade" / "data" / game_key / "state.json").is_file()
-        except OSError:
+            game_json = Path(self._binary_path).parent / "games" / f"{game_key}.json"
+            main_exe = json.loads(game_json.read_text()).get("main_exe")
+            if not main_exe:
+                return False
+            from jackify.backend.handlers.vanilla_game_finder import VanillaGameFinder
+            result = VanillaGameFinder().find(game_type)
+            if not result:
+                return False
+            install_path, _store = result
+            prefix = f"{install_path.name} ("
+            return any(
+                p.is_dir() and p.name.startswith(prefix) and (p / main_exe).is_file()
+                for p in install_path.parent.iterdir()
+            )
+        except (OSError, ValueError):
             return False
 
     def _refresh_restore_availability(self):
@@ -547,8 +526,9 @@ class GameDowngradeScreen(ThreadLifecycleMixin, QWidget):
         self._driver.waiting_for_phone_approval.connect(self._on_waiting_for_phone)
         self._driver.waiting_for_process_close.connect(self._on_waiting_for_process_close)
         self._driver.depot_progress.connect(self._on_depot_progress)
-        self._driver.need_generic_input.connect(self._on_need_generic_input)
         self._driver.finished.connect(self._on_finished)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+        register_managed_thread(self._driver)
         self._driver.start()
 
     def _set_status(self, text: str):
@@ -647,16 +627,6 @@ class GameDowngradeScreen(ThreadLifecycleMixin, QWidget):
             f"Waiting - close {label} to continue "
             f"(fully exit it and the downgrade will continue automatically)"
         )
-
-    def _on_need_generic_input(self, message: str):
-        self._set_status(f"Waiting for input: {message}")
-        dlg = _AnswerDialog("Input Needed", f"{message}\nType a reply and press Enter:", parent=self)
-        if dlg.exec() == QDialog.Accepted:
-            answer = dlg.value()
-            if self._driver:
-                self._driver.provide_answer(answer)
-        else:
-            self._cancel_driver()
 
     def _on_cancel(self):
         self._cancel_driver()

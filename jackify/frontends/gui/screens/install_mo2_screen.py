@@ -429,6 +429,8 @@ class InstallMO2Screen(ThreadLifecycleMixin, ScreenBackMixin, FocusReclaimMixin,
         self.worker.progress_update.connect(self._on_activity_progress)
         self.worker.log_output.connect(self._on_log_output)
         self.worker.setup_complete.connect(self._on_setup_complete)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+        register_managed_thread(self.worker)
         self.worker.start()
 
     def _on_progress_update(self, message: str):

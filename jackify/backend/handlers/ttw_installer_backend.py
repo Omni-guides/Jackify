@@ -41,6 +41,8 @@ class TTWInstallerBackendMixin:
             self.logger.info("TTW_Linux_Installer not found, attempting to install...")
             success, message = self.install_ttw_installer()
             if not success:
+                from .ttw_installer_handler import describe_install_failure
+                message = describe_install_failure(message)
                 return False, f"TTW_Linux_Installer not installed and auto-install failed: {message}"
         if not self.ttw_installer_executable_path or not self.ttw_installer_executable_path.is_file():
             return False, "TTW_Linux_Installer executable not found"
@@ -123,6 +125,8 @@ class TTWInstallerBackendMixin:
             self.logger.info("TTW_Linux_Installer not found, attempting to install...")
             success, message = self.install_ttw_installer()
             if not success:
+                from .ttw_installer_handler import describe_install_failure
+                message = describe_install_failure(message)
                 return None, f"TTW_Linux_Installer not installed and auto-install failed: {message}"
         if not self.ttw_installer_executable_path or not self.ttw_installer_executable_path.is_file():
             return None, "TTW_Linux_Installer executable not found"
@@ -210,6 +214,8 @@ class TTWInstallerBackendMixin:
             self.logger.info("TTW_Linux_Installer not found, attempting to install...")
             success, message = self.install_ttw_installer()
             if not success:
+                from .ttw_installer_handler import describe_install_failure
+                message = describe_install_failure(message)
                 return False, f"TTW_Linux_Installer not installed and auto-install failed: {message}"
         if not self.ttw_installer_executable_path or not self.ttw_installer_executable_path.is_file():
             return False, "TTW_Linux_Installer executable not found"

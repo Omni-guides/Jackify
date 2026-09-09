@@ -35,6 +35,13 @@ def _resolve_pfx_for_appid(appid: str) -> Optional[Path]:
     return resolve_pfx_for_appid(appid)
 
 
+def _detect_game_type_from_install_dir(install_dir: str) -> str:
+    """Ground-truth game type from the modlist's own ModOrganizer.ini, rather than
+    whatever the pre-install validation step attached to the GUI screen."""
+    from jackify.backend.services.problem_mods_service import detect_game_type_from_install_dir
+    return detect_game_type_from_install_dir(install_dir)
+
+
 def _merge_playbook_warnings(results, playbook_warnings):
     """Fold playbook step failures into the verification Results so they show up in the
     success dialog's checks list instead of only ever appearing in the console/log."""
@@ -115,11 +122,13 @@ class InstallVerifierMixin:
                 get_enabled_mods,
             )
 
+            resolved_game_type = _detect_game_type_from_install_dir(install_dir) or game_type
+
             install_path = Path(install_dir)
             all_disabled: list = []
             all_enabled_mods: set = set()
             for modlist_txt in install_path.glob("profiles/*/modlist.txt"):
-                disabled = disable_problem_mods(modlist_txt, game_type)
+                disabled = disable_problem_mods(modlist_txt, resolved_game_type)
                 for name in disabled:
                     if name not in all_disabled:
                         all_disabled.append(name)
@@ -130,7 +139,7 @@ class InstallVerifierMixin:
                     "Disabled %d problem mod(s) for %s (%s): %s",
                     len(all_disabled),
                     success_params.get("modlist_name", ""),
-                    game_type,
+                    resolved_game_type,
                     ", ".join(all_disabled),
                 )
                 success_params["disabled_problem_mods"] = all_disabled
@@ -138,15 +147,28 @@ class InstallVerifierMixin:
             resolved_appid = str(appid or self._get_appid_for_install_dir(install_dir) or "")
             pfx = _resolve_pfx_for_appid(resolved_appid) if resolved_appid else None
             if pfx and all_enabled_mods:
-                created = create_prefix_dirs(pfx, game_type, all_enabled_mods)
+                created = create_prefix_dirs(pfx, resolved_game_type, all_enabled_mods)
                 if created:
                     logger.info(
                         "Created %d prefix dir(s) for %s (%s): %s",
                         len(created),
                         success_params.get("modlist_name", ""),
-                        game_type,
+                        resolved_game_type,
                         ", ".join(created),
                     )
+                else:
+                    logger.info(
+                        "No prefix dirs to create for %s (game_type=%s, %d enabled mod(s) checked)",
+                        success_params.get("modlist_name", ""),
+                        resolved_game_type,
+                        len(all_enabled_mods),
+                    )
+            elif not pfx:
+                logger.info(
+                    "Skipped prefix dir fixes for %s: could not resolve Proton prefix (appid=%s)",
+                    success_params.get("modlist_name", ""),
+                    resolved_appid,
+                )
         except Exception as e:
             logger.warning("Problem mods fix check failed (non-fatal): %s", e)
 
@@ -193,9 +215,12 @@ class InstallVerifierMixin:
             modlist_name=success_params.get("modlist_name", ""),
             parent=self,
         )
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._verifier_thread.finished.connect(
             lambda r: self._on_verifier_complete_show_success(r, success_params)
         )
+        register_managed_thread(self._verifier_thread)
         self._verifier_thread.start()
 
     def _on_verifier_complete_show_success(self, results, success_params: dict):

@@ -106,6 +106,13 @@ class ModlistsCommand:
 
     def _manage_entry(self, entry) -> None:
         while True:
+            from jackify.backend.services.modlist_properties_service import mo2_skip_status
+            try:
+                skip_enabled = mo2_skip_status(entry.install_dir, entry.modlist_name)
+            except Exception:
+                skip_enabled = False
+            skip_label = "Remove MO2 Skip" if skip_enabled else "Add MO2 Skip"
+
             print(f"\n{COLOR_PROMPT}--- {entry.modlist_name} ---{COLOR_RESET}")
             print(f"{COLOR_INFO}Install directory: {entry.install_dir}{COLOR_RESET}")
             print(f"{COLOR_SELECTION}1.{COLOR_RESET} Launch")
@@ -113,8 +120,9 @@ class ModlistsCommand:
             print(f"{COLOR_SELECTION}3.{COLOR_RESET} Show install directory")
             print(f"{COLOR_SELECTION}4.{COLOR_RESET} Uninstall (deletes shortcut, prefix and files)")
             print(f"{COLOR_SELECTION}5.{COLOR_RESET} Remove from this list only (keeps files/shortcut)")
+            print(f"{COLOR_SELECTION}6.{COLOR_RESET} {skip_label} (skip MO2's launcher window on launch)")
             print(f"{COLOR_SELECTION}0.{COLOR_RESET} Back")
-            choice = input(f"{COLOR_PROMPT}Enter your selection (0-5): {COLOR_RESET}").strip()
+            choice = input(f"{COLOR_PROMPT}Enter your selection (0-6): {COLOR_RESET}").strip()
 
             if choice == "1":
                 self._launch(entry)
@@ -129,10 +137,62 @@ class ModlistsCommand:
             elif choice == "5":
                 if self._remove_from_list(entry):
                     return
+            elif choice == "6":
+                self._toggle_mo2_skip(entry, skip_enabled)
             elif choice == "0":
                 return
             else:
                 print(f"{COLOR_ERROR}Invalid selection.{COLOR_RESET}")
+
+    def _toggle_mo2_skip(self, entry, currently_enabled: bool) -> None:
+        from jackify.backend.services.modlist_properties_service import toggle_mo2_skip
+        from jackify.shared.messages import STEAM_RESTART_WARNING
+
+        binary_title = None
+        if not currently_enabled:
+            from pathlib import Path
+            from jackify.backend.handlers.mo2_custom_executables import list_launch_candidates
+
+            ini_path = Path(entry.install_dir) / "ModOrganizer.ini"
+            candidates = list_launch_candidates(ini_path)
+            if not candidates:
+                print(f"{COLOR_ERROR}Could not find a launchable executable in this modlist's ModOrganizer.ini.{COLOR_RESET}")
+                return
+            if len(candidates) == 1:
+                binary_title = candidates[0]["title"]
+            else:
+                print(f"\n{COLOR_PROMPT}Which executable should Steam launch straight into?{COLOR_RESET}")
+                for i, c in enumerate(candidates, 1):
+                    print(f"{COLOR_SELECTION}{i}.{COLOR_RESET} {c['title']}")
+                choice = input(f"{COLOR_PROMPT}Enter your selection: {COLOR_RESET}").strip()
+                if not choice.isdigit() or not (1 <= int(choice) <= len(candidates)):
+                    print(f"{COLOR_ERROR}Invalid selection.{COLOR_RESET}")
+                    return
+                binary_title = candidates[int(choice) - 1]["title"]
+
+        if currently_enabled:
+            action = "Remove"
+            explanation = "This restores the normal launch - Steam will open Mod Organizer 2 itself instead of jumping straight into the game."
+        else:
+            action = "Add"
+            explanation = (
+                f"This makes the modlist's Steam shortcut launch straight into '{binary_title}', "
+                "skipping Mod Organizer 2's own window. It always uses whichever profile MO2 last "
+                "had active - to change mods or switch profiles, remove the skip first (same "
+                "menu option), make your changes, then re-add it."
+            )
+        print(f"{COLOR_INFO}{explanation}{COLOR_RESET}")
+        print(f"{COLOR_WARNING}{action}ing MO2 Skip requires restarting Steam. "
+              f"{STEAM_RESTART_WARNING}{COLOR_RESET}")
+        confirm = input(f"{COLOR_PROMPT}Continue? (y/N): {COLOR_RESET}").strip().lower()
+        if confirm != "y":
+            return
+
+        success, message = toggle_mo2_skip(entry.install_dir, entry.modlist_name, binary_title)
+        if success:
+            print(f"{COLOR_SUCCESS}{message or 'MO2 Skip updated.'}{COLOR_RESET}")
+        else:
+            print(f"{COLOR_ERROR}Failed: {message}{COLOR_RESET}")
 
     def _launch(self, entry) -> None:
         if not entry.appid:
@@ -160,7 +220,37 @@ class ModlistsCommand:
         if not modlist_menu.modlist_handler:
             print(f"{COLOR_ERROR}Internal error: could not initialize modlist handler.{COLOR_RESET}")
             return
-        modlist_menu.run_modlist_configuration_phase(context)
+        if modlist_menu.run_modlist_configuration_phase(context):
+            self._apply_problem_mods_fix(entry.install_dir, entry.game_type, entry.appid)
+
+    def _apply_problem_mods_fix(self, install_dir: str, game_type: str, appid: Optional[str]) -> None:
+        """Disable known-bad mods and create any prefix dirs they require."""
+        try:
+            from pathlib import Path
+            from jackify.backend.services.install_verifier_service import resolve_pfx_for_appid
+            from jackify.backend.services.problem_mods_service import (
+                detect_game_type_from_install_dir,
+                disable_problem_mods,
+                create_prefix_dirs,
+                get_enabled_mods,
+            )
+            resolved_game_type = detect_game_type_from_install_dir(install_dir) or game_type
+            all_disabled: list = []
+            all_enabled_mods: set = set()
+            for modlist_txt in Path(install_dir).glob("profiles/*/modlist.txt"):
+                disabled = disable_problem_mods(modlist_txt, resolved_game_type)
+                for name in disabled:
+                    if name not in all_disabled:
+                        all_disabled.append(name)
+                all_enabled_mods |= get_enabled_mods(modlist_txt)
+            if all_disabled:
+                print(f"{COLOR_INFO}Disabled known-problematic mod(s): {', '.join(all_disabled)}{COLOR_RESET}")
+            pfx = resolve_pfx_for_appid(str(appid)) if appid else None
+            if pfx and all_enabled_mods:
+                create_prefix_dirs(pfx, resolved_game_type, all_enabled_mods)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Problem mods fix check failed (non-fatal): %s", e)
 
     def _uninstall(self, entry) -> bool:
         """Returns True if the caller should stop managing this (now-removed) entry."""

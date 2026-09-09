@@ -51,7 +51,10 @@ def register_managed_thread(thread) -> None:
         return
     _MANAGED_THREADS.add(thread)
     try:
-        thread.finished.connect(lambda t=thread: _MANAGED_THREADS.discard(t))
+        # *args absorbs whatever the thread's own `finished` signal emits (some
+        # subclasses redefine it with payload args, e.g. Signal(object, object)) -
+        # `_t` must stay keyword-only so a positional payload can never override it.
+        thread.finished.connect(lambda *args, _t=thread: _MANAGED_THREADS.discard(_t))
     except Exception:
         pass
 

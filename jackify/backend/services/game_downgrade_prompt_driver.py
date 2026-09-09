@@ -38,8 +38,23 @@ from jackify.backend.services.steam_restart_service import shutdown_steam, start
 logger = logging.getLogger(__name__)
 
 IDLE_FLUSH_SECONDS = 0.3
-GENERIC_FALLBACK_SECONDS = 20.0
 POLL_INTERVAL_SECONDS = 0.2
+
+# Any silence this long that isn't a KNOWN_PROMPTS match gets a passive reassurance ping, not
+# a blocking dialog: this driver has no reliable way to tell "the downgrader is genuinely
+# waiting on unrecognized input" apart from "it's just slow" (large game, slow connection or
+# drive), and guessing wrong used to pop a modal asking the user to type a blind response with
+# no idea what it was for. The CLI doesn't have this problem at all - it runs the downgrader
+# with a real terminal, so input() just works. The GUI has no terminal, so KNOWN_PROMPTS below
+# still drives the small set of real, well-understood interactive needs (Steam login, Steam
+# Guard code, confirmations) with purpose-built dialogs; anything else is left running and
+# logged, with Cancel (always available on the screen itself) as the way out if it truly is
+# stuck.
+STILL_WAITING_PING_SECONDS = 60.0
+STILL_WAITING_MESSAGE = (
+    "Still waiting on the downgrader - this can take a while for a large game or a slow "
+    "connection/drive."
+)
 
 
 @dataclass(frozen=True)
@@ -71,7 +86,11 @@ KNOWN_PROMPTS = (
     # Only ever appears when the GUI's own backup checkbox was left checked (unchecking it
     # sends --no-backup, which skips this prompt entirely at the source) - the checkbox was
     # already the real decision, so this is just a mechanical yes, not a second ask.
-    PromptRule("create_backup", ("Create a full game backup?",), auto_reply="y"),
+    PromptRule(
+        "create_backup",
+        ("Create a full game backup?", "Back up the Creation Kit files that will be replaced?"),
+        auto_reply="y",
+    ),
     # Must come before the generic press_any_key rule below - this is the
     # "close Steam/the game first" gate, which needs a status update, not a
     # silent instant reply (see _handle_match).
@@ -80,7 +99,9 @@ KNOWN_PROMPTS = (
     PromptRule("username", ("Steam username (for steamcmd login):",)),
     PromptRule("password", ("password:",)),
     PromptRule("guard_code", ("Steam Guard code:",)),
-    PromptRule("guard_mobile", ("Steam Guard mobile authenticator",)),
+    # 0.2.5 reworded this line to "...Steam Guard's mobile authenticator, check your
+    # phone..." - match on the stable core phrase so future wording tweaks don't re-break it.
+    PromptRule("guard_mobile", ("mobile authenticator",)),
 )
 
 
@@ -101,7 +122,6 @@ class GameDowngradePromptDriver(QThread):
     waiting_for_phone_approval = Signal(bool)
     waiting_for_process_close = Signal(str)
     depot_progress = Signal(str, int, int, int)  # depot_id, percent, done_mb, total_mb
-    need_generic_input = Signal(str)
     finished = Signal(int, bool)  # returncode, real_changes_started
 
     def __init__(self, binary_path: str, python3_path: str, args: list, cwd: str = None,
@@ -190,8 +210,8 @@ class GameDowngradePromptDriver(QThread):
                     # Reset AFTER processing, not before: _handle_match can block for a long
                     # time on a modal dialog (e.g. typing a Steam Guard code fetched from a
                     # phone) - if reset first, that wait alone could exceed
-                    # GENERIC_FALLBACK_SECONDS and pop a spurious "waiting for input" dialog
-                    # the instant the real one closes.
+                    # STILL_WAITING_PING_SECONDS and pop a spurious status ping the instant the
+                    # real dialog closes.
                     last_activity = time.monotonic()
                     continue
 
@@ -203,25 +223,18 @@ class GameDowngradePromptDriver(QThread):
                         pending = b""
                         self._handle_match(matched, text)
                         last_activity = time.monotonic()
-                    elif idle >= GENERIC_FALLBACK_SECONDS:
-                        # An unrecognized prompt sitting unflushed for a long time - surface
-                        # whatever text we have instead of looping on it forever with no
-                        # timeout (a prompt whose exact wording we don't know about must not
-                        # be a silent permanent hang).
+                    elif idle >= STILL_WAITING_PING_SECONDS:
+                        # Nothing we recognize, sitting unflushed for a while - log it (so
+                        # Show Details has a record) and let the user judge for themselves via
+                        # Cancel rather than being asked to guess a blind response.
                         text = _strip_ansi(pending.decode(errors="replace")).strip()
                         pending = b""
                         if text:
                             self.log_line.emit(text)
-                        self.need_generic_input.emit("The downgrader appears to be waiting for input.")
-                        reply = self._answer_queue.get()
-                        if not self._cancel_requested.is_set():
-                            self._pm.write_stdin(reply)
+                        self.phase_status.emit(STILL_WAITING_MESSAGE)
                         last_activity = time.monotonic()
-                elif not pending and idle >= GENERIC_FALLBACK_SECONDS:
-                    self.need_generic_input.emit("The downgrader appears to be waiting for input.")
-                    reply = self._answer_queue.get()
-                    if not self._cancel_requested.is_set():
-                        self._pm.write_stdin(reply)
+                elif not pending and idle >= STILL_WAITING_PING_SECONDS:
+                    self.phase_status.emit(STILL_WAITING_MESSAGE)
                     last_activity = time.monotonic()
             returncode = self._pm.wait() if self._pm.is_running() else (self._pm.proc.returncode or 0)
         except Exception as e:

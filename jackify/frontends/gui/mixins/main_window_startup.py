@@ -41,7 +41,10 @@ class MainWindowStartupMixin:
                 except Exception as e:
                     logger.debug(f"Gallery cache preload error: {str(e)}")
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._gallery_cache_preload_thread = GalleryCachePreloadThread()
+        register_managed_thread(self._gallery_cache_preload_thread)
         self._gallery_cache_preload_thread.start()
         logger.debug("Started background gallery cache preload")
 
@@ -102,8 +105,11 @@ class MainWindowStartupMixin:
                 else None
             ))
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._tool_update_check_thread = _ToolUpdateCheckThread()
         self._tool_update_check_thread.updates_found.connect(on_result)
+        register_managed_thread(self._tool_update_check_thread)
         self._tool_update_check_thread.start()
 
     def _prefetch_manifests_on_startup(self):
@@ -146,7 +152,10 @@ class MainWindowStartupMixin:
                 except Exception as e:
                     logger.info("Playbook registry prefetch failed: %s", e)
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._manifest_prefetch_thread = _ManifestPrefetchThread()
+        register_managed_thread(self._manifest_prefetch_thread)
         self._manifest_prefetch_thread.start()
 
     def _check_for_updates_on_startup(self):
@@ -174,8 +183,11 @@ class MainWindowStartupMixin:
                     dialog.exec()
                 QTimer.singleShot(1000, show_update_dialog)
 
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
             self._update_thread = UpdateCheckThread(self.update_service)
             self._update_thread.update_available.connect(on_update_available)
+            register_managed_thread(self._update_thread)
             self._update_thread.start()
         except Exception as e:
             logger.debug(f"Error setting up update check: {e}")

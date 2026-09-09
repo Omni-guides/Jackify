@@ -128,8 +128,11 @@ class InstallModlistShortcutDialogMixin:
             self._safe_append_text("[00:00:00] Proton prefix created.")
             self.continue_configuration_after_automated_prefix(appid, modlist_name, install_dir, None)
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         _thread.finished.connect(_on_done)
         self._prefix_create_thread = _thread
+        register_managed_thread(_thread)
         _thread.start()
 
     def retry_automated_workflow_with_new_name(self, new_name):

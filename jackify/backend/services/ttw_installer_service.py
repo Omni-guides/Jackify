@@ -51,6 +51,8 @@ def ensure_ttw_installer_available(
     handler = _build_handler()
     success, message = handler.install_ttw_installer(install_dir=install_dir)
     if not success:
+        from jackify.backend.handlers.ttw_installer_handler import describe_install_failure
+        message = describe_install_failure(message)
         logger.error("Failed to install TTW_Linux_Installer: %s", message)
         return None, message
 

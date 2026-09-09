@@ -171,6 +171,8 @@ class TTWIntegrationMixin:
             )
             self.integration_thread.progress.connect(self._safe_append_text)
             self.integration_thread.finished.connect(self._on_integration_thread_finished)
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+            register_managed_thread(self.integration_thread)
             self.integration_thread.start()
 
         except Exception as e:
@@ -330,7 +332,10 @@ class TTWIntegrationMixin:
                         self._safe_append_text(f"\nError: {error_msg}")
                         MessageService.critical(self, "Archive Creation Failed", error_msg)
 
+            from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
             zip_thread.finished.connect(on_zip_finished)
+            register_managed_thread(zip_thread)
             zip_thread.start()
 
             # Keep reference to prevent garbage collection

@@ -68,18 +68,20 @@ class TTWRequirementsMixin:
             self.ttw_installer_status.setStyleSheet("color: #3fd0ea;")
             self.ttw_installer_btn.setVisible(False)
         else:
-            self.ttw_installer_status.setText("Not installed - install via Tools Hub")
+            self.ttw_installer_status.setText("Not installed")
             self.ttw_installer_status.setStyleSheet("color: #f44336;")
-            self.ttw_installer_btn.setText("Open Tools Hub")
+            self.ttw_installer_btn.setText("Install now")
             self.ttw_installer_btn.setEnabled(True)
             self.ttw_installer_btn.setVisible(True)
 
         self._update_start_button_state()
 
     def install_ttw_installer(self):
-        """Navigate to Tools Hub for TTW Linux Installer management."""
-        if self.stacked_widget:
-            self.stacked_widget.setCurrentIndex(10)
+        """Install TTW Linux Installer via the same path Tools Hub uses (Nexus Premium
+        auto-download, or the guided manual-download dialog for everyone else)."""
+        from jackify.frontends.gui.services.tool_install_prompt import ensure_tool_installed
+        ensure_tool_installed(self, "ttw_installer", "TTW Linux Installer")
+        self._check_ttw_installer_status()
 
     def _check_ttw_requirements(self, silent: bool = False) -> bool:
         detected = _detect_ttw_games()

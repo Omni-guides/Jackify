@@ -669,7 +669,7 @@ class ModlistConfigurationMixin:
                 from jackify.backend.services.install_registry import register_install
                 register_install(
                     self.modlist_dir, self.game_name,
-                    game_type=self.game_var_full, appid=self.appid, configured=True,
+                    game_type=self.game_var, appid=self.appid, configured=True,
                 )
         except Exception as e:
             self.logger.debug("Install registry update skipped: %s", e)

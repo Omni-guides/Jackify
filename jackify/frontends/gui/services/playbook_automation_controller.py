@@ -176,6 +176,8 @@ class PlaybookAutomationController(QObject):
             lambda results: self._on_worker_done(parent, hook, registry, identity, step_ctx, install_key, results)
         )
         self._worker.finished.connect(self._worker.deleteLater)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+        register_managed_thread(self._worker)
         self._worker.start()
 
     @Slot(str)

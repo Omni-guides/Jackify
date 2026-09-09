@@ -6,7 +6,7 @@ Used by both parser and GUI components.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from typing import ClassVar, List, Dict, Optional, Tuple
 from enum import Enum
 import time
 
@@ -82,6 +82,10 @@ class FileProgress:
 @dataclass
 class InstallationProgress:
     """Complete installation progress state."""
+    # Minimum real time span required between the oldest and newest _data_history sample
+    # before _get_average_speed() trusts a byte-delta calculation - see that method.
+    MIN_BYTE_DELTA_SPAN_SECONDS: ClassVar[float] = 3.0
+
     phase: InstallationPhase = InstallationPhase.UNKNOWN
     phase_name: str = ""  # Human-readable phase name
     phase_step: int = 0  # Current step in phase
@@ -157,55 +161,57 @@ class InstallationProgress:
         self._speed_history = [(t, s) for t, s in self._speed_history if t >= cutoff_time]
     
     def _update_data_history(self):
-        """Update data history for calculating average speed from data processed over time."""
+        """Sample data_processed at most once per real second, win or lose. data_processed
+        has ~100MB quantization (from the engine's "X.X GB remaining" field, one decimal
+        place of GB - confirmed against real output), so a burst of calls within the same
+        fraction of a second could otherwise record two samples that differ by a full
+        rounding step over a near-zero elapsed time - see _get_average_speed()."""
         if self.data_processed <= 0:
             return
-        
+
         current_time = time.time()
-        
-        # Only add if data has changed or enough time has passed (avoid spam)
+
         if self._data_history:
             last_time, last_data = self._data_history[-1]
-            # Only add if data changed by at least 1MB or 5 seconds passed
+            if current_time - last_time < 1.0:
+                return
             if self.data_processed == last_data and (current_time - last_time) < 5.0:
                 return
-        
+
         self._data_history.append((current_time, self.data_processed))
-        
+
         # Keep only last 60 seconds
         cutoff_time = current_time - 60.0
         self._data_history = [(t, d) for t, d in self._data_history if t >= cutoff_time]
     
     def _get_average_speed(self, window_seconds: float = 30.0) -> float:
-        """
-        Get average download speed over the last N seconds.
-        Uses both speed history and data history for more accurate calculation.
-        
-        Args:
-            window_seconds: Time window to average over (default 30 seconds)
-            
-        Returns:
-            Average speed in bytes per second, or -1 if insufficient data
+        """Fallback average speed for when _sum_active_download_speeds() has no data yet
+        (see get_overall_speed_display()). Prefers byte-delta (data_processed over elapsed
+        time) over the engine's raw reported samples, requiring at least
+        MIN_BYTE_DELTA_SPAN_SECONDS between the oldest/newest sample so ~100MB quantization
+        in data_processed (see _update_data_history) can't dominate a too-short span.
+
+        Returns average speed in bytes per second, or -1 if insufficient data.
         """
         current_time = time.time()
         cutoff_time = current_time - window_seconds
-        
-        # Method 1: Use speed history if available
-        recent_speeds = [s for t, s in self._speed_history if t >= cutoff_time]
-        if len(recent_speeds) >= 3:  # Need at least 3 samples
-            return sum(recent_speeds) / len(recent_speeds)
-        
-        # Method 2: Calculate from data history (more accurate for varying speeds)
+
+        # Method 1 (preferred): byte-delta from data actually processed over elapsed time.
         recent_data = [(t, d) for t, d in self._data_history if t >= cutoff_time]
         if len(recent_data) >= 2:
-            # Calculate average speed from data processed over time
             oldest = recent_data[0]
             newest = recent_data[-1]
             time_diff = newest[0] - oldest[0]
             data_diff = newest[1] - oldest[1]
-            if time_diff > 0:
+            if time_diff >= self.MIN_BYTE_DELTA_SPAN_SECONDS and data_diff >= 0:
                 return data_diff / time_diff
-        
+
+        # Method 2 (fallback): average the engine's own raw reported speed samples -
+        # only used before enough data history has accumulated (e.g. right at phase start).
+        recent_speeds = [s for t, s in self._speed_history if t >= cutoff_time]
+        if len(recent_speeds) >= 3:  # Need at least 3 samples
+            return sum(recent_speeds) / len(recent_speeds)
+
         # Fallback: Use current instantaneous speed
         return self.get_speed('download')
     
@@ -301,24 +307,76 @@ class InstallationProgress:
             return ""
         return self._format_eta(eta_seconds)
     
+    def _sum_active_download_speeds(self, max_age_seconds: float = 5.0) -> float:
+        """Combined download speed = sum of each currently-active file's own reported
+        speed, mirroring CLF3's proven approach (progress_cli.rs: bar_speeds.iter().sum())
+        rather than trusting jackify-engine's own aggregate "X.XMB/s" line.
+
+        That aggregate line has been observed reading 0.0 (or far too low) while several
+        files are simultaneously transferring at tens of MB/s each per their own per-file
+        lines - a NIC-read measurement bug isolated to the engine's aggregate computation
+        specifically. Each individual file's own reported speed does not share that bug
+        (confirmed against real engine output: per-file speeds climb smoothly as a transfer
+        progresses and only ever read 0 at 0% or on completion, never while genuinely
+        active) - it behaves like the same "bytes transferred / elapsed time since this
+        download started" average CLF3 computes explicitly, just computed engine-side.
+        Summing several such individually-honest per-file averages gives a stable combined
+        figure without needing to invent a separate smoothing/windowing layer of our own.
+        """
+        now = time.time()
+        total = 0.0
+        any_active = False
+        for fp in self.active_files:
+            if fp.operation != OperationType.DOWNLOAD:
+                continue
+            if fp.percent >= 100.0:
+                continue
+            if now - fp.last_update > max_age_seconds:
+                continue
+            any_active = True
+            if fp.speed > 0:
+                total += fp.speed
+        return total if any_active else -1.0
+
     def get_overall_speed_display(self) -> str:
         """Get overall speed display from aggregate speeds reported by engine."""
         def _fresh_speed(op_key: str) -> float:
-            """Return speed if recently updated, else 0."""
+            """Return speed if recently updated, else 0.
+
+            Download speed arrives irregularly (per-file-completion rather than
+            continuously), so a raw last-sample value under a short freshness
+            cutoff flips between blank and bursty numbers. Average it over a
+            rolling window instead and tolerate a longer gap before blanking.
+            """
+            if op_key == 'download':
+                summed = self._sum_active_download_speeds()
+                if summed >= 0.0:
+                    return summed
+                # No active per-file speed data yet (e.g. right at phase start, before any
+                # "Downloading: ..." line has been seen) - fall back to the engine's own
+                # raw aggregate samples/byte-delta rather than showing nothing.
+                if 'download' not in self.speeds:
+                    return 0.0
+                updated_at = self.speed_timestamps.get('download', 0.0)
+                if updated_at == 0.0 or time.time() - updated_at > 10.0:
+                    return 0.0
+                self._update_data_history()
+                return max(0.0, self._get_average_speed(window_seconds=10.0))
+
             if op_key not in self.speeds:
                 return 0.0
             updated_at = self.speed_timestamps.get(op_key, 0.0)
             if updated_at == 0.0:
                 return 0.0
-            if time.time() - updated_at > 2.0:
+            age = time.time() - updated_at
+            if age > 2.0:
                 return 0.0
             return max(0.0, self.speeds.get(op_key, 0.0))
 
-        # Use aggregate speeds from engine status lines
-        # The engine reports accurate total speeds in lines like:
-        # "[00:00:10] Downloading Mod Archives (17/214) - 6.8MB/s"
-        # These aggregate speeds are stored in self.speeds dict and are the source of truth
-        # DO NOT sum individual file speeds - that inflates the total incorrectly
+        # Aggregate download speed sums each currently-active file's own reported speed
+        # (see _sum_active_download_speeds) rather than trusting the engine's own aggregate
+        # "X.XMB/s" line. Other operations still use the engine's raw reported speed
+        # directly.
 
         # Try to get speed for current phase first
         phase_operation_map = {

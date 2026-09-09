@@ -306,9 +306,12 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         self._combo.addItem("Loading modlists...")
         self._combo.setEnabled(False)
         self._apply_btn.setEnabled(False)
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._loader = _ShortcutLoaderThread()
         self._loader.finished_signal.connect(self._on_shortcuts_loaded)
         self._loader.error_signal.connect(self._on_shortcuts_error)
+        register_managed_thread(self._loader)
         self._loader.start()
 
     def _on_shortcuts_loaded(self, shortcuts: list):
@@ -346,10 +349,13 @@ class ConfigureToolConfigScreen(ThreadLifecycleMixin, QWidget):
         self._apply_btn.setEnabled(False)
         self._combo.setEnabled(False)
 
+        from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
+
         self._apply_thread = _ApplyThread(appid)
         self._apply_thread.log_signal.connect(self._activity_log.append)
         self._apply_thread.log_signal.connect(self.console.append)
         self._apply_thread.finished_signal.connect(self._on_apply_finished)
+        register_managed_thread(self._apply_thread)
         self._apply_thread.start()
 
     def _on_apply_finished(self, success: bool):

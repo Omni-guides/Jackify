@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from jackify.backend.services.tool_icons import get_cached_icon_path
 from jackify.backend.services.tool_registry import ToolRegistry, ToolStatus, set_active_engine_id
+from jackify.backend.services.tool_version_compare import is_tool_update_available
 from jackify.frontends.gui.screens.modlist_dashboard_card import CARD_HEIGHT, CARD_WIDTH, IMAGE_HEIGHT, IMAGE_WIDTH
 from jackify.frontends.gui.services.message_service import MessageService, open_url
 from jackify.frontends.gui.shared_theme import (  # noqa: F401 - btn_style re-exported for callers
@@ -289,7 +290,7 @@ class ToolCard(QFrame):
     def set_latest_version(self, tag: str) -> bool:
         self._status.latest_version = tag
         if self._status.installed and self._status.installed_version and tag != "unknown":
-            self._status.update_available = tag.lstrip("v") != self._status.installed_version.lstrip("v")
+            self._status.update_available = is_tool_update_available(tag, self._status.installed_version)
         self._refresh_ui()
         return self._status.update_available
 

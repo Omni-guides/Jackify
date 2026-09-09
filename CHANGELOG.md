@@ -1,5 +1,44 @@
 # Jackify Changelog
 
+## v0.8.1 - Stability and Quality of Life
+**Release Date:** 2026-09-09
+
+### New
+- Jackify now backs up a modlist's profiles folder (modlist.txt, plugin load order, etc.) after
+  every successful install or update, saved alongside the modlist itself. If something small
+  gets broken later, you can restore from the backup instead of reinstalling from scratch.
+- Added "Add/Remove MO2 Skip" to Modlist Properties. Injects the appropriate moshortcut:// to
+  the Steam Launch Options for the chosen modlist, which skips showing Mod Organizer 2's own
+  window when launched from Steam, instead loading straight into the game.
+- The Game Version Downgrader can now downgrade the Creation Kit for Skyrim Special Edition and
+  Fallout 4, not just the base game.
+
+### Improvements
+- The failed-download dialog now recognizes when the actual problem is a game file that doesn't
+  match what the modlist expects (usually after a Bethesda game update), and points you at the 
+  Downgrade Game Version tool instead of generic network troubleshooting advice.
+- Improved the archive download total speed reporting during modlist install.
+- TTW Linux Installer now downloads via Nexus Mods instead of GitHub, the same way Radium
+  Textures already does. Nexus Premium accounts get an automatic download; everyone else is
+  guided through a manual download instead. This was changed upstream.
+- Trying to install a Nexus-only tool (TTW Linux Installer, Radium Textures) while not logged
+  into Nexus now tells you to connect your account in Settings, instead of showing a raw error.
+
+### Fixes
+- Fixed a crash that could happen when Jackify closes while a background task (such as
+  checking for updates or refreshing modlist data) is still running.
+- The Game Version Downgrader no longer pops a confusing "waiting for input" dialog during
+  slow phases (large game, slow connection or drive) that were mistaken for a stuck prompt.
+  Real prompts it needs to ask (Steam login, Steam Guard code, confirmations) still show their
+  own dedicated dialogs as before; Cancel remains available at any time.
+- The CLI now applies known mod fixes (disabling incompatible mods, creating required game
+  save folders such as Dialogue History's) after install and reconfigure - previously this
+  only happened in the GUI.
+- Fixed an error that could appear when opening the modlist gallery, caused by the background
+  thread cleanup added in this release.
+- Fixed "Change Version" staying clickable for Nexus-only tools (TTW Linux Installer, Radium
+  Textures) and producing an error, instead of being disabled as intended.
+
 ## v0.8 - Modding Platform Release
 **Release Date:** 2026-08-29
 

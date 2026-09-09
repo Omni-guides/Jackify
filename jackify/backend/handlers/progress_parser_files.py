@@ -93,16 +93,23 @@ class ProgressParserFilesMixin:
         if re.search(r'\[.*?\]\s*(?:Downloading|Installing|Extracting)\s+(?:Mod|Files|Archives)', line, re.IGNORECASE):
             return None
 
-        match = re.search(r'(?:Installing|Downloading|Extracting|Validating):\s*(.+?)\s*\((\d+(?:\.\d+)?)%\)', line, re.IGNORECASE)
+        match = re.search(
+            r'(?:Installing|Downloading|Extracting|Validating):\s*(.+?)\s*\((\d+(?:\.\d+)?)%\)'
+            r'\s*(?:\[([^\]]+)\])?',
+            line, re.IGNORECASE
+        )
         if match:
             filename = match.group(1).strip()
             percent = float(match.group(2))
+            speed_str = match.group(3)
             operation = self._detect_operation_from_line(line)
             file_progress = FileProgress(
                 filename=filename,
                 operation=operation,
                 percent=percent
             )
+            if speed_str:
+                file_progress.speed = self._parse_speed_from_string(speed_str)
             size_info = self._extract_data_info(line)
             if size_info:
                 file_progress.current_size, file_progress.total_size = size_info
