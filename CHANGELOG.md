@@ -1,5 +1,13 @@
 # Jackify Changelog
 
+## v0.8.1.1 - Hotfix
+**Release Date:** 11/09/26
+
+- Fixed Steam shortcut creation failing on some single Steam-account setups, where Steam
+  doesn't mark a "most recent" login user the way Jackify expected.
+
+---
+
 ## v0.8.1 - Stability and Quality of Life
 **Release Date:** 2026-09-09
 

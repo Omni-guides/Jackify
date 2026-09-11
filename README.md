@@ -100,10 +100,6 @@ At this early stage of development, I'd prefer GitHub Issues for bug reports and
 - GUI refinements
 - Dark/Light theme support
 
-## Legacy Guides
-
-The original bash scripts and step-by-step manual installation guides are preserved in the [Legacy Guides](https://github.com/Omni-guides/Jackify/wiki/Legacy-Wiki-Home) for those who prefer them or need a fallback.
-
 ## License
 
 This project is licensed under the GPLv3 License. See the LICENSE file for details.

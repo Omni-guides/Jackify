@@ -116,6 +116,26 @@ class NativeSteamService:
 
         return False
 
+    def _find_user_from_userdata_directory(self) -> Optional[int]:
+        """
+        Fallback for when loginusers.vdf has no usable entry: pick the most
+        recently modified numeric userdata directory that has a config subdir.
+        """
+        if not self.userdata_path or not self.userdata_path.exists():
+            return None
+
+        user_dirs = [
+            entry for entry in self.userdata_path.iterdir()
+            if entry.is_dir() and entry.name.isdigit() and (entry / "config").is_dir()
+        ]
+        if not user_dirs:
+            return None
+
+        user_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        steamid3 = int(user_dirs[0].name)
+        logger.info(f"Found userdata directory fallback candidate: SteamID3={steamid3}")
+        return steamid3
+
     def _get_most_recent_user_from_loginusers(self) -> Optional[str]:
         """
         Parse loginusers.vdf to get the SteamID64 of the most recent user.
@@ -139,15 +159,19 @@ class NativeSteamService:
             most_recent_timestamp = 0
 
             # Find user with MostRecent=1 or highest timestamp
+            # Key case varies by Steam client/config: some write "MostRecent"/"Timestamp",
+            # others (single-account, AutoLogin) write "timestamp" and omit MostRecent
+            # entirely (issue #236) - match case-insensitively instead of by exact key.
             for steamid64, user_data in users_section.items():
                 if isinstance(user_data, dict):
-                    # Check for MostRecent flag first
-                    if user_data.get("MostRecent") == "1":
+                    fields = {k.lower(): v for k, v in user_data.items()}
+
+                    if fields.get("mostrecent") == "1":
                         logger.info(f"Found user marked as MostRecent: {steamid64}")
                         return steamid64
 
                     # Also track highest timestamp as fallback
-                    timestamp = int(user_data.get("Timestamp", "0"))
+                    timestamp = int(fields.get("timestamp", "0"))
                     if timestamp > most_recent_timestamp:
                         most_recent_timestamp = timestamp
                         most_recent_user = steamid64
