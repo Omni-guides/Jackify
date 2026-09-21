@@ -422,6 +422,10 @@ class ModlistPropertiesDialog(QDialog):
             self._proton_status_label.setText(message or "Proton version updated.")
         else:
             self._proton_status_label.setText(f"Failed: {message}")
+            MessageService.warning(
+                self, "Proton Version Change Failed",
+                message or "Could not change the Proton version.",
+            )
 
     def _refresh_mo2_skip_button(self):
         from jackify.backend.services.modlist_properties_service import mo2_skip_status
@@ -496,6 +500,10 @@ class ModlistPropertiesDialog(QDialog):
             self._mo2_skip_status_label.setText(message or "MO2 Skip updated.")
         else:
             self._mo2_skip_status_label.setText(f"Failed: {message}")
+            MessageService.warning(
+                self, "MO2 Skip Failed",
+                message or "Could not update MO2 Skip.",
+            )
 
     def _on_change_artwork(self):
         from pathlib import Path

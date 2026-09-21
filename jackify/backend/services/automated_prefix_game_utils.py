@@ -98,9 +98,14 @@ class GameUtilsMixin:
             # Anchor VR check to gameName= to avoid false positives from plugin
             # setting keys like enable_skyrimVR=false appearing in SE modlists.
             for _line in content.splitlines():
-                if _line.strip().startswith("gamename="):
-                    game_name_value = _line.strip()[len("gamename="):]
-                    if 'skyrim vr' in game_name_value or 'skyrimvr' in game_name_value:
+                stripped = _line.strip()
+                if "=" not in stripped:
+                    continue
+                _key, _, _value = stripped.partition("=")
+                # MO2's own QSettings re-save writes "key = value" with spaces, not the
+                # unspaced form a freshly-packaged modlist ships with.
+                if _key.strip() == "gamename":
+                    if 'skyrim vr' in _value or 'skyrimvr' in _value:
                         return False
                     break
             return 'skyrim special edition' in content or 'skse64_loader' in content

@@ -306,8 +306,13 @@ class ModlistDetectionMixin:
                     game_name_value = ""
                     for _line in content.splitlines():
                         stripped_line = _line.strip()
-                        if stripped_line.startswith("gamename="):
-                            game_name_value = stripped_line[len("gamename="):]
+                        if "=" not in stripped_line:
+                            continue
+                        _key, _, _value = stripped_line.partition("=")
+                        # MO2's own QSettings re-save writes "key = value" with spaces,
+                        # not the unspaced form a freshly-packaged modlist ships with.
+                        if _key.strip() == "gamename":
+                            game_name_value = _value
                             break
                     if 'nvse' in content or 'nvse_loader' in content or 'fallout new vegas' in content or 'falloutnv' in content:
                         self.logger.info("Detected FNV via ModOrganizer.ini markers")
@@ -368,6 +373,14 @@ class ModlistDetectionMixin:
             if bg3_exe.exists() or bg3_dx11_exe.exists():
                 self.logger.info(f"Detected BG3 modlist: found BG3 executable in '{base}'")
                 return "bg3"
+            sksevr_loader = base / "sksevr_loader.exe"
+            if sksevr_loader.exists():
+                self.logger.info(f"Detected Skyrim VR modlist: found sksevr_loader.exe in '{base}'")
+                return "skyrimvr"
+            f4sevr_loader = base / "f4sevr_loader.exe"
+            if f4sevr_loader.exists():
+                self.logger.info(f"Detected Fallout 4 VR modlist: found f4sevr_loader.exe in '{base}'")
+                return "fallout4vr"
 
         # Final heuristic using game_var
         try:

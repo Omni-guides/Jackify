@@ -1,5 +1,17 @@
 # Jackify Changelog
 
+## v0.8.1.2 - Hotfix
+**Release Date:** 21/09/26
+
+- Fixed game type sometimes being misidentified as the wrong game during modlist configuration.
+- Fixed a rare issue where creating or removing a Steam shortcut could break a shortcuts.vdf interaction.
+- Fixed some Wine components (DirectX/.NET runtimes) sometimes being marked as installed when they
+  actually weren't, which could let a modlist installation report success despite missing dependencies.
+- Fixed the Tools Hub jackify-engine version display getting stuck on the old version after a
+  successful update, sometimes making a real update look like it had silently failed.
+
+---
+
 ## v0.8.1.1 - Hotfix
 **Release Date:** 11/09/26
 

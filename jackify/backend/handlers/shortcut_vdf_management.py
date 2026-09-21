@@ -208,25 +208,29 @@ class ShortcutVDFManagementMixin:
         if tags is None:
             tags = []
 
+        # A parse/access failure on an existing file must abort, not fall back to an
+        # empty dict - that fallback is what let this method silently overwrite a
+        # user's real shortcuts.vdf with a blank one plus the new entry.
         data = {'shortcuts': {}}
 
-        try:
-            if os.path.exists(shortcuts_file):
+        if os.path.exists(shortcuts_file):
+            try:
                 with open(shortcuts_file, 'rb') as f:
                     file_data = f.read()
-                    if file_data:
-                        try:
-                            data = vdf.binary_loads(file_data)
-                            if 'shortcuts' not in data:
-                                data['shortcuts'] = {}
-                        except Exception as e:
-                            self.logger.warning(f"Could not parse existing shortcuts.vdf: {e}")
-                            data = {'shortcuts': {}}
-            else:
-                self.logger.info(f"shortcuts.vdf not found at {shortcuts_file}. A new file will be created.")
-        except Exception as e:
-            self.logger.warning(f"Error accessing shortcuts.vdf: {e}")
-            data = {'shortcuts': {}}
+            except Exception as e:
+                self.logger.error(f"Error accessing shortcuts.vdf, aborting to avoid data loss: {e}")
+                return False, None
+
+            if file_data:
+                try:
+                    data = vdf.binary_loads(file_data)
+                except Exception as e:
+                    self.logger.error(f"Could not parse existing shortcuts.vdf, aborting to avoid data loss: {e}")
+                    return False, None
+                if 'shortcuts' not in data:
+                    data['shortcuts'] = {}
+        else:
+            self.logger.info(f"shortcuts.vdf not found at {shortcuts_file}. A new file will be created.")
 
         if 'shortcuts' not in data:
             data['shortcuts'] = {}

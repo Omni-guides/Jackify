@@ -87,18 +87,8 @@ Path={src_dir}
             else:
                 logger.debug("Desktop file up to date, skipping write")
 
-            logger.info("Registering jackify:// protocol handler")
-            apps_dir = Path.home() / ".local" / "share" / "applications"
-            subprocess.run(['update-desktop-database', str(apps_dir)], capture_output=True, timeout=10)
-            subprocess.run(
-                ['xdg-mime', 'default', 'com.jackify.app.desktop', 'x-scheme-handler/jackify'],
-                capture_output=True, timeout=10
-            )
-            subprocess.run(
-                ['xdg-settings', 'set', 'default-url-scheme-handler', 'jackify', 'com.jackify.app.desktop'],
-                capture_output=True, timeout=10
-            )
             mimeapps_path = Path.home() / ".config" / "mimeapps.list"
+            mimeapps_updated = False
             try:
                 if mimeapps_path.exists():
                     content = mimeapps_path.read_text()
@@ -115,10 +105,26 @@ Path={src_dir}
                             break
                     content = '\n'.join(lines)
                     mimeapps_path.write_text(content)
+                    mimeapps_updated = True
                     logger.info("Added jackify handler to mimeapps.list")
             except Exception as e:
                 logger.warning("Failed to update mimeapps.list: %s", e)
-            logger.info("jackify:// protocol registered successfully")
+
+            if needs_write or mimeapps_updated:
+                logger.info("Registering jackify:// protocol handler")
+                apps_dir = Path.home() / ".local" / "share" / "applications"
+                subprocess.run(['update-desktop-database', str(apps_dir)], capture_output=True, timeout=10)
+                subprocess.run(
+                    ['xdg-mime', 'default', 'com.jackify.app.desktop', 'x-scheme-handler/jackify'],
+                    capture_output=True, timeout=10
+                )
+                subprocess.run(
+                    ['xdg-settings', 'set', 'default-url-scheme-handler', 'jackify', 'com.jackify.app.desktop'],
+                    capture_output=True, timeout=10
+                )
+                logger.info("jackify:// protocol registered successfully")
+            else:
+                logger.debug("jackify:// protocol already registered, skipping xdg calls")
             return True
         except Exception as e:
             logger.warning("Failed to register jackify:// protocol: %s", e)

@@ -10,14 +10,15 @@ import json
 import logging
 import os
 import re
-import tarfile
-import zipfile
 from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from jackify.backend.services.archive_extraction import (
+    _extract_archive, _extract_nested_archives, _find_7z_binary,
+)
 from jackify.backend.services.manifest_versioning import is_newer
 from jackify.backend.services.tool_manifest_cache import (
     disk_cache_path as _disk_cache_path,
@@ -397,92 +398,6 @@ def _verify_sha256_sums(sums_path: Path, target_path: Path) -> Tuple[bool, str]:
         return True, ""
     except Exception as e:
         return False, f"SHA256 verification error: {e}"
-
-
-def _find_7z_binary() -> Optional[str]:
-    """Return path to 7z binary: bundled first, then system."""
-    import shutil
-    candidates = [
-        Path(__file__).parent.parent.parent / "tools" / "7z",
-    ]
-    appdir = os.environ.get("APPDIR")
-    if appdir:
-        candidates.insert(0, Path(appdir) / "opt" / "jackify" / "tools" / "7z")
-    for c in candidates:
-        if c.is_file() and os.access(c, os.X_OK):
-            return str(c)
-    return shutil.which("7z") or shutil.which("7zz")
-
-
-def _extract_archive(file_path: Path, target_dir: Path, delete_archive: bool = True) -> Tuple[bool, str]:
-    """Extract an archive or chmod an AppImage in place.
-
-    Deletes the archive after successful extraction unless delete_archive=False.
-    Never deletes the archive on failure.
-    """
-    import subprocess
-    name_lower = file_path.name.lower()
-    extracted = False
-    try:
-        if name_lower.endswith(".tar.gz") or name_lower.endswith(".tgz"):
-            with tarfile.open(file_path, "r:gz") as tf:
-                tf.extractall(path=target_dir)
-            extracted = True
-        elif name_lower.endswith(".zip"):
-            with zipfile.ZipFile(file_path, "r") as zf:
-                zf.extractall(path=target_dir)
-            extracted = True
-        elif name_lower.endswith(".7z"):
-            sevenzip = _find_7z_binary()
-            if not sevenzip:
-                return False, "7z binary not found - cannot extract .7z archive"
-            result = subprocess.run(
-                [sevenzip, "x", str(file_path), f"-o{target_dir}", "-y"],
-                capture_output=True, text=True,
-            )
-            if result.returncode != 0:
-                return False, f"7z extraction failed: {result.stderr.strip() or result.stdout.strip()}"
-            extracted = True
-        elif name_lower.endswith(".appimage"):
-            file_path.chmod(0o755)
-        else:
-            return False, f"Unsupported format: {file_path.name}"
-    finally:
-        if extracted and delete_archive:
-            try:
-                file_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-    if extracted:
-        _chmod_elf_binaries(target_dir)
-    return True, ""
-
-
-def _extract_nested_archives(directory: Path) -> None:
-    """Extract any zip/tar.gz/7z files sitting directly inside directory, then delete them."""
-    for child in list(directory.iterdir()):
-        if not child.is_file():
-            continue
-        name_lower = child.name.lower()
-        if any(name_lower.endswith(ext) for ext in (".zip", ".tar.gz", ".tgz", ".7z")):
-            ok, err = _extract_archive(child, directory, delete_archive=True)
-            if not ok:
-                logger.warning("Nested archive extraction failed for %s: %s", child.name, err)
-
-
-def _chmod_elf_binaries(directory: Path) -> None:
-    """Set executable bit on any ELF binaries found in directory tree."""
-    ELF_MAGIC = b'\x7fELF'
-    for f in directory.rglob("*"):
-        if not f.is_file():
-            continue
-        try:
-            with open(f, 'rb') as fh:
-                magic = fh.read(4)
-            if magic == ELF_MAGIC:
-                f.chmod(f.stat().st_mode | 0o111)
-        except Exception:
-            pass
 
 
 def _download_and_extract(
@@ -884,7 +799,10 @@ class ToolRegistry:
         binary_path = Path(binary_path_str) if binary_path_str else None
         installed = installed_version is not None and (binary_path is None or binary_path.is_file())
 
-        if defn.tool_id == "jackify-engine":
+        if not installed and defn.tool_id == "jackify-engine":
+            # Fallback only for a bundled engine Tools Hub has never downloaded itself -
+            # must not run once Tools Hub has a tracked install, or it permanently
+            # overwrites that install's version/path with the AppRun-managed copy's.
             try:
                 from jackify.backend.core import modlist_operations as _mo
                 real_path = Path(_mo.get_jackify_engine_path())

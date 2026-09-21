@@ -27,19 +27,40 @@ _SPECIAL_TYPE_TO_CANONICAL = {
     "fo3": "fallout3",
 }
 
-# Last-resort content scan when gameName= is missing or unrecognized. Order doesn't matter
-# much in practice - detect_special_game_type() already claims FNV/FO3/Enderal/etc first, so
-# by the time this runs only the "standard" engines are still in play.
+# Last-resort content scan when gameName= is missing or unrecognized. Precise loader-exe
+# filenames are checked first, across every game, before any loose word marker - issue #238
+# was a Starfield modlist misdetected as Oblivion because the loose "oblivion" word matched a
+# cross-game MO2 plugin name ("Oblivion Support Plugin") before "starfield" was even reached.
+# A precise marker like sfse_loader.exe won't collide with unrelated plugin/mod names the way
+# a bare game-name word can, so it must always win over a later game's loose word match.
+# sksevr_loader.exe/f4sevr_loader.exe added after a FUS (Skyrim VR) modlist was found
+# misdetected as Oblivion this same way - detect_special_game_type()'s own gameName= check
+# for skyrimvr never matched (Wabbajack's packaged gameName= for VR modlists is inconsistent),
+# so it fell through to this scan, which had no VR-aware marker at all to compete with
+# whatever "oblivion" substring won by default.
+# bg3.exe/cyberpunk2077.exe/enderal launcher.exe added at the same time, closing the same
+# gap for the two game types (bg3, cp2077) that previously had no entry here at all, and
+# for enderal, whose only entry was a bare loose word sitting after "oblivion" below -
+# every game type detect_special_game_type() knows about now also has a precise marker
+# here, so none of them can lose to a loose "oblivion" word by default.
 _LOADER_MARKERS = (
     ("skse64_loader.exe", "skyrim"),
-    ("skyrim special edition", "skyrim"),
     ("f4se_loader.exe", "fallout4"),
-    ("fallout 4", "fallout4"),
     ("nvse_loader.exe", "falloutnv"),
-    ("fallout new vegas", "falloutnv"),
     ("fose_loader.exe", "fallout3"),
-    ("fallout 3", "fallout3"),
     ("obse_loader.exe", "oblivion"),
+    ("obse64_loader.exe", "oblivion_remastered"),
+    ("sfse_loader.exe", "starfield"),
+    ("sksevr_loader.exe", "skyrimvr"),
+    ("f4sevr_loader.exe", "fallout4vr"),
+    ("enderal launcher.exe", "enderal"),
+    ("bg3.exe", "bg3"),
+    ("bg3_dx11.exe", "bg3"),
+    ("cyberpunk2077.exe", "cp2077"),
+    ("skyrim special edition", "skyrim"),
+    ("fallout 4", "fallout4"),
+    ("fallout new vegas", "falloutnv"),
+    ("fallout 3", "fallout3"),
     ("oblivion", "oblivion"),
     ("starfield", "starfield"),
     ("enderal", "enderal"),
@@ -107,8 +128,14 @@ def detect_from_install(install_dir: Union[str, Path]) -> Optional[str]:
 
     for raw_line in content.splitlines():
         line = raw_line.strip()
-        if line.startswith("gamename="):
-            canonical = normalize_game_name(line[len("gamename="):].strip())
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        # MO2 itself re-saves this file via Qt's QSettings, which writes "key = value"
+        # (spaces around "="), not the unspaced "key=value" a freshly-packaged modlist ships
+        # with - match on the key alone so both formats work (issue #238).
+        if key.strip() == "gamename":
+            canonical = normalize_game_name(value.strip())
             if canonical:
                 return canonical
             break

@@ -20,6 +20,16 @@ from jackify.shared.steam_utils import get_ordered_steam_roots, STEAM_PREFERENCE
 
 logger = logging.getLogger(__name__)
 
+
+class ShortcutsVdfParseError(Exception):
+    """shortcuts.vdf exists but could not be parsed.
+
+    Must never be treated as an empty shortcuts file - doing so is what let
+    create_shortcut()/remove_shortcut() silently overwrite a user's real
+    shortcut library with a blank one.
+    """
+
+
 class NativeSteamService:
     """
     Native Steam shortcut and Proton management service.
@@ -221,23 +231,30 @@ class NativeSteamService:
         return self.user_config_path / "localconfig.vdf"
     
     def read_shortcuts_vdf(self) -> Dict[str, Any]:
-        """Read the shortcuts.vdf file safely"""
+        """Read the shortcuts.vdf file safely.
+
+        Returns {'shortcuts': {}} only when the file genuinely does not exist -
+        a new one is created from that starting point. If it exists but fails
+        to parse, raises ShortcutsVdfParseError instead: callers must not
+        treat a parse failure as an empty file, or a subsequent write silently
+        destroys every real shortcut in it.
+        """
         shortcuts_path = self.get_shortcuts_vdf_path()
         if not shortcuts_path:
             return {'shortcuts': {}}
-        
+
+        if not shortcuts_path.exists():
+            logger.info("shortcuts.vdf does not exist, will create new one")
+            return {'shortcuts': {}}
+
         try:
-            if shortcuts_path.exists():
-                with open(shortcuts_path, 'rb') as f:
-                    data = vdf.binary_load(f)
-                return data
-            else:
-                logger.info("shortcuts.vdf does not exist, will create new one")
-                return {'shortcuts': {}}
-                
+            with open(shortcuts_path, 'rb') as f:
+                data = vdf.binary_load(f)
+            return data
+
         except Exception as e:
             logger.error(f"Error reading shortcuts.vdf: {e}")
-            return {'shortcuts': {}}
+            raise ShortcutsVdfParseError(str(e)) from e
     
     def write_shortcuts_vdf(self, data: Dict[str, Any]) -> bool:
         """Write the shortcuts.vdf file safely"""

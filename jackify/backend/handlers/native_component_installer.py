@@ -329,6 +329,11 @@ class NativeComponentInstaller(ComponentDownloadMixin):
                             [cabextract, '-d', str(dest_dir), '-L', '-F', dll_filter, str(inner_cab)],
                             capture_output=True,
                         )
+                    if not list(dest_dir.glob(dll_filter)):
+                        self.logger.error(
+                            "%s: %s not found in %s after extraction", component, dll_filter, dest_dir
+                        )
+                        return False
 
             if needs_regsvr32:
                 com_dlls = list(syswow64.glob('xactengine*.dll')) + list(syswow64.glob('xaudio*.dll'))
@@ -504,6 +509,9 @@ class NativeComponentInstaller(ComponentDownloadMixin):
                     zf.extractall(dest)
             except Exception as exc:
                 self.logger.error("%s zip extraction failed for %s: %s", component, zip_path.name, exc)
+                return False
+            if not (dest / 'dotnet.exe').is_file():
+                self.logger.error("%s: dotnet.exe missing in %s after extraction", component, dest)
                 return False
         return True
 
