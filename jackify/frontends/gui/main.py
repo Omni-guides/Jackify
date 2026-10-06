@@ -287,6 +287,17 @@ def main(initial_nxm_url: str = ""):
 
     _mode = 'AppImage' if os.environ.get('APPIMAGE') else 'dev'
     root_logger.info("Jackify %s starting (GUI, %s)", jackify_version, _mode)
+
+    def _log_startup_timing(stage: str) -> None:
+        try:
+            import psutil
+            import time as _time
+            elapsed = _time.time() - psutil.Process().create_time()
+            root_logger.info("Startup timing: %s at %.2fs since process start", stage, elapsed)
+        except Exception:
+            pass
+
+    _log_startup_timing("logging ready")
     if debug_mode:
         root_logger.debug("Debug mode enabled")
 
@@ -302,6 +313,7 @@ def main(initial_nxm_url: str = ""):
 
     # Launch GUI application
     app = QApplication.instance() or QApplication(sys.argv)
+    _log_startup_timing("QApplication created")
     # Set application name before desktop file name to ensure proper window title/icon on PopOS/Ubuntu
     app.setApplicationName("Jackify")
     app.setApplicationDisplayName("Jackify")
@@ -383,8 +395,11 @@ def main(initial_nxm_url: str = ""):
 
     app.setWindowIcon(icon)
     window = JackifyMainWindow(dev_mode=dev_mode)
+    _log_startup_timing("main window constructed")
     window.setWindowIcon(icon)
     window.show()
+    _log_startup_timing("window.show() returned")
+    QTimer.singleShot(0, lambda: _log_startup_timing("event loop running"))
     
     # On Steam Deck, set window to maximized to prevent button overlap with Show Details console
     if hasattr(window, 'system_info') and window.system_info.is_steamdeck:

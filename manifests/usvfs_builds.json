@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "supported_games": ["skyrim", "skyrimse", "skyrimvr", "fallout4", "fallout4vr"],
+  "builds": {
+    "e2b766f418575021b9d350f384195ce6f23173169b37222cdef3d7fe5495f8b5": {
+      "version": "0.5.6.1",
+      "release_tag": "wine-shortname-optimization.2",
+      "asset_name": "usvfs_x64-v0.5.6.1.dll",
+      "patched_sha256": "d6bced794498f4129fac7df05f550252d74beb2cfde109cbdeee3902c07640bb"
+    },
+    "7ee7758433ab76713900e661056be8074b9c567971fde38fd0e514c76895e274": {
+      "version": "0.5.7.2",
+      "release_tag": "wine-shortname-optimization.2",
+      "asset_name": "usvfs_x64-v0.5.7.2.dll",
+      "patched_sha256": "7454334c1ea246a68ff8da492b5d63dae8cd2f1298f2d7105c920b5f593352aa"
+    },
+    "f3180fa5807a4bcf0982804aa8bde9efc432f56eaf3fa20c29d531785c70a27e": {
+      "version": "0.5.6.1",
+      "release_tag": "wine-shortname-optimization.2",
+      "asset_name": "usvfs_x64-v0.5.6.1.dll",
+      "patched_sha256": "d6bced794498f4129fac7df05f550252d74beb2cfde109cbdeee3902c07640bb"
+    },
+    "c697c54ca588e3b56f2be766d7f0432eacb4d616e5900ff8a49ed21e8f4e24ee": {
+      "version": "0.5.5.1",
+      "release_tag": "wine-shortname-optimization.2",
+      "asset_name": "usvfs_x64-v0.5.5.1.dll",
+      "patched_sha256": "cfafe6d46a083f797046da38c0c0b40bc257f7e4b161df75d3ccc600c0e8c72c"
+    }
+  }
+}

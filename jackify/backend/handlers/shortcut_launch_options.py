@@ -11,6 +11,18 @@ logger = logging.getLogger(__name__)
 _MANIFEST_FILE_RE = re.compile(r'<file\s+name="([^"]+)"\s*/>', re.IGNORECASE)
 
 
+def _sc_key(shortcut: dict, key: str) -> str:
+    """Return the key as stored in the entry; Steam rewrites shortcuts with lowercase keys."""
+    if key in shortcut:
+        return key
+    lower = key.lower()
+    return lower if lower in shortcut else key
+
+
+def _sc_get(shortcut: dict, key: str, default=''):
+    return shortcut.get(_sc_key(shortcut, key), default)
+
+
 class ShortcutLaunchOptionsMixin:
     """Mixin providing launch options and icon methods."""
 
@@ -34,9 +46,9 @@ class ShortcutLaunchOptionsMixin:
 
         exe_norm = _norm(exe_path)
         for shortcut_data in data.get('shortcuts', {}).values():
-            if (shortcut_data.get('AppName', '').strip() == app_name and
-                    _norm(shortcut_data.get('Exe', '')) == exe_norm):
-                return shortcut_data.get('LaunchOptions', '')
+            if ((_sc_get(shortcut_data, 'AppName') or '').strip() == app_name and
+                    _norm(_sc_get(shortcut_data, 'Exe')) == exe_norm):
+                return _sc_get(shortcut_data, 'LaunchOptions')
         return None
 
     def ensure_mounts_in_steam_compat(self, app_name: str, exe_path: str, *paths: str) -> str:
@@ -181,8 +193,8 @@ class ShortcutLaunchOptionsMixin:
         exe_norm = _normalize_path(exe_path)
         target_index = None
         for index, shortcut_data in data.get('shortcuts', {}).items():
-            shortcut_name = (shortcut_data.get('AppName', '') or '').strip()
-            shortcut_exe_raw = shortcut_data.get('Exe', '')
+            shortcut_name = (_sc_get(shortcut_data, 'AppName') or '').strip()
+            shortcut_exe_raw = _sc_get(shortcut_data, 'Exe')
             shortcut_exe_norm = _normalize_path(shortcut_exe_raw)
             if shortcut_name == app_name and shortcut_exe_norm == exe_norm:
                 target_index = index
@@ -191,14 +203,15 @@ class ShortcutLaunchOptionsMixin:
         if target_index is None:
             self.logger.error(f"Could not find shortcut with AppName '{app_name}' and Exe '{exe_path}' in shortcuts.vdf.")
             for index, shortcut_data in data.get('shortcuts', {}).items():
-                shortcut_name = shortcut_data.get('AppName', '')
-                shortcut_exe = shortcut_data.get('Exe', '')
+                shortcut_name = _sc_get(shortcut_data, 'AppName')
+                shortcut_exe = _sc_get(shortcut_data, 'Exe')
                 self.logger.error(f"Found shortcut: AppName='{shortcut_name}', Exe='{shortcut_exe}' -> norm='{_normalize_path(shortcut_exe)}'")
             return False
 
         if target_index in data['shortcuts']:
             self.logger.info(f"Found shortcut at index {target_index}. Updating LaunchOptions...")
-            data['shortcuts'][target_index]['LaunchOptions'] = new_launch_options
+            target = data['shortcuts'][target_index]
+            target[_sc_key(target, 'LaunchOptions')] = new_launch_options
         else:
             self.logger.error(f"Target index {target_index} not found in shortcuts dictionary after identification.")
             return False

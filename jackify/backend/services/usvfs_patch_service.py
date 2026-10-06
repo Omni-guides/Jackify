@@ -7,9 +7,9 @@ from approximately 12-45%, depending on the modlist, hardware and Wine/Proton co
 Not a critical step: it must never fail an install. Every failure path returns a result
 flagged as a warning and leaves the original DLL untouched.
 
-Exact-hash allowlist, not version-gated. `_SUPPORTED_BUILDS` maps a known-original DLL's
-SHA-256 to the maintainer-tested patched build for that exact version (see
-`Omni-guides/usvfs` release `wine-shortname-optimization.1`). A DLL not byte-identical to one
+Exact-hash allowlist, not version-gated. The usvfs manifest (`usvfs_manifest.py`) maps a known-original
+DLL's SHA-256 to the maintainer-tested patched build for that exact version (an
+`Omni-guides/usvfs` release asset). A DLL not byte-identical to one
 of these originals is left untouched, never patched - a self-reported MO2/usvfs version string
 is not trusted, and a patch built against one USVFS version is never applied over another.
 
@@ -18,7 +18,7 @@ of the modlist's source USVFS version (force-upgraded a 0.5.6.1 install to 0.5.7
 crashed a real modlist with Community Shaders - see docs/PlanOfAction.md's "USVFS Fix Applied
 Too Broadly" entry), and before that a byte-scan for one specific incompatible export name. The
 exact-hash allowlist subsumes both: any DLL the byte-scan would have flagged, and any version
-the single-pinned-build design would have force-upgraded, is not in `_SUPPORTED_BUILDS` and is
+the single-pinned-build design would have force-upgraded, is not in the manifest and is
 left alone.
 
 Unrecognized versions are logged at warning with the `JACKIFY-USVFS-UNSUPPORTED` tag so a
@@ -34,10 +34,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from jackify.backend.services.usvfs_manifest import (
+    get_patched_hashes,
+    get_supported_builds,
+    get_supported_games,
+)
+
 logger = logging.getLogger(__name__)
 
 USVFS_REPO = "Omni-guides/usvfs"
-USVFS_RELEASE_TAG = "wine-shortname-optimization.1"
 USVFS_DLL_NAME = "usvfs_x64.dll"
 USVFS_SUMS_NAME = "SHA256SUMS.txt"
 BACKUP_SUFFIX = ".jackify-backup"
@@ -54,32 +59,10 @@ STATUS_UNSUPPORTED_GAME = "unsupported_game_type"
 
 _WARNING_STATUSES = {STATUS_MISSING_DLL, STATUS_FAILED, STATUS_UNSUPPORTED_BUILD}
 
-# Games this patch is currently scoped to: Skyrim SE, Fallout 4, and their VR variants.
-# FNV/Oblivion/etc are 32-bit games not yet tested against this patch - left untouched
-# until confirmed safe. "skyrimse" kept defensively alongside the canonical "skyrim" key.
-_SUPPORTED_GAME_TYPES = {"skyrim", "skyrimse", "skyrimvr", "fallout4", "fallout4vr"}
-
-
 def is_supported_game_type(game_type: Optional[str]) -> bool:
-    """Whether the USVFS Linux fix applies to this game type at all."""
-    return bool(game_type) and game_type.lower() in _SUPPORTED_GAME_TYPES
+    """Whether the USVFS Linux fix applies to this game type at all (see usvfs_manifest)."""
+    return bool(game_type) and game_type.lower() in get_supported_games()
 
-# Maintainer-verified original -> patched pairings, Omni-guides/usvfs release
-# "wine-shortname-optimization.1". Each patched DLL is only ever applied over the exact
-# original it was built and tested against.
-_SUPPORTED_BUILDS = {
-    "e2b766f418575021b9d350f384195ce6f23173169b37222cdef3d7fe5495f8b5": {
-        "version": "0.5.6.1",
-        "asset_name": "usvfs_x64-v0.5.6.1.dll",
-        "patched_sha256": "d6bced794498f4129fac7df05f550252d74beb2cfde109cbdeee3902c07640bb",
-    },
-    "7ee7758433ab76713900e661056be8074b9c567971fde38fd0e514c76895e274": {
-        "version": "0.5.7.2",
-        "asset_name": "usvfs_x64-v0.5.7.2.dll",
-        "patched_sha256": "7454334c1ea246a68ff8da492b5d63dae8cd2f1298f2d7105c920b5f593352aa",
-    },
-}
-_PATCHED_HASHES = {build["patched_sha256"] for build in _SUPPORTED_BUILDS.values()}
 
 # PE VERSIONINFO key names to try, in order, for the unsupported-build report only - never
 # used for matching logic, which is hash-only (see module docstring).
@@ -151,12 +134,12 @@ def build_unsupported_build_report(modlist_dir: Path, dll_path: Path) -> str:
 
 
 def _match_supported_build(dll_path: Path) -> Optional[dict]:
-    """The `_SUPPORTED_BUILDS` entry for this DLL's exact current content, or None if its
+    """The usvfs manifest build entry for this DLL's exact current content, or None if its
     hash matches neither known original."""
     current_hash = dll_sha256(dll_path)
     if current_hash is None:
         return None
-    return _SUPPORTED_BUILDS.get(current_hash)
+    return get_supported_builds().get(current_hash)
 
 
 @dataclass
@@ -202,7 +185,7 @@ def is_already_patched(dll_path: Path) -> bool:
     pre-patched, or the backup marker can be lost across a reinstall."""
     if Path(str(dll_path) + BACKUP_SUFFIX).is_file():
         return True
-    return dll_sha256(dll_path) in _PATCHED_HASHES
+    return dll_sha256(dll_path) in get_patched_hashes()
 
 
 def is_modlist_patched(modlist_dir: Path) -> bool:
@@ -283,11 +266,12 @@ def _download_and_swap(dll_path: Path, build: dict, log: Callable[[str], None]) 
         fetch_latest_release_info,
     )
 
-    release = fetch_latest_release_info(USVFS_REPO, pinned_version=USVFS_RELEASE_TAG)
+    release_tag = build["release_tag"]
+    release = fetch_latest_release_info(USVFS_REPO, pinned_version=release_tag)
     if not release:
         return UsvfsPatchResult(
             STATUS_FAILED,
-            f"Could not fetch usvfs release {USVFS_RELEASE_TAG} from GitHub",
+            f"Could not fetch usvfs release {release_tag} from GitHub",
         )
 
     asset_name = build["asset_name"]
@@ -296,12 +280,12 @@ def _download_and_swap(dll_path: Path, build: dict, log: Callable[[str], None]) 
     sums_asset = assets.get(USVFS_SUMS_NAME)
     if not dll_asset or not dll_asset.get("browser_download_url"):
         return UsvfsPatchResult(
-            STATUS_FAILED, f"Release {USVFS_RELEASE_TAG} has no {asset_name} asset"
+            STATUS_FAILED, f"Release {release_tag} has no {asset_name} asset"
         )
     if not sums_asset or not sums_asset.get("browser_download_url"):
         # The hash is the only guard against shipping a corrupt DLL into MO2
         return UsvfsPatchResult(
-            STATUS_FAILED, f"Release {USVFS_RELEASE_TAG} has no {USVFS_SUMS_NAME} asset"
+            STATUS_FAILED, f"Release {release_tag} has no {USVFS_SUMS_NAME} asset"
         )
 
     fs = FileSystemHandler()

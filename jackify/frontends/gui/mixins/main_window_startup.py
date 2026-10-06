@@ -144,6 +144,20 @@ class MainWindowStartupMixin:
                     logger.info("Problem mods manifest prefetch failed: %s", e)
 
                 try:
+                    from jackify.backend.services.usvfs_manifest import (
+                        fetch_remote_manifest as fetch_usvfs,
+                        apply_remote_manifest as apply_usvfs,
+                    )
+                    usvfs = fetch_usvfs()
+                    if usvfs:
+                        apply_usvfs(usvfs)
+                        logger.info("USVFS builds manifest refreshed at startup")
+                    else:
+                        logger.info("USVFS builds manifest prefetch returned no data (bundled manifest in use)")
+                except Exception as e:
+                    logger.info("USVFS builds manifest prefetch failed: %s", e)
+
+                try:
                     from jackify.backend.services.playbook.hook_wiring import get_registry
                     if get_registry().sync():
                         logger.info("Playbook registry refreshed at startup")

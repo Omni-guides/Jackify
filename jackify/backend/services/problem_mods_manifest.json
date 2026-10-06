@@ -1,11 +1,20 @@
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "SkyrimSE": {
     "mod_fixes": [
       {
         "mod": "Dialogue History",
         "create_dirs": [
           "users/steamuser/Documents/My Games/Skyrim Special Edition/Saves/DialogueHistory"
+        ]
+      },
+      {
+        "mod": "DovahKit",
+        "create_dirs": [
+          "users/steamuser/AppData/Local/DovahKit/userdata/options",
+          "users/steamuser/AppData/Local/DovahKit/userdata/scripts",
+          "users/steamuser/AppData/Local/DovahKit/userdata/script-packages",
+          "users/steamuser/AppData/Local/DovahKit/userdata/options/worldinput-control-schemes"
         ]
       }
     ]

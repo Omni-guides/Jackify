@@ -57,7 +57,10 @@ class ProgressParserFilesMixin:
                     percent=percent,
                     speed=-1.0
                 )
-                file_progress._file_counter = (counter_current, counter_total)
+                if operation_str.lower() == 'converting':
+                    file_progress._texture_counter = (counter_current, counter_total)
+                else:
+                    file_progress._file_counter = (counter_current, counter_total)
                 file_progress._hidden = True
                 return file_progress
 

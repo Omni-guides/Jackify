@@ -358,10 +358,11 @@ class UpdateService:
         Returns:
             Path to downloaded file, or None if download failed
         """
+        archive_file = None
         try:
             logger.info("Downloading update %s from %s (%s)", update_info.version, update_info.source, update_info.download_url)
             
-            response = requests.get(update_info.download_url, stream=True)
+            response = requests.get(update_info.download_url, stream=True, timeout=(10, 30))
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))
@@ -406,6 +407,8 @@ class UpdateService:
 
         except Exception as e:
             logger.error(f"Failed to download update manually: {e}")
+            if archive_file:
+                archive_file.unlink(missing_ok=True)
             return None
 
     def _is_7z_archive(self, path: Path) -> bool:

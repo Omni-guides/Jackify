@@ -650,7 +650,7 @@ def check_winetricks_components(pfx: Path, appid: str, game_type: str, r: Result
         r.ok(f"All {len(expected)} expected components verified ({source})")
 
     # Report notable extras installed beyond the baseline (e.g. dotnet48 added for .NET Script Framework)
-    _extras = ["dotnet48", "dotnet9", "dotnet10", "dotnetdesktop9", "dotnetdesktop10"]
+    _extras = ["dotnet48", "dotnet9", "dotnet10", "dotnetdesktop9", "dotnetdesktop10", "d3dx9_42"]
     for extra in _extras:
         if extra not in expected and extra in installed_output:
             r.ok(f"{extra} (extra, installed for this modlist)")

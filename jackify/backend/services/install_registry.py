@@ -54,6 +54,33 @@ def _registry_path() -> Path:
     return get_jackify_data_dir() / "installs.json"
 
 
+def _removed_ids_path() -> Path:
+    return get_jackify_data_dir() / "installs_removed.json"
+
+
+def _load_removed_ids() -> set:
+    """IDs dropped via "Remove from List" - backfill_from_shortcuts() must not treat their
+    still-present Steam shortcut as a brand-new discovery and re-add them (found 2026-09-26:
+    removal doesn't touch the shortcut, so the very next backfill scan - every dashboard visit,
+    or `jackify modlists` - resurrected the entry)."""
+    path = _removed_ids_path()
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return set(data.get("removed_ids", []))
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Removed-installs list unreadable, ignoring: %s", e)
+        return set()
+
+
+def _save_removed_ids(ids: set) -> None:
+    try:
+        _atomic_write(_removed_ids_path(), {"removed_ids": sorted(ids)})
+    except Exception as e:
+        logger.warning("Failed to save removed-installs list: %s", e)
+
+
 def _atomic_write(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".installs_", suffix=".tmp")
@@ -122,6 +149,13 @@ def register_install(
     install_id = compute_install_id(install_dir)
     existing = next((e for e in entries if e.install_id == install_id), None)
     is_new_entry = existing is None
+
+    # A deliberate re-add (Add an Existing Modlist, or a fresh install/configure) overrides
+    # any earlier "Remove from List" for this same install_dir.
+    removed_ids = _load_removed_ids()
+    if install_id in removed_ids:
+        removed_ids.discard(install_id)
+        _save_removed_ids(removed_ids)
 
     if existing is None:
         existing = InstallEntry(
@@ -212,6 +246,10 @@ def remove_from_registry(install_id: str) -> bool:
     if len(remaining) == len(entries):
         return False
     save_registry(remaining)
+
+    removed_ids = _load_removed_ids()
+    removed_ids.add(install_id)
+    _save_removed_ids(removed_ids)
     return True
 
 
@@ -242,6 +280,7 @@ def backfill_from_shortcuts() -> int:
 
     entries = load_registry()
     by_id = {e.install_id: e for e in entries}
+    removed_ids = _load_removed_ids()
     added = 0
     reconciled = 0
 
@@ -287,6 +326,11 @@ def backfill_from_shortcuts() -> int:
                 )
                 known.modlist_name = shortcut_name
                 reconciled += 1
+            continue
+
+        if install_id in removed_ids:
+            # Deliberately removed via "Remove from List" - its shortcut is left in place on
+            # purpose, so it must not come back as a fresh discovery on the next scan.
             continue
 
         if not os.path.isdir(start_dir):

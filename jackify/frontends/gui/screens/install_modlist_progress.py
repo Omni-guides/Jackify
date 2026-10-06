@@ -6,6 +6,7 @@ from jackify.frontends.gui.services.message_service import MessageService
 from jackify.shared.errors import wabbajack_install_failed
 from jackify.shared.progress_models import InstallationPhase, OperationType, InstallationProgress, FileProgress
 from jackify.backend.utils.nexus_premium_detector import is_non_premium_indicator
+from .progress_render_throttle import should_render_progress
 import time
 import logging
 import os
@@ -103,9 +104,7 @@ class ProgressHandlersMixin:
 
     def on_progress_updated(self, progress_state):
         """R&D: Handle structured progress updates from parser"""
-        # Calculate proper overall progress during BSA building
-        # During BSA building, file installation is at 100% but BSAs are still being built
-        # Override overall_percent to show BSA building progress instead
+        # File install is already at 100% while BSAs build - show BSA progress instead
         if progress_state.bsa_building_total > 0 and progress_state.bsa_building_current > 0:
             bsa_percent = (progress_state.bsa_building_current / progress_state.bsa_building_total) * 100.0
             progress_state.overall_percent = min(99.0, bsa_percent)  # Cap at 99% until fully complete
@@ -171,7 +170,8 @@ class ProgressHandlersMixin:
                 self._stalled_download_notified = False
                 self._stalled_data_snapshot = 0
 
-        # Update progress indicator widget
+        if not should_render_progress(self, progress_state):
+            return
         self.progress_indicator.update_progress(progress_state)
         
         # Only show file progress list if console is not visible (mutually exclusive)
@@ -253,7 +253,7 @@ class ProgressHandlersMixin:
                     filename=step_label,
                     operation=OperationType.INSTALL,
                     percent=0.0,
-                    speed=-1.0
+                    speed=-1.0, stable_key="__install_step__"
                 )
                 install_line._no_progress_bar = True
                 display_items.append(install_line)

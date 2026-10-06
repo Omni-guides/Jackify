@@ -60,6 +60,9 @@ _DX_CFG: Dict[str, tuple] = {
     "d3dx9": (
         ["*d3dx9*x86*"], ["*d3dx9*x64*"],
         ["d3dx9_*.dll"], ["d3dx9_*.dll"], False),
+    "d3dx9_42": (
+        ["*d3dx9*x86*"], ["*d3dx9*x64*"],
+        ["d3dx9_42.dll"], ["d3dx9_42.dll"], False),
     "d3dx9_43": (
         ["*d3dx9*x86*"], ["*d3dx9*x64*"],
         ["d3dx9_43.dll"], ["d3dx9_43.dll"], False),

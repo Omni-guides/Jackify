@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 class ProgressStateProcessingMixin:
     """Mixin providing line processing methods."""
 
+    STATUS_COUNTER_HOLD = 2.0
+    _last_status_step_at: float = float('-inf')
+
     def process_line(self, line: str) -> bool:
         """
         Process a line of output and update state.
@@ -82,6 +85,8 @@ class ProgressStateProcessingMixin:
 
         if parsed.step_info:
             self.state.phase_step, self.state.phase_max_steps = parsed.step_info
+            if '[FILE_PROGRESS]' not in line:
+                self._last_status_step_at = time.monotonic()
             updated = True
 
         if parsed.data_info:
@@ -95,11 +100,15 @@ class ProgressStateProcessingMixin:
                 self.state.data_total = self._download_total_bytes
             else:
                 self.state.data_total = new_total
+            self.state.install_bytes_tracked = self.state.phase == InstallationPhase.INSTALL
             if self.state.data_total > 0 and self.state.overall_percent == 0.0:
                 self.state.overall_percent = (self.state.data_processed / self.state.data_total) * 100.0
             updated = True
 
-        if parsed.file_counter:
+        # Per-file counters count something different from the engine's status-line
+        # counter; letting both write phase_step made the banner and bar flip every line.
+        status_counter_live = time.monotonic() - self._last_status_step_at < self.STATUS_COUNTER_HOLD
+        if parsed.file_counter and not status_counter_live:
             self.state.phase_step, self.state.phase_max_steps = parsed.file_counter
             updated = True
 

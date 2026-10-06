@@ -275,7 +275,7 @@ class ModlistWineOpsMixin:
         if "fallout4vr" in game or "fo4vr" in game:
             extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9", "vcrun2012"]
         elif "skyrim" in game or "fallout4" in game or "starfield" in game or "oblivion_remastered" in game or "enderal" in game:
-            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9"]
+            extras += ["d3dcompiler_47", "d3dx11_43", "d3dcompiler_43", "dotnet6", "dotnet7", "dotnet8", "dotnet9", "dotnetdesktop6", "dotnetdesktop9"] + (["d3dx9_42"] if "skyrim" in game else [])
         elif "falloutnewvegas" in game or "fnv" in game or "fallout3" in game or "fo3" in game or "oblivion" in game:
             extras += ["d3dx9_43", "d3dx9", "d3dcompiler_43", "d3dcompiler_47"]
         elif "cp2077" in game or "cyberpunk" in game:

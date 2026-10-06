@@ -102,6 +102,7 @@ class InstallationProgress:
     texture_conversion_total: int = 0  # Total textures to convert
     bsa_building_current: int = 0  # Current BSA being built
     bsa_building_total: int = 0  # Total BSAs to build
+    install_bytes_tracked: bool = False  # data_* reflects install-phase bytes, not leftover download bytes
     # ETA smoothing: track speed and data history for stable ETA calculation
     _speed_history: List[Tuple[float, float]] = field(default_factory=list)  # [(timestamp, speed_bytes_per_sec), ...]
     _data_history: List[Tuple[float, int]] = field(default_factory=list)  # [(timestamp, data_processed_bytes), ...]

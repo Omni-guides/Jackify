@@ -1,5 +1,30 @@
 # Jackify Changelog
 
+## v0.8.1.3 - Hotfix
+**Release Date:** 06/10/26
+
+- Fixed the progress counters and percentage bar flickering and jumping between values during
+  the extract, install and texture conversion stages of a modlist install. The percentage bar
+  now tracks the same installed data total shown in the progress banner.
+- Fixed "Remove from List" reappearing on the Dashboard after restarting Jackify or switching
+  tabs, since its Steam shortcut is deliberately left in place and was being rediscovered as a
+  new install.
+- Fixed MO2 Skip and Steam launch option updates failing with "Could not find this modlist's Steam
+  shortcut" when Steam had rewritten the shortcut entries with lowercase keys.
+- The USVFS performance patch's list of supported builds and games is now updated online, so
+  support for new USVFS builds no longer needs a Jackify release.
+- Fixed AppImage menu entries created by tools like Gear Lever opening an extra terminal window
+  alongside Jackify.
+- The USVFS performance patch now covers more USVFS builds, including 0.5.5.1 and a 0.5.6.1
+  variant that ships with some Skyrim modlists, such as A Dragonborn's Fate and Nordic Adventures.
+- Skyrim modlists now also get the d3dx9_42 DirectX component installed during configuration, as a
+  pre-emptive guard against what looks like a new requirement for Skyrim 1.7.104 and its SKSE. 
+  Further investigation needed.
+- Fixed Jackify update downloads hanging indefinitely if the connection stalled.
+- Added a prefix fix for DovahKit, which failed on a missing folder in the Wine prefix.
+
+---
+
 ## v0.8.1.2 - Hotfix
 **Release Date:** 21/09/26
 

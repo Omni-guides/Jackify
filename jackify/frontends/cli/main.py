@@ -253,17 +253,16 @@ class JackifyCLI:
             except Exception as e:
                 logger.info("Tools manifest prefetch failed: %s", e)
 
-            try:
-                from jackify.backend.services.problem_mods_service import (
-                    fetch_remote_manifest as fetch_problems,
-                    apply_remote_manifest as apply_problems,
-                )
-                problems = fetch_problems()
-                if problems:
-                    apply_problems(problems)
-                    logger.info("Problem mods manifest refreshed at startup")
-            except Exception as e:
-                logger.info("Problem mods manifest prefetch failed: %s", e)
+            import importlib
+            for name, label in (("problem_mods_service", "Problem mods"), ("usvfs_manifest", "USVFS builds")):
+                try:
+                    mod = importlib.import_module(f"jackify.backend.services.{name}")
+                    data = mod.fetch_remote_manifest()
+                    if data:
+                        mod.apply_remote_manifest(data)
+                        logger.info("%s manifest refreshed at startup", label)
+                except Exception as e:
+                    logger.info("%s manifest prefetch failed: %s", label, e)
 
             try:
                 from jackify.backend.services.playbook.hook_wiring import get_registry

@@ -221,7 +221,13 @@ class OverallProgressIndicator(QWidget):
                     display_percent = (progress.phase_step / progress.phase_max_steps) * 100.0
                 elif display_percent <= 0 and progress.overall_percent > 0 and progress.overall_percent < 100.0:
                     display_percent = progress.overall_percent
-            # For install/extract/BSA phases, prefer step progress, then bytes.
+            # Install reports bytes alongside file count; bytes match the banner text,
+            # file count does not (e.g. 73% of files vs 95% of bytes). CLF3 leaves stale
+            # download bytes in data_* during install, hence the install_bytes_tracked gate.
+            elif (progress.phase == InstallationPhase.INSTALL and not is_bsa_building
+                    and progress.install_bytes_tracked and progress.data_total > 0):
+                display_percent = (progress.data_processed / progress.data_total) * 100.0
+            # For extract/BSA phases, prefer step progress, then bytes.
             elif progress.phase in (InstallationPhase.INSTALL, InstallationPhase.EXTRACT) or is_bsa_building:
                 if progress.phase_max_steps > 0:
                     display_percent = (progress.phase_step / progress.phase_max_steps) * 100.0
