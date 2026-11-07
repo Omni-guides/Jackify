@@ -217,6 +217,23 @@ class InstallModlistUISetupMixin:
         downloads_dir_hbox.addWidget(self.browse_downloads_btn)
         form_grid.addWidget(downloads_dir_label, 2, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
         form_grid.addLayout(downloads_dir_hbox, 2, 1)
+        # Game Dir (optional manual override, e.g. games installed via Bottles/Lutris)
+        game_dir_label = QLabel("Game Directory:")
+        self.game_dir_edit = QLineEdit()
+        self.game_dir_edit.setMaximumHeight(25)  # Force compact height
+        self.game_dir_edit.setPlaceholderText("Auto-detect (optional)")
+        self.game_dir_edit.setToolTip(
+            "Optional: path to the vanilla game installation (the folder containing the game executable).\n"
+            "Leave empty to let Jackify detect the game automatically (Steam/GOG/Epic).\n"
+            "Set this if your game is installed somewhere Jackify cannot find, e.g. in Bottles or Lutris."
+        )
+        self.browse_game_dir_btn = QPushButton("Browse")
+        self.browse_game_dir_btn.clicked.connect(self.browse_game_dir)
+        game_dir_hbox = QHBoxLayout()
+        game_dir_hbox.addWidget(self.game_dir_edit)
+        game_dir_hbox.addWidget(self.browse_game_dir_btn)
+        form_grid.addWidget(game_dir_label, 3, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+        form_grid.addLayout(game_dir_hbox, 3, 1)
 
         # Nexus Login (OAuth)
         nexus_login_label = QLabel("Nexus Login:")
@@ -238,8 +255,8 @@ class InstallModlistUISetupMixin:
         nexus_hbox.addWidget(self.nexus_status)
         nexus_hbox.addStretch()
 
-        form_grid.addWidget(nexus_login_label, 3, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
-        form_grid.addLayout(nexus_hbox, 3, 1)
+        form_grid.addWidget(nexus_login_label, 4, 0, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+        form_grid.addLayout(nexus_hbox, 4, 1)
 
         # Update nexus status on init
         self._update_nexus_status()

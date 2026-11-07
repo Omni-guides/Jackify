@@ -61,6 +61,13 @@ class InstallModlistCommand:
             type=str, 
             help="Modlist identifier for online modlists"
         )
+        parser.add_argument(
+            "--game-dir",
+            type=str,
+            default=None,
+            help="Manually specify the vanilla game installation directory "
+                 "(e.g. for games installed via Bottles or Lutris that cannot be auto-detected)"
+        )
     
     def add_parser(self, subparsers):
         """Add the install-modlist subcommand parser.
@@ -207,6 +214,7 @@ class InstallModlistCommand:
             'nexus_api_key': os.environ.get('NEXUS_API_KEY'),
             'game_type': getattr(args, 'game_type', None),
             'modlist_value': getattr(args, 'modlist_value', None),
+            'game_dir': getattr(args, 'game_dir', None),
             'skip_confirmation': True,
             'resolution': getattr(args, 'resolution', None),
         }

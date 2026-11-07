@@ -128,6 +128,7 @@ class InstallWorkflowExecutionMixin:
             game_type=getattr(self, '_current_game_type', None),
             clf3_cdn_url=getattr(self, '_clf3_cdn_url', None),
             engine_id=self._session_engine_id(),
+            game_dir_override=getattr(self, '_manual_game_dir', None),
         )
         self._clf3_cdn_url = None
         self._active_session_engine_id = self._session_engine_id()

@@ -197,6 +197,26 @@ class InstallWorkflowValidationMixin:
                 self._abort_install_validation()
                 return False
 
+        # Optional manual game directory override (e.g. games installed via Bottles/Lutris
+        # that the automatic Steam/GOG/Epic detection cannot find).
+        manual_game_dir = ''
+        if getattr(self, 'game_dir_edit', None) is not None:
+            manual_game_dir = self.game_dir_edit.text().strip()
+        if manual_game_dir:
+            manual_game_dir = os.path.abspath(os.path.expanduser(manual_game_dir))
+            if not os.path.isdir(manual_game_dir):
+                self._abort_with_message(
+                    "warning",
+                    "Invalid Game Directory",
+                    f"The game directory does not exist:\n{manual_game_dir}\n\n"
+                    "Select the folder that contains the game installation, "
+                    "or leave the field empty to use automatic detection."
+                )
+                return False
+            logger.info("Using manually selected game directory: %s", manual_game_dir)
+        self._manual_game_dir = manual_game_dir or None
+        ctx['game_dir'] = self._manual_game_dir
+
         ctx['modlist_name'] = modlist_name
         return True
 

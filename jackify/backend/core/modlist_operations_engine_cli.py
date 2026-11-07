@@ -183,20 +183,30 @@ class ModlistOperationsEngineCLIMixin:
             debug_mode = config_handler.get('debug_mode', False)
 
             game_dir = None
+            manual_game_dir = self.context.get('game_dir')
+            if manual_game_dir:
+                manual_game_dir = os.path.abspath(os.path.expanduser(str(manual_game_dir)))
+                if not os.path.isdir(manual_game_dir):
+                    print(f"{COLOR_ERROR}Game directory does not exist: {manual_game_dir}{COLOR_RESET}")
+                    return None
+                game_dir = manual_game_dir
+                self.logger.info("Using manual game directory override: %s", game_dir)
+                print(f"Using manually selected game directory: {game_dir}")
             if clf3_mode:
-                game_type = self.context.get('game_type')
-                location = resolve_game_location(game_type)
-                if location:
-                    game_dir, game_store = location
-                    if game_store != 'steam':
-                        store_label = {'gog': 'GOG', 'epic': 'Epic Games'}.get(game_store, game_store)
-                        print(
-                            f"[WARN] Game detected from {store_label}, not Steam. "
-                            "Most Wabbajack modlists require the Steam version. "
-                            "If the install fails with hash errors, a store version mismatch is likely the cause."
-                        )
-                else:
-                    self.logger.warning("CLF3: could not resolve game directory for game_type=%s", game_type)
+                if not game_dir:
+                    game_type = self.context.get('game_type')
+                    location = resolve_game_location(game_type)
+                    if location:
+                        game_dir, game_store = location
+                        if game_store != 'steam':
+                            store_label = {'gog': 'GOG', 'epic': 'Epic Games'}.get(game_store, game_store)
+                            print(
+                                f"[WARN] Game detected from {store_label}, not Steam. "
+                                "Most Wabbajack modlists require the Steam version. "
+                                "If the install fails with hash errors, a store version mismatch is likely the cause."
+                            )
+                    else:
+                        self.logger.warning("CLF3: could not resolve game directory for game_type=%s", game_type)
 
                 if not (modlist_value.endswith('.wabbajack') and os.path.isfile(modlist_value)):
                     modlist_value = self._clf3_fetch_wabbajack(

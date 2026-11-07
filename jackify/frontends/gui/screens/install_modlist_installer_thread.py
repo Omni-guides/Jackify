@@ -36,7 +36,8 @@ class InstallerThread(QThread):
 
     def __init__(self, modlist, install_dir, downloads_dir, api_key, modlist_name,
                  install_mode='online', progress_state_manager=None, auth_service=None,
-                 oauth_info=None, game_type=None, clf3_cdn_url=None, engine_id=None):
+                 oauth_info=None, game_type=None, clf3_cdn_url=None, engine_id=None,
+                 game_dir_override=None):
         super().__init__()
         self.modlist = modlist
         self.install_dir = install_dir
@@ -47,6 +48,7 @@ class InstallerThread(QThread):
         self.install_mode = install_mode
         self.clf3_cdn_url = clf3_cdn_url
         self.engine_id = engine_id
+        self.game_dir_override = game_dir_override
         self.cancelled = False
         self.process_manager = None
         self.progress_state_manager = progress_state_manager
@@ -456,7 +458,11 @@ class InstallerThread(QThread):
             debug_mode = config_handler.get('debug_mode', False)
             game_dir = None
             clf3_mode = (engine_id == "clf3")
-            if clf3_mode:
+            if self.game_dir_override:
+                game_dir = self.game_dir_override
+                logger.info("Using manual game directory override: %s", game_dir)
+                self.output_received.emit(f"Using manually selected game directory: {game_dir}\n")
+            elif clf3_mode:
                 location = resolve_game_location(self.game_type)
                 if location:
                     game_dir, game_store = location

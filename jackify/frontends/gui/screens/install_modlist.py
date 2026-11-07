@@ -68,10 +68,12 @@ class InstallModlistScreen(ThreadLifecycleMixin, ScreenBackMixin, InstallVerifie
             self.modlist_name_edit,
             self.install_dir_edit,
             self.downloads_dir_edit,
+            self.game_dir_edit,
             self.file_edit,
             # Browse buttons
             self.browse_install_btn,
             self.browse_downloads_btn,
+            self.browse_game_dir_btn,
             self.file_btn,
             # Resolution controls
             self.resolution_combo,

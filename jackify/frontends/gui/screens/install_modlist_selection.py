@@ -317,3 +317,9 @@ class ModlistSelectionMixin:
         if dir:
             self.downloads_dir_edit.setText(dir)
 
+    def browse_game_dir(self):
+        start = self.game_dir_edit.text().strip() or os.path.expanduser("~")
+        dir = browse_directory(self, "Select Game Directory", start)
+        if dir:
+            self.game_dir_edit.setText(dir)
+
