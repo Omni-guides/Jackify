@@ -56,6 +56,12 @@ class ConfigureExistingModlistWorkflowMixin:
             MessageService.critical(self, "Invalid Shortcut", "The selected shortcut is missing required information.", safety_level="medium")
             self._enable_controls_after_operation()
             return
+        from jackify.backend.utils.modlist_folder_check import incomplete_install_reason
+        folder_problem = incomplete_install_reason(install_dir)
+        if folder_problem:
+            MessageService.warning(self, "Incomplete Install", folder_problem, safety_level="low")
+            self._enable_controls_after_operation()
+            return
         raw_appid = shortcut.get('AppID', shortcut.get('appid', ''))
         self._current_appid = str(raw_appid) if raw_appid != '' else ''
         resolution = self.resolution_combo.currentText()

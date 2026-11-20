@@ -1,6 +1,6 @@
 """
 InstallModlistOutputMixin: handlers for InstallerThread signals.
-on_installation_output, on_installation_progress, on_premium_required_detected, on_progress_updated.
+on_installation_output, on_installation_progress, on_progress_updated.
 """
 
 import time
@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 class InstallModlistOutputMixin:
-    """Mixin providing signal handlers for InstallerThread output/progress/premium/progress_updated."""
+    """Mixin providing signal handlers for InstallerThread output/progress/progress_updated."""
 
     def on_installation_output(self, message):
         """Handle regular output from installation thread."""
@@ -28,7 +28,6 @@ class InstallModlistOutputMixin:
         token_error_keywords = [
             'token has expired', 'token expired', 'oauth token', 'authentication failed',
             'unauthorized', '401', '403', 'refresh token', 'authorization failed',
-            'nexus.*premium.*required', 'premium.*required',
         ]
         is_token_error = any(keyword in msg_lower for keyword in token_error_keywords)
         if is_token_error:
@@ -62,7 +61,6 @@ class InstallModlistOutputMixin:
                         (
                             "Nexus Mods authentication has failed. This may be due to:\n\n"
                             "• OAuth token expired and refresh failed\n"
-                            "• Nexus Premium required for this modlist\n"
                             "• Network connectivity issues\n\n"
                             "Please check the console output (Show Details) for more information.\n"
                             "You may need to re-authorize in Settings."
@@ -92,30 +90,6 @@ class InstallModlistOutputMixin:
     def on_installation_progress(self, progress_message):
         """Handle progress messages from installation thread (main output path)."""
         self._safe_append_text(progress_message)
-
-    def on_premium_required_detected(self, engine_line: str):
-        """Handle detection of Nexus Premium requirement."""
-        if self._premium_notice_shown:
-            return
-        self._premium_notice_shown = True
-        self._premium_failure_active = True
-        user_message = (
-            "Nexus Mods rejected the automated download because this account is not Premium. "
-            "Jackify currently requires a Nexus Premium membership for automated installs, "
-            "and non-premium support is still planned."
-        )
-        if engine_line:
-            self._safe_append_text(f"[Jackify] Engine message: {engine_line}")
-        self._safe_append_text("[Jackify] Jackify detected that Nexus Premium is required for this modlist install.")
-        from jackify.frontends.gui.services.message_service import MessageService
-        MessageService.critical(
-            self,
-            "Nexus Premium Required",
-            f"{user_message}\n\nDetected engine output:\n{engine_line or 'Buy Nexus Premium to automate this process.'}",
-            safety_level="medium"
-        )
-        if hasattr(self, 'install_thread') and self.install_thread:
-            self.install_thread.cancel()
 
     def on_progress_updated(self, progress_state):
         """Handle structured progress updates from parser."""

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "playbook_id": "nuclear-sunset",
-  "revision": 1,
+  "revision": 3,
   "display_name": "Nuclear Sunset",
   "summary": "Post-install steps from the Nuclear Sunset Linux guide.",
   "reference_url": "https://nuclearsunset.com/docs/main/linux/",
@@ -18,6 +18,10 @@
     ]
   },
   "hook": "post_configure",
+  "prerequisites": [
+    { "title": "Tale of Two Wastelands installer (.mpi)", "url": "https://mod.pub/ttw/133/files" },
+    { "title": "YUPTTW Update archive", "url": "https://mod.pub/ttw/133/files" }
+  ],
   "intro": "Jackify can automatically perform the following post-install steps:",
   "outro": "Jackify will download the required tools automatically where possible.\nIf you are not a Nexus Premium member, you will be prompted to\nmanually download any tools that cannot be fetched automatically.",
   "steps": [
@@ -47,10 +51,21 @@
     },
     {
       "id": "offer-ttw",
-      "label": "Offer Tale of Two Wastelands installation",
+      "label": "Install Tale of Two Wastelands (the TTW installer will open)",
       "type": "offer_tool_flow",
       "flow": "ttw_install",
-      "hook": "post_install"
+      "hook": "post_install",
+      "output_dir": "{modlist_dir}/mods/[NoDelete] [INF] [DB] - Tale of Two Wastelands (TTW)"
+    },
+    {
+      "id": "extract-yupttw",
+      "label": "Extract the YUPTTW update into the modlist",
+      "type": "extract_archive",
+      "archive_id": "yupttw",
+      "name_contains": ["yupttw"],
+      "prompt": "Select the YUPTTW archive you downloaded",
+      "url": "https://mod.pub/ttw/133/files",
+      "dest": "{modlist_dir}/mods/[NoDelete] [INF] [DB] - YUPTTW Update"
     },
     {
       "id": "4gb-patch",

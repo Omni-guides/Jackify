@@ -20,6 +20,7 @@ class PlaybookAutomationMixin:
     def _check_and_run_playbook_automation(
         self, modlist_name: str, install_dir: str,
         appid: str = None, game_type: str = None, hook: str = "post_configure",
+        user_files: dict = None,
     ) -> bool:
         """Check for matching playbooks and start automation if applicable.
 
@@ -40,6 +41,7 @@ class PlaybookAutomationMixin:
         game_type_full = GAME_DISPLAY_NAMES.get(game_type) if game_type else None
         identity, step_ctx, install_key = build_gui_configuration_context(
             modlist_name, install_dir, appid=appid, game_type_full=game_type_full,
+            user_files=user_files,
         )
 
         self._playbook_controller = PlaybookAutomationController()
@@ -54,7 +56,16 @@ class PlaybookAutomationMixin:
             on_complete=self._on_playbook_automation_complete,
             begin_feedback=self._begin_playbook_progress,
             handle_feedback=self._handle_post_install_progress,
+            consented_playbook_ids=getattr(self, "_consented_playbook_ids", None),
         )
+
+    def _playbook_success_warnings(self) -> list:
+        """Playbook step failures plus a missing-TTW notice, for the success dialog's checks list."""
+        notices = list(getattr(getattr(self, '_playbook_controller', None), 'last_failure_notices', None) or [])
+        ttw_notice = getattr(self, '_ttw_incomplete_notice', None)
+        if ttw_notice:
+            notices.append(ttw_notice)
+        return notices
 
     def _on_playbook_automation_complete(self, success: bool, error: str):
         """Handle playbook automation completion and show deferred success dialog."""
@@ -83,6 +94,6 @@ class PlaybookAutomationMixin:
                     'time_taken': params['time_taken'],
                     'game_name': params.get('game_name'),
                     'enb_detected': params.get('enb_detected', False),
-                    'playbook_warnings': list(getattr(self._playbook_controller, 'last_failure_notices', None) or []),
+                    'playbook_warnings': self._playbook_success_warnings(),
                 },
             )

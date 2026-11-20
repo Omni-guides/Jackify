@@ -36,6 +36,8 @@ class TTWUISetupMixin:
         self._integration_mode = False
         self._integration_modlist_name = None
         self._integration_install_dir = None
+        self._integration_result_sent = False
+        self.integration_complete.connect(self._note_integration_result)
 
         # Somnium guidance tracking
         self._show_somnium_guidance = False

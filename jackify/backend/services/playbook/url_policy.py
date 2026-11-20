@@ -7,7 +7,7 @@ of two lists silently drifting apart.
 from typing import Any
 from urllib.parse import urlparse
 
-ALLOWED_HOSTS = {"moddinglinked.com", "github.com", "nexusmods.com", "nuclearsunset.com"}
+ALLOWED_HOSTS = {"moddinglinked.com", "github.com", "nexusmods.com", "nuclearsunset.com", "mod.pub"}
 
 
 class UrlPolicyError(ValueError):

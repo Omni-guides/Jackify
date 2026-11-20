@@ -16,6 +16,7 @@ import json
 import logging
 import time
 import subprocess
+import threading
 from typing import Optional, Tuple, Dict
 
 from .nexus_oauth_protocol import NexusOAuthProtocolMixin
@@ -49,9 +50,14 @@ class NexusOAuthService(NexusOAuthProtocolMixin, NexusOAuthCallbackMixin):
         self._auth_code = None
         self._auth_state = None
         self._auth_error = None
+        self._cancel_event = threading.Event()
 
         # Ensure jackify:// protocol is registered on first use
         self._ensure_protocol_registered()
+
+    def cancel(self) -> None:
+        """Stop a pending authorize() wait; safe to call from another thread."""
+        self._cancel_event.set()
 
     def _generate_pkce_params(self) -> Tuple[str, str, str]:
         """
@@ -216,6 +222,7 @@ class NexusOAuthService(NexusOAuthProtocolMixin, NexusOAuthCallbackMixin):
         logger.info("Starting Nexus OAuth authorization flow")
 
         # Reset state
+        self._cancel_event.clear()
         self._auth_code = None
         self._auth_state = None
         self._auth_error = None

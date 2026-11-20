@@ -126,10 +126,8 @@ class ProtonOperationsMixin:
             # Write back to file (text format)
             with open(config_path, 'w') as f:
                 vdf.dump(config_data, f)
-
-            # Ensure file is fully written to disk before Steam restart
-            import os
-            os.fsync(f.fileno()) if hasattr(f, 'fileno') else None
+                f.flush()
+                os.fsync(f.fileno())
 
             logger.info(f"Set Proton version {proton_version} for AppID {appid}")
             logger.debug(f"[DEBUG] Set Proton version {proton_version} for AppID {appid} in config.vdf")

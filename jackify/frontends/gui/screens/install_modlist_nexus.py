@@ -307,6 +307,7 @@ class NexusAuthMixin:
             """)
             def on_cancel_click():
                 oauth_cancelled[0] = True
+                self.auth_service.cancel_oauth()
                 wait_dialog.close()
             cancel_btn.clicked.connect(on_cancel_click)
             btn_layout.addWidget(cancel_btn)

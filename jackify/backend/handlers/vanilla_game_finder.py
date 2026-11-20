@@ -39,7 +39,10 @@ _STEAM_CATALOG: Dict[str, List[SteamEntry]] = {
     'skyrimvr': [SteamEntry('611670', ['Skyrim VR'])],
     'fallout4': [SteamEntry('377160', ['Fallout 4'])],
     'fallout4vr': [SteamEntry('611660', ['Fallout 4 VR'])],
-    'falloutnv': [SteamEntry('22380', ['Fallout New Vegas', 'FalloutNV'])],
+    'falloutnv': [
+        SteamEntry('22380', ['Fallout New Vegas', 'FalloutNV']),
+        SteamEntry('22490', ['Fallout New Vegas PCR', 'Fallout New Vegas', 'FalloutNV']),
+    ],
     'fallout3': [
         SteamEntry('22300', ['Fallout 3', 'Fallout3']),
         SteamEntry('22370', ['Fallout 3 goty', 'Fallout 3 GOTY', 'Fallout3']),

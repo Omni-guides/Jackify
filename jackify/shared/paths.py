@@ -9,8 +9,37 @@ import logging
 import os
 import shutil
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+_unavailable_data_dir: Optional[Path] = None
+
+
+def _is_usable_data_dir(path: Path) -> bool:
+    """True if path is writable, or can be created under a writable existing ancestor."""
+    candidate = path
+    while not candidate.exists():
+        if candidate.parent == candidate:
+            return False
+        candidate = candidate.parent
+    return candidate.is_dir() and os.access(candidate, os.W_OK | os.X_OK)
+
+
+def _warn_data_dir_unavailable(path: Path) -> None:
+    global _unavailable_data_dir
+    if _unavailable_data_dir is None:
+        _unavailable_data_dir = path
+        logger.warning(
+            f"Configured Jackify data directory is unavailable ({path}) - using ~/Jackify "
+            "for this session. The saved setting is unchanged."
+        )
+
+
+def get_unavailable_data_dir() -> Optional[Path]:
+    """The configured data directory that was bypassed this session, if any."""
+    return _unavailable_data_dir
 
 
 def get_jackify_data_dir() -> Path:
@@ -34,9 +63,11 @@ def get_jackify_data_dir() -> Path:
         
         # Config handler now always ensures this is set, but fallback just in case
         if jackify_data_dir:
-            return Path(jackify_data_dir).expanduser()
-        else:
-            return Path.home() / "Jackify"
+            configured = Path(jackify_data_dir).expanduser()
+            if _is_usable_data_dir(configured):
+                return configured
+            _warn_data_dir_unavailable(configured)
+        return Path.home() / "Jackify"
             
     except Exception:
         # Emergency fallback if config system fails

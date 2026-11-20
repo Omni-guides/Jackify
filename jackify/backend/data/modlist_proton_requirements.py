@@ -35,3 +35,25 @@ def get_game_proton_warning(game_type: str) -> Optional[dict]:
     if not game_type:
         return None
     return GAME_PROTON_WARNINGS.get(game_type.strip().lower())
+
+
+# Keys are lowercase modlist names. Overrides the per-game recommendation.
+# recommended: Proton builds in order of recommendation
+MODLIST_PROTON_WARNINGS: dict[str, dict] = {
+    "nuclear sunset": {
+        "recommended": ["GE-Proton10-14"],
+    },
+}
+
+
+def get_proton_warning(modlist_name: str, game_type: str, install_dir: str = "") -> Optional[dict]:
+    if modlist_name:
+        warning = MODLIST_PROTON_WARNINGS.get(modlist_name.strip().lower())
+        if warning:
+            return warning
+    if install_dir:
+        from jackify.backend.services.playbook.hook_wiring import get_proton_recommendation
+        warning = get_proton_recommendation(install_dir, modlist_name or "", game_type or None)
+        if warning:
+            return warning
+    return get_game_proton_warning(game_type)

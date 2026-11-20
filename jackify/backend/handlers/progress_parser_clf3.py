@@ -36,6 +36,7 @@ class CLF3ProgressStateManager:
         self.state = InstallationProgress()
         self.state.phase = InstallationPhase.INITIALIZATION
         self.state.phase_name = "Starting"
+        self.state.message_is_curated = True
         self._total_archives: int = 0
         self._completed_archives: int = 0
         self._total_directives: int = 0

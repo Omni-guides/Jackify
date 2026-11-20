@@ -23,7 +23,7 @@ from jackify.backend.services.tool_version_compare import is_tool_update_availab
 from jackify.frontends.gui.screens.modlist_dashboard_card import CARD_HEIGHT, CARD_WIDTH, IMAGE_HEIGHT, IMAGE_WIDTH
 from jackify.frontends.gui.services.message_service import MessageService, open_url
 from jackify.frontends.gui.shared_theme import (  # noqa: F401 - btn_style re-exported for callers
-    JACKIFY_COLOR_BLUE, LOGO_PATH,
+    JACKIFY_COLOR_BLUE, LOGO_PATH, WABBAJACK_LOGO_PATH,
     COLOR_BTN_BACK as _C_BACK,
     COLOR_BTN_DISABLED as _C_DISABLED,
     COLOR_BTN_INSTALL as _C_INSTALL,
@@ -34,6 +34,7 @@ from jackify.frontends.gui.shared_theme import (  # noqa: F401 - btn_style re-ex
 )
 
 _JACKIFY_ENGINE_TOOL_ID = "jackify-engine"
+_BUNDLED_LOGOS = {_JACKIFY_ENGINE_TOOL_ID: LOGO_PATH, "wabbajack-cli": WABBAJACK_LOGO_PATH}
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +169,8 @@ class ToolCard(QFrame):
         # for the wider tools list they were often unrelated/low-quality images, so those
         # keep the colour-tile placeholder instead. jackify-engine uses the bundled Jackify
         # logo directly rather than a fetched avatar.
-        if self._tool_id == _JACKIFY_ENGINE_TOOL_ID:
-            pixmap = QPixmap(LOGO_PATH)
+        if self._tool_id in _BUNDLED_LOGOS:
+            pixmap = QPixmap(_BUNDLED_LOGOS[self._tool_id])
             if not pixmap.isNull():
                 self._set_tile_pixmap(pixmap)
                 return
@@ -185,7 +186,7 @@ class ToolCard(QFrame):
     def set_icon_pixmap(self, path) -> None:
         """Called once a background fetch has cached a real icon for this tool - engines only,
         see _load_tile_image."""
-        if not self._status.definition.is_engine:
+        if not self._status.definition.is_engine or self._tool_id in _BUNDLED_LOGOS:
             return
         pixmap = QPixmap(str(path))
         if not pixmap.isNull():
@@ -253,7 +254,7 @@ class ToolCard(QFrame):
 
         iv = self._status.installed_version or "-"
         lv = self._status.latest_version or "checking..."
-        self._version_label.setText(f"{iv} / {lv}")
+        self._version_label.setText(iv if installed else lv)
         self._version_label.setToolTip(f"Installed: {iv}\nLatest: {lv}")
 
         if not installed:

@@ -27,6 +27,7 @@ GAME_NAME_TO_TYPE: dict[str, str] = {
     'fallout4': 'fallout4',
     'fallout new vegas': 'falloutnv',
     'falloutnv': 'falloutnv',
+    'fallout_new_vegas': 'falloutnv',
     'fallout 3': 'fallout3',
     'fallout3': 'fallout3',
     'oblivion': 'oblivion',
@@ -55,3 +56,9 @@ def normalize_game_name(raw: str) -> Optional[str]:
     if not raw:
         return None
     return GAME_NAME_TO_TYPE.get(raw.lower())
+
+
+def to_display_name(raw: Optional[str]) -> Optional[str]:
+    """Return the human-readable game name (as used in playbook `game_types`) for any known spelling."""
+    game_type = normalize_game_name(raw) if raw else None
+    return GAME_DISPLAY_NAMES.get(game_type) if game_type else None

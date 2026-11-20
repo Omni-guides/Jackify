@@ -1,5 +1,99 @@
 # Jackify Changelog
 
+## v0.8.2 - Wabbajack Linux Beta
+**Release Date:** 20/11/26
+
+**A note on this release:** Later than I hoped/expected, 0.8.2 was delayed while I worked out why
+the Wabbajack Linux Beta always falls back to CPU texture conversion on the Steam Deck. The cause is
+now understood.
+
+The Deck/SteamOS has no OpenCL driver, so Wabbajack Linux Beta cannot use the Deck's GPU for texture
+conversion. It falls back to the much slower CPU conversion method - this can make individual
+textures take 10s of minutes to complete each, rather than seconds, making the install process
+unacceptably slow on systems that don't have CUDA or OpenCL drivers. Fixing that needs the Wabbajack
+team to add the missing support upstream. Until then, jackify-engine remains the recommended engine
+on Steam Deck and handhelds, and Jackify shows "NOT RECOMMENDED ON THIS SYSTEM" next to the
+Wabbajack Linux Beta option on systems where it would be slow.
+
+### Wabbajack Linux Beta
+The Wabbajack team have released a version of Wabbajack that runs natively on Linux. However,
+Wabbajack only handles the install itself. It does not create the Proton prefix, configure the
+modlist, add the Steam shortcut, or apply any of the Linux-specific fixes modlists need. Jackify can
+now optionally use the upstream Wabbajack Linux Native client to download and install a modlist,
+exactly as it has always done with jackify-engine, while still automating the prefix creation and
+configuration steps. Initially, Jackify will still default to jackify-engine for installs, but a
+checkbox on the Install Modlist screen and an option in Tools Hub can be used to set the upstream
+Linux Native Wabbajack the default for all installs (not recommended on Steam Deck/SteamOS/Handhelds
+yet, see above note). In the future, I hope to migrate to the new upstream Wabbajack client as the
+default out of the box once it is a viable option on Deck, but Jackify will still be required for
+the post-install steps needed to actually play a modlist on Linux.
+
+To use the new upstream Wabbajack for the modlist installation phase, tick "Use Wabbajack Linux
+Beta" on the Install Modlist screen. Jackify downloads the Wabbajack install engine from the Tools
+Hub (Wabbajack Linux CLI (Beta)) the first time it is needed, and it can be made the default install
+engine in Settings or the Tools Hub. Jackify CLI supports it too, maintaining feature parity.
+Currently, the version of Wabbajack Linux that Jackify downloads is a fork of upstream Wabbajack
+that includes a few small additions to its install progress output. I hope to PR these changes to
+the Wabbajack project, hopefully they accept them as it would benefit any Wabbajack CLI user, not
+just Jackify.
+
+This new Linux Native Wabbajack client is a beta - both for the Wabbajack project, and Jackify.
+Please report anything odd, and say which engine you were using. If something is a bug with
+Wabbajack itself, I may not be able to fix it directly.
+
+### New
+- "Remove from List" now has a tickbox, on by default, to also delete the modlist's Steam shortcut
+  and Proton prefix (Steam does not delete the prefix when a shortcut is deleted). The modlist files
+  are never touched. The Jackify command line asks the same question.
+
+### Improvements
+- Jackify now warns before an install with the Wabbajack Linux Beta on a system with no CUDA or
+  OpenCL driver, such as the Steam Deck. Without one the beta converts textures on the CPU, which
+  can take many times longer than jackify-engine on texture-heavy modlists. You can switch to
+  jackify-engine from the warning. The Install Modlist screen also shows "NOT RECOMMENDED ON THIS
+  SYSTEM - Why?" next to the option on those systems, linking to an explanation.
+- Cancelling or failing the Tale of Two Wastelands install during a TTW/FNV install no longer skips
+  the remaining configuration steps. They still run, and the final screen tells you that TTW is
+  still missing.
+- Nuclear Sunset now offers Tale of Two Wastelands again (the offer was never appearing), asks once
+  for everything it needs to do, links the required downloads, installs TTW into the folder the
+  modlist expects, asks for the YUPTTW archive afterwards and extracts it, then carries on with the
+  remaining steps without asking again.
+- Nuclear Sunset now shows a recommended Proton version (GE-Proton10-14) on the install success
+  screen.
+- Enderal modlists now also get the d3dx9_42 DirectX component installed during configuration,
+  matching Skyrim.
+
+### Fixes
+- Fixed the CLF3 engine carrying on to Steam shortcut creation and configuration when some files
+  needed downloading by hand. The files are now shown in the Jackify Download Manager, and the
+  install continues once they are in place.
+- Fixed Jackify freezing ("Not Responding") when a Nexus login was started and the browser never
+  completed it. Cancel now works, and the login in Settings no longer blocks the window.
+- Fixed raw engine output such as "=== Building BSAs ===" appearing in the progress banner during
+  installs. These lines now only appear in Show Details.
+- Fixed Tale of Two Wastelands integration corrupting a profile's mod list when the modlist has no
+  TTW placeholder, which left TTW missing from the load order.
+- Fixed Jackify failing to start when its configured data directory is on a drive that is no longer
+  mounted at that path. It now falls back to ~/Jackify for the session.
+- Fixed the post-install fixes for Viva New Vegas, Mojave Express and Nuclear Sunset (root mods, 4GB
+  patch, BSA decompression) failing with "unknown path variable: {game_root}" when run from the
+  command line menu.
+- Fixed a harmless "InstallerThread already deleted" error being logged after a failed install.
+- Fixed modlists with the game nested inside the Stock Game folder (such as Librum SE) running as
+  vanilla Skyrim because Jackify overwrote the correct game path. dxvk.conf and the Nemesis link are
+  also now placed next to the real game files.
+- Fixed Tuxborn character naming failing on Steam Deck after a recent Steam update. Jackify now sets
+  the launch option for you, and the install success screen recommends GE-Proton10-34. This is a
+  Steam bug with Vanilla Skyrim, too.
+- Fixed Fallout New Vegas PCR (the Steam edition with app ID 22490) not being detected.
+- Fixed the progress banner showing "Installing + Converting Textures" while BSAs were being built.
+- Configure New Modlist and Configure Existing Modlist now say plainly when a modlist folder is an
+  incomplete install (no ModOrganizer.ini) before doing anything else, and any other configuration
+  failure now shows its actual reason instead of a generic message.
+
+---
+
 ## v0.8.1.3 - Hotfix
 **Release Date:** 06/10/26
 

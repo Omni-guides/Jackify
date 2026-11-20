@@ -90,6 +90,8 @@ class InstallationProgress:
     phase_name: str = ""  # Human-readable phase name
     phase_step: int = 0  # Current step in phase
     phase_max_steps: int = 0  # Total steps in phase (0 if unknown)
+    stage_index: int = 0  # Position of the current stage in the whole install (0 if unknown)
+    stage_total: int = 0  # Number of stages in the whole install (0 if unknown)
     overall_percent: float = 0.0  # 0-100 overall progress
     data_processed: int = 0  # Bytes processed
     data_total: int = 0  # Total bytes (0 if unknown)
@@ -98,6 +100,7 @@ class InstallationProgress:
     speed_timestamps: Dict[str, float] = field(default_factory=dict)  # Last time each speed updated
     timestamp: float = field(default_factory=time.time)
     message: str = ""  # Current status message
+    message_is_curated: bool = False  # message is built by the parser and safe to show in the banner
     texture_conversion_current: int = 0  # Current texture being converted
     texture_conversion_total: int = 0  # Total textures to convert
     bsa_building_current: int = 0  # Current BSA being built
@@ -117,9 +120,9 @@ class InstallationProgress:
     def phase_progress_text(self) -> str:
         """Get phase progress text like '[12/14]'."""
         if self.phase_max_steps > 0 and self.phase_step > 0:
-            return f"[{self.phase_step}/{self.phase_max_steps}]"
+            return f"[{self.phase_step:,}/{self.phase_max_steps:,}]"
         elif self.phase_step > 0:
-            return f"[{self.phase_step}]"
+            return f"[{self.phase_step:,}]"
         else:
             return ""
     
@@ -402,6 +405,9 @@ class InstallationProgress:
     
     def get_phase_label(self) -> str:
         """Return a short, stable label for the current phase."""
+        if self.phase == InstallationPhase.INSTALL and self.phase_name and 'bsa' in self.phase_name.lower():
+            return "Building BSAs"
+
         # During install+texture conversion, keep a stable combined label to avoid
         # rapid banner flipping between install and conversion text.
         if self.phase == InstallationPhase.INSTALL and self.texture_conversion_total > 0:
@@ -459,7 +465,7 @@ class InstallationProgress:
         # For BSA building, show BSA count instead of generic phase progress or data progress
         if self.bsa_building_total > 0:
             # BSA building in progress - show BSA count
-            parts.append(f"[{self.bsa_building_current}/{self.bsa_building_total}]")
+            parts.append(f"[{self.bsa_building_current:,}/{self.bsa_building_total:,}]")
             # Don't show data progress during BSA building (it's usually complete at 100%)
         else:
             # Normal phase - show phase progress
@@ -495,6 +501,9 @@ class InstallationProgress:
                 tex_total = self.texture_conversion_total
                 tex_current = max(0, min(self.texture_conversion_current, tex_total))
                 parts.append(f"Converting textures: {tex_current}/{tex_total}")
+
+        if self.stage_total > 0 and self.stage_index > 0:
+            parts.append(f"- step {self.stage_index} of {self.stage_total}")
 
         # Overall speed (if available, but not during BSA building)
         if self.bsa_building_total == 0:

@@ -36,11 +36,14 @@ _BUNDLED_DIR = Path(__file__).parent / "bundled"
 
 @dataclass
 class MatchIdentity:
-    """Identity signals gathered by the caller, in the priority order from section 3.2."""
+    """Identity signals gathered by the caller, in the priority order from section 3.2.
+
+    `game_type` has no default: every caller must state it (None only when genuinely unknown).
+    """
+    game_type: Optional[str]
     machine_url: Optional[str] = None
     name: Optional[str] = None
     mo2_profile: Optional[str] = None
-    game_type: Optional[str] = None
 
 
 def matches_identity(match: MatchBlock, identity: MatchIdentity) -> bool:
@@ -71,6 +74,11 @@ def matches_identity(match: MatchBlock, identity: MatchIdentity) -> bool:
         return False
 
     if match.game_types and identity.game_type not in match.game_types:
+        if not identity.game_type:
+            logger.warning(
+                "Playbook match skipped: identity %r has no game type but playbook requires %s",
+                identity.name, match.game_types,
+            )
         return False
 
     return True
@@ -140,6 +148,41 @@ def _read_bytes(path: Path) -> Optional[bytes]:
         return None
 
 
+def _bundled_playbooks() -> Dict[str, Playbook]:
+    """Hash-verified playbooks shipped in this build, keyed by playbook_id."""
+    raw_index = _read_bytes(_bundled_index_path())
+    index = _parse_index(raw_index) if raw_index is not None else None
+    bundled: Dict[str, Playbook] = {}
+    for entry in index or []:
+        playbook_id, expected = entry.get("playbook_id"), entry.get("sha256")
+        if not isinstance(playbook_id, str) or not isinstance(expected, str):
+            continue
+        raw = _read_bytes(_bundled_file_path(playbook_id))
+        if raw is None or _sha256_of(raw) != expected.lower():
+            continue
+        playbook = _parse_raw(raw, playbook_id)
+        if playbook is not None:
+            bundled[playbook_id] = playbook
+    return bundled
+
+
+def _prefer_newer_bundled(playbooks: Dict[str, Playbook]) -> Dict[str, Playbook]:
+    """A fetched or cached playbook only overrides the bundled one if its revision is strictly
+    greater, matching the tools/USVFS manifests. Lets a build test playbook changes without
+    publishing them, and stops a stale remote or cache downgrading a newer build."""
+    bundled = _bundled_playbooks()
+    result = dict(playbooks)
+    for playbook_id, current in playbooks.items():
+        shipped = bundled.get(playbook_id)
+        if shipped is not None and shipped.revision > current.revision:
+            logger.info(
+                "Playbook %s: bundled revision %d is newer than %d, using bundled",
+                playbook_id, shipped.revision, current.revision,
+            )
+            result[playbook_id] = shipped
+    return result
+
+
 def _fetch_bytes(url: str) -> Optional[bytes]:
     try:
         resp = requests.get(url, timeout=_REQUEST_TIMEOUT, verify=True)
@@ -204,7 +247,7 @@ class PlaybookRegistry:
                 playbooks[playbook.playbook_id] = playbook
 
         if playbooks:
-            self._playbooks = playbooks
+            self._playbooks = _prefer_newer_bundled(playbooks)
         return True
 
     def _sync_one(self, entry: dict) -> Optional[Playbook]:
@@ -283,7 +326,7 @@ class PlaybookRegistry:
                             playbooks[playbook_id] = playbook
                         break
             if playbooks:
-                self._playbooks = playbooks
+                self._playbooks = _prefer_newer_bundled(playbooks)
                 return
 
 

@@ -28,6 +28,8 @@ class StepContext:
     mod_enabled: Optional[Callable[[str], bool]] = None
     mod_present: Optional[Callable[[str], bool]] = None
     log: Callable[[str], None] = lambda msg: None
+    # Files the user supplied before the run, keyed by an extract_archive step's `archive_id`.
+    user_files: Dict[str, Path] = field(default_factory=dict)
 
     def expression_context(self, exit_code: Optional[int] = None, output: str = "") -> ExpressionContext:
         return ExpressionContext(

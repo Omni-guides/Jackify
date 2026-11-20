@@ -74,7 +74,17 @@ def run_playbook_automation_cli(
     output = output or print
     step_ctx.log = output
 
+    consented = set()
+    if hook == "post_configure":
+        try:
+            from jackify.frontends.cli.commands.playbook_ttw_flow import run_combined_ttw_flow
+            consented = run_combined_ttw_flow(identity, step_ctx, output)
+        except Exception as e:
+            logger.warning("Combined TTW playbook flow failed (non-fatal): %s", e)
+
     def _confirm(playbook: Playbook) -> bool:
+        if playbook.playbook_id in consented:
+            return True
         return _confirm_via_input(playbook, hook, output)
 
     try:

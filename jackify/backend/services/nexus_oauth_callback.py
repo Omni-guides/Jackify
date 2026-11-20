@@ -22,9 +22,14 @@ class NexusOAuthCallbackMixin:
         if callback_file.exists():
             callback_file.unlink()
         logger.info("Waiting for OAuth callback via jackify:// protocol")
+        cancel_event = self._cancel_event
         start_time = time.time()
         last_reminder = 0
         while (time.time() - start_time) < self.CALLBACK_TIMEOUT:
+            if cancel_event.is_set():
+                logger.info("OAuth callback wait cancelled")
+                callback_file.unlink(missing_ok=True)
+                return False
             if callback_file.exists():
                 try:
                     lines = callback_file.read_text().strip().split('\n')
@@ -46,7 +51,8 @@ class NexusOAuthCallbackMixin:
                         "'Open Jackify', or use 'Paste callback URL' in Jackify to paste the URL from the address bar"
                     )
                 last_reminder = elapsed
-            time.sleep(0.5)
+            cancel_event.wait(0.5)
+        callback_file.unlink(missing_ok=True)
         logger.error("OAuth callback timeout after %s seconds", self.CALLBACK_TIMEOUT)
         logger.error(
             "Protocol handler may not be working. Check:\n"

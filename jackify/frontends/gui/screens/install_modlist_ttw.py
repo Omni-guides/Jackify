@@ -1,5 +1,6 @@
 """TTW integration methods for InstallModlistScreen (Mixin)."""
 from pathlib import Path
+from typing import Optional
 from PySide6.QtCore import QTimer
 import logging
 import os
@@ -21,14 +22,17 @@ class TTWIntegrationMixin:
         Returns:
             bool: True if should offer TTW integration
         """
+        self._ttw_offer = None
+        self._consented_playbook_ids = None
         try:
             # Check 1: Must be Fallout New Vegas
             if game_type.lower() not in ['falloutnv', 'fallout new vegas', 'fallout_new_vegas']:
                 return False
 
             # Check 2: Must be eligible per a matching playbook's offer_tool_flow step
-            from jackify.backend.services.playbook.hook_wiring import modlist_offers_tool_flow
-            if not modlist_offers_tool_flow(install_dir, modlist_name, "ttw_install"):
+            from jackify.backend.services.playbook.hook_wiring import get_tool_flow_offer
+            self._ttw_offer = get_tool_flow_offer(install_dir, modlist_name, "ttw_install", game_type)
+            if self._ttw_offer is None:
                 return False
 
             # Check 3: TTW must not already be installed
@@ -41,6 +45,67 @@ class TTWIntegrationMixin:
         except Exception as e:
             logger.debug(f"Error checking TTW eligibility: {e}")
             return False
+
+    def _ask_combined_playbook_offer(self, modlist_name: str, install_dir: str):
+        """Single up-front consent for a playbook that does more than offer TTW.
+
+        Returns None when the matching playbook only hands off to TTW (caller keeps its own
+        TTW question), otherwise True/False for the user's answer. Consent is remembered so
+        the playbook's later steps run without a second dialog.
+        """
+        offer = getattr(self, "_ttw_offer", None)
+        if offer is None or not offer.combined_consent:
+            return None
+
+        from PySide6.QtWidgets import QMessageBox
+        from jackify.backend.services.playbook.runtime import build_combined_confirmation_text
+        from jackify.frontends.gui.services.message_service import MessageService
+
+        reply = MessageService.question(
+            self, offer.playbook.display_name,
+            build_combined_confirmation_text(offer.playbook, html=True),
+            critical=False, safety_level="medium",
+        )
+        if reply != QMessageBox.Yes:
+            return False
+        self._consented_playbook_ids = {offer.playbook.playbook_id}
+        return True
+
+    def _collect_playbook_archives(self, modlist_name: str, install_dir: str, game_type: str) -> dict:
+        """Locate (or ask for) each archive the matching playbooks need, keyed by archive_id."""
+        from pathlib import Path
+        from PySide6.QtWidgets import QDialog
+        from jackify.frontends.gui.dialogs.nexus_manual_install_dialog import NexusManualInstallDialog
+        from jackify.backend.services.playbook.hook_wiring import get_user_archive_requests
+        from jackify.backend.services.playbook.user_files import default_download_dirs, find_user_archive
+
+        found = {}
+        for request in get_user_archive_requests(install_dir, modlist_name, game_type):
+            path = find_user_archive(request["name_contains"])
+            if path:
+                self._safe_append_text(f"Found {path.name} in {path.parent}")
+            else:
+                dirs = default_download_dirs()
+                start = str(dirs[0]) if dirs else str(Path.home())
+                dialog = NexusManualInstallDialog(
+                    request["archive_id"], request["label"], request["url"], parent=self,
+                    window_title=request["label"], heading=request["prompt"],
+                    body_text=(
+                        "Jackify could not find this file in your downloads folder.\n\n"
+                        "1. If you have not downloaded it yet, click 'Open Download Page' below "
+                        "(a login may be required)\n"
+                        "2. Click 'Browse...' and select the downloaded archive\n"
+                        "3. Click Continue"
+                    ),
+                    open_button_text="Open Download Page", confirm_button_text="Continue",
+                    start_dir=start,
+                )
+                path = dialog.selected_archive if dialog.exec() == QDialog.Accepted else None
+            if path:
+                found[request["archive_id"]] = path
+            else:
+                self._safe_append_text(f"No archive selected for: {request['label']}")
+        return found
 
     def _detect_existing_ttw(self, install_dir: str) -> bool:
         """Check if TTW is already installed in the modlist
@@ -109,11 +174,16 @@ class TTWIntegrationMixin:
                 ttw_screen = self.stacked_widget.widget(5)
 
                 if hasattr(ttw_screen, 'set_modlist_integration_mode'):
-                    ttw_screen.set_modlist_integration_mode(modlist_name, install_dir)
+                    offer = getattr(self, '_ttw_offer', None)
+                    ttw_screen.set_modlist_integration_mode(
+                        modlist_name, install_dir, output_dir=offer.output_dir if offer else None,
+                    )
 
                     # Connect to completion signal to show success dialog after TTW
                     if hasattr(ttw_screen, 'integration_complete'):
+                        self._disconnect_ttw_integration(ttw_screen)
                         ttw_screen.integration_complete.connect(self._on_ttw_integration_complete)
+                        self._ttw_awaiting_integration = True
                 else:
                     logger.debug("WARNING: TTW screen does not support modlist integration mode yet")
 
@@ -148,6 +218,25 @@ class TTWIntegrationMixin:
                 f"Failed to navigate to TTW installation screen: {str(e)}"
             )
 
+    def _ttw_missing_notice(self) -> Optional[str]:
+        """Success-dialog warning for a modlist whose TTW install did not happen (None if TTW is there)."""
+        install_dir = getattr(self, '_ttw_install_dir', '') or ''
+        if install_dir and self._detect_existing_ttw(install_dir):
+            return None
+        offer = getattr(self, '_ttw_offer', None)
+        target = f" '{Path(offer.output_dir).name}'" if offer and offer.output_dir else " the TTW mod"
+        return (
+            f"Tale of Two Wastelands was not installed, so {getattr(self, '_ttw_modlist_name', 'this modlist')} "
+            "will not work yet. Install it with the TTW tool in the Additional Tasks tab, then "
+            f"add the result to the modlist's mods folder as{target}."
+        )
+
+    def _disconnect_ttw_integration(self, ttw_screen) -> None:
+        try:
+            ttw_screen.integration_complete.disconnect(self._on_ttw_integration_complete)
+        except (RuntimeError, TypeError):
+            pass
+
     def _on_ttw_integration_complete(self, success: bool, ttw_version: str = ""):
         """Handle completion of TTW integration and show final success dialog
 
@@ -155,15 +244,15 @@ class TTWIntegrationMixin:
             success: Whether TTW integration completed successfully
             ttw_version: Version of TTW that was installed
         """
+        if not getattr(self, '_ttw_awaiting_integration', False):
+            return
+        self._ttw_awaiting_integration = False
+        if self.stacked_widget:
+            self._disconnect_ttw_integration(self.stacked_widget.widget(5))
         try:
-            if not success:
-                from jackify.frontends.gui.services.message_service import MessageService
-                MessageService.critical(
-                    self,
-                    "TTW Integration Failed",
-                    "Tale of Two Wastelands integration did not complete successfully."
-                )
-                return
+            # A failed or cancelled TTW install must not skip the remaining steps (4GB patch, Stock
+            # copy, ...): they do not depend on TTW. The TTW screen has already reported any error.
+            self._ttw_incomplete_notice = None if success else self._ttw_missing_notice()
 
             # Navigate back to the screen that initiated TTW
             if self.stacked_widget:
@@ -185,9 +274,13 @@ class TTWIntegrationMixin:
             # Check for modlist post-install fixes (playbooks - VNV, etc.) after TTW installation
             vnv_automation_running = False
             if hasattr(self, '_ttw_install_dir') and hasattr(self, '_ttw_modlist_name'):
+                user_files = self._collect_playbook_archives(
+                    self._ttw_modlist_name, self._ttw_install_dir, 'falloutnv',
+                ) if getattr(self, '_consented_playbook_ids', None) else None
                 vnv_automation_running = self._check_and_run_playbook_automation(
                     self._ttw_modlist_name, self._ttw_install_dir,
                     appid=getattr(self, '_current_appid', None), game_type='falloutnv',
+                    user_files=user_files,
                 )
 
             if vnv_automation_running:
@@ -216,7 +309,7 @@ class TTWIntegrationMixin:
                     'time_taken': time_str,
                     'game_name': game_name,
                     'enb_detected': False,
-                    'playbook_warnings': list(getattr(self._playbook_controller, 'last_failure_notices', None) or []) if hasattr(self, '_playbook_controller') else [],
+                    'playbook_warnings': self._playbook_success_warnings(),
                 },
             )
 

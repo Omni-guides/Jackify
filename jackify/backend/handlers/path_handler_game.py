@@ -177,7 +177,9 @@ class PathHandlerGameMixin:
                 self.logger.info(f"Found potential stock game directory: {found_path}")
                 break
         if found_path:
-            self.stock_game_path = found_path
+            from jackify.backend.handlers.game_dir_resolver import resolve_game_dir
+            resolved = resolve_game_dir(modlist_path, Path(found_path), getattr(self, 'modlist_ini', None))
+            self.stock_game_path = str(resolved)
             return True
         self.stock_game_path = None
         searched = [str(modlist_path / n) for n in preferred_order]

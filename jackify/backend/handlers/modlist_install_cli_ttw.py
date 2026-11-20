@@ -17,12 +17,45 @@ def _strip_ansi_control_codes(text: str) -> str:
     return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text or '')
 
 
+# Install dirs whose TTW offer the combined playbook flow has already handled (accepted or declined),
+# so the standalone prompt below does not ask a second time.
+TTW_OFFER_HANDLED = set()
+
+
+class _CLITTWAdapter:
+    """Lets module-level callers use the mixin's methods without a full ModlistInstallCLI."""
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.verbose = False
+        self.filesystem_handler = None
+        self.config_handler = None
+
+
+def _adapter():
+    class _Adapter(_CLITTWAdapter, ModlistInstallCLITTWMixin):
+        pass
+    return _Adapter()
+
+
+def is_ttw_offer_eligible(install_dir: str, game_type: str, modlist_name: str) -> bool:
+    """Same eligibility the standalone prompt uses: FNV, playbook offer, TTW not already installed."""
+    return _adapter()._is_ttw_eligible(install_dir, game_type, modlist_name)
+
+
+def launch_ttw_for_playbook(install_dir: str, modlist_name: str, output_dir: str) -> bool:
+    """Run the interactive TTW install into a playbook-chosen output dir. True if it succeeded."""
+    return _adapter()._launch_ttw_installation(modlist_name, install_dir, output_dir=output_dir)
+
+
 def prompt_ttw_if_eligible(install_dir: str, modlist_name: str) -> None:
     """Standalone TTW prompt usable outside the mixin context (e.g. CLI configure command).
 
     Detects game type from ModOrganizer.ini, resolves the best available modlist name,
     checks whitelist eligibility, and runs the interactive TTW prompt if applicable.
     """
+    if str(install_dir) in TTW_OFFER_HANDLED:
+        return
     try:
         # Detect game type from ModOrganizer.ini
         mo2_ini = Path(install_dir) / "ModOrganizer.ini"
@@ -43,14 +76,7 @@ def prompt_ttw_if_eligible(install_dir: str, modlist_name: str) -> None:
         if not identified_name:
             return
 
-        class _Adapter(ModlistInstallCLITTWMixin):
-            def __init__(self):
-                self.logger = logging.getLogger(__name__)
-                self.verbose = False
-                self.filesystem_handler = None
-                self.config_handler = None
-
-        _Adapter()._check_and_prompt_ttw_integration(install_dir, game_type, identified_name)
+        _adapter()._check_and_prompt_ttw_integration(install_dir, game_type, identified_name)
     except Exception as e:
         logger.error("TTW post-configure check failed: %s", e, exc_info=True)
 
@@ -125,7 +151,7 @@ class ModlistInstallCLITTWMixin:
 
             # Check 2: Must be eligible per a matching playbook's offer_tool_flow step
             from jackify.backend.services.playbook.hook_wiring import modlist_offers_tool_flow
-            if not modlist_offers_tool_flow(install_dir, modlist_name, "ttw_install"):
+            if not modlist_offers_tool_flow(install_dir, modlist_name, "ttw_install", game_type):
                 return False
 
             # Check 3: TTW must not already be installed
@@ -177,8 +203,9 @@ class ModlistInstallCLITTWMixin:
             self.logger.error(f"Error detecting existing TTW: {e}")
             return False
 
-    def _launch_ttw_installation(self, modlist_name: str, install_dir: str):
-        """Launch TTW installation workflow"""
+    def _launch_ttw_installation(self, modlist_name: str, install_dir: str, output_dir: str = None) -> bool:
+        """Launch TTW installation workflow. A playbook-supplied `output_dir` is the modlist's own TTW mod
+        folder: no directory prompt, and nothing is renamed or re-registered afterwards. Returns True on success."""
         try:
             print(f"\n{COLOR_INFO}Starting TTW installation workflow...{COLOR_RESET}")
 
@@ -217,7 +244,7 @@ class ModlistInstallCLITTWMixin:
 
                 if user_input not in ['yes', 'y']:
                     print(f"{COLOR_INFO}TTW installation cancelled.{COLOR_RESET}")
-                    return
+                    return False
 
                 # Install TTW_Linux_Installer
                 print(f"{COLOR_INFO}Installing TTW_Linux_Installer...{COLOR_RESET}")
@@ -226,7 +253,7 @@ class ModlistInstallCLITTWMixin:
                 if not success:
                     from .ttw_installer_handler import describe_install_failure
                     print(f"{COLOR_ERROR}Failed to install TTW_Linux_Installer: {describe_install_failure(message)}{COLOR_RESET}")
-                    return
+                    return False
 
                 print(f"{COLOR_INFO}TTW_Linux_Installer installed successfully.{COLOR_RESET}")
 
@@ -235,18 +262,22 @@ class ModlistInstallCLITTWMixin:
             mpi_path = input(f"{COLOR_PROMPT}Path to TTW .mpi file: {COLOR_RESET}").strip()
             if not mpi_path:
                 print(f"{COLOR_WARNING}No .mpi file specified. Cancelling.{COLOR_RESET}")
-                return
+                return False
 
             mpi_path = Path(mpi_path).expanduser()
             if not mpi_path.exists() or not mpi_path.is_file():
                 print(f"{COLOR_ERROR}TTW .mpi file not found: {mpi_path}{COLOR_RESET}")
-                return
+                return False
 
             # Prompt for TTW installation directory
             print(f"\n{COLOR_PROMPT}TTW Installation Directory{COLOR_RESET}")
             default_ttw_dir = os.path.join(install_dir, 'mods', '[NoDelete] Tale of Two Wastelands')
-            print(f"Default: {default_ttw_dir}")
-            ttw_install_dir = input(f"{COLOR_PROMPT}TTW install directory (Enter for default): {COLOR_RESET}").strip()
+            if output_dir:
+                ttw_install_dir = output_dir
+                print(f"Installing into the modlist's own TTW folder: {ttw_install_dir}")
+            else:
+                print(f"Default: {default_ttw_dir}")
+                ttw_install_dir = input(f"{COLOR_PROMPT}TTW install directory (Enter for default): {COLOR_RESET}").strip()
 
             if not ttw_install_dir:
                 ttw_install_dir = default_ttw_dir
@@ -260,7 +291,7 @@ class ModlistInstallCLITTWMixin:
             def _ttw_output_callback(line: str):
                 clean = _strip_ansi_control_codes(line or "").strip()
                 if not clean:
-                    return
+                    return False
 
                 lower = clean.lower()
                 rendered = ""
@@ -284,7 +315,7 @@ class ModlistInstallCLITTWMixin:
                         rendered = f"[TTW] {clean}"
 
                 if not rendered or rendered == phase_state["last_rendered"]:
-                    return
+                    return False
                 phase_state["last_rendered"] = rendered
                 if re.search(r'^\[TTW\] .+?: \d+%$', rendered):
                     # In-place progress updates for counters/phases.
@@ -304,6 +335,11 @@ class ModlistInstallCLITTWMixin:
             )
             if progress_line_active["value"]:
                 print()
+
+            if success and output_dir:
+                print(f"\n{COLOR_INFO}TTW Installation Complete!{COLOR_RESET}")
+                print(f"TTW has been installed to: {ttw_install_dir}")
+                return True
 
             if success:
                 ttw_output_path = Path(ttw_install_dir)
@@ -335,7 +371,7 @@ class ModlistInstallCLITTWMixin:
                 if not integration_success:
                     print(f"{COLOR_ERROR}TTW installed, but integration into modlist failed.{COLOR_RESET}")
                     print(f"{COLOR_ERROR}Please check TTW_Install_workflow.log for details.{COLOR_RESET}")
-                    return
+                    return False
 
                 print(f"\n{COLOR_INFO}═══════════════════════════════════════════════════════════════{COLOR_RESET}")
                 print(f"{COLOR_INFO}TTW Installation Complete!{COLOR_RESET}")
@@ -345,14 +381,17 @@ class ModlistInstallCLITTWMixin:
                 print(f"The modlist '{modlist_name}' is now ready to use with TTW.")
                 print(f"Detailed log available at: {get_jackify_logs_dir() / 'TTW_Install_workflow.log'}")
                 input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
+                return True
             else:
                 print(f"\n{COLOR_ERROR}TTW installation failed. Check the logs for details.{COLOR_RESET}")
                 print(f"{COLOR_ERROR}Error: {message}{COLOR_RESET}")
                 print(f"{COLOR_INFO}Detailed log available at: {get_jackify_logs_dir() / 'TTW_Install_workflow.log'}{COLOR_RESET}")
                 input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
+                return False
 
         except Exception as e:
             self.logger.error(f"Error during TTW installation: {e}", exc_info=True)
             print(f"{COLOR_ERROR}Error during TTW installation: {e}{COLOR_RESET}")
             print(f"{COLOR_INFO}Detailed log available at: {get_jackify_logs_dir() / 'TTW_Install_workflow.log'}{COLOR_RESET}")
             input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")
+            return False

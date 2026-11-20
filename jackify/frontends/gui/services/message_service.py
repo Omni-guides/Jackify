@@ -3,9 +3,11 @@ Non-Focus-Stealing Message Service for Jackify
 Provides message boxes that don't steal focus from the current application
 """
 
+import html
 import logging
 import os
 import random
+import re
 import string
 import subprocess
 import warnings
@@ -324,6 +326,25 @@ class MessageService:
         dialog.exec()
 
 
+_URL_RE = re.compile(r'https?://[^\s<>"]+')
+
+
+def _linkify_urls(text: str) -> Optional[str]:
+    """HTML for text with URLs as links, or None when it has no URL (keep plain rendering)."""
+    if not _URL_RE.search(text):
+        return None
+    parts = []
+    last = 0
+    for m in _URL_RE.finditer(text):
+        url = m.group(0).rstrip('.,;)')
+        end = m.start() + len(url)
+        parts.append(html.escape(text[last:m.start()]))
+        parts.append(f'<a href="{html.escape(url, quote=True)}" style="color:#3fd0ea;">{html.escape(url)}</a>')
+        last = end
+    parts.append(html.escape(text[last:]))
+    return "".join(parts).replace("\n", "<br>").replace("   ", "&nbsp;&nbsp;&nbsp;")
+
+
 class _ErrorDialog(QDialog):
     """Internal dialog used by MessageService.show_error()."""
 
@@ -348,7 +369,16 @@ class _ErrorDialog(QDialog):
         )
         icon_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        msg_label = QLabel(message)
+        msg_label = QLabel()
+        link_html = _linkify_urls(message)
+        if link_html is not None:
+            msg_label.setTextFormat(Qt.RichText)
+            msg_label.setText(link_html)
+            msg_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            msg_label.setOpenExternalLinks(False)
+            msg_label.linkActivated.connect(open_url)
+        else:
+            msg_label.setText(message)
         msg_label.setWordWrap(True)
         msg_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 

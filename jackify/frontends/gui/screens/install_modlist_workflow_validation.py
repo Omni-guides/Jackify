@@ -25,7 +25,7 @@ class InstallWorkflowValidationMixin:
         install_dir = self.install_dir_edit.text().strip()
         downloads_dir = self.downloads_dir_edit.text().strip()
 
-        if self._session_engine_id() == "clf3" and not self._ensure_clf3_installed():
+        if not self._confirm_gpu_for_session_engine() or not self._ensure_session_engine_installed():
             self.progress_indicator.reset()
             self._enable_controls_after_operation()
             return False
@@ -315,11 +315,11 @@ class InstallWorkflowValidationMixin:
         self._is_update_install = False
         self._existing_shortcut_appid = None
         self._premium_notice_shown = False
+        self._ttw_incomplete_notice = None
         self._stalled_download_start_time = None
         self._stalled_download_notified = False
         self._stalled_data_snapshot = 0
         self._token_error_notified = False  # Reset token error notification
-        self._premium_failure_active = False
         self._installation_cancelled = False
         self._non_premium_gate_enabled = False
         self._non_premium_info_acknowledged = False

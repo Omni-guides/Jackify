@@ -105,11 +105,13 @@ class OverallProgressIndicator(QWidget):
         display_text = progress.display_text
         from jackify.shared.progress_models import InstallationPhase, FileProgress
         # CLF3 Status events populate progress.message with detail not captured by display_text.
-        # Use the message directly when display_text is just the bare phase label.
+        # Use the message directly when display_text is just the bare phase label. Engine
+        # messages are raw output lines (e.g. "=== Building BSAs ===") and stay out of the banner.
         if (
-            progress.message
+            progress.message_is_curated
+            and progress.message
             and progress.message not in ("Processing...", "")
-            and display_text in (progress.phase_name, progress.phase.value.title() if progress.phase else "", "Processing...", "")
+            and display_text in (progress.phase_name, progress.get_phase_label(), progress.phase.value.title() if progress.phase else "", "Processing...", "")
         ):
             display_text = progress.message
         if not display_text or display_text == "Processing...":

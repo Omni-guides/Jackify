@@ -27,34 +27,15 @@ class ProgressHandlersMixin:
         self._safe_append_text(progress_message)
 
     def on_premium_required_detected(self, engine_line: str):
-        """Handle detection of Nexus Premium requirement."""
+        """Log that Nexus refused a direct download; the install carries on with manual downloads."""
         if self._premium_notice_shown:
             return
-
         self._premium_notice_shown = True
-        self._premium_failure_active = True
-
-        user_message = (
-            "Nexus Mods rejected the automated download because this account is not Premium. "
-            "Jackify currently requires a Nexus Premium membership for automated installs, "
-            "and non-premium support is still planned."
+        logger.info(f"Nexus refused a direct download, engine message: {engine_line}")
+        self._safe_append_text(
+            "[Jackify] Nexus Mods did not allow a direct download for this account. "
+            "Files that cannot be downloaded automatically will be offered for manual download."
         )
-
-        if engine_line:
-            logger.warning(f"Nexus Premium required, engine message: {engine_line}")
-            self._safe_append_text(f"[Jackify] Engine message: {engine_line}")
-        logger.warning("Nexus Premium required for this modlist install")
-        self._safe_append_text("[Jackify] Jackify detected that Nexus Premium is required for this modlist install.")
-
-        MessageService.critical(
-            self,
-            "Nexus Premium Required",
-            f"{user_message}\n\nDetected engine output:\n{engine_line or 'Buy Nexus Premium to automate this process.'}",
-            safety_level="medium"
-        )
-
-        if hasattr(self, 'install_thread') and self.install_thread:
-            self.install_thread.cancel()
 
     def on_non_premium_detected(self):
         """Gate the manual-download dialog until non-premium info has been acknowledged."""
@@ -521,21 +502,15 @@ class ProgressHandlersMixin:
                 self.process_finished(130, QProcess.NormalExit)
                 return
 
-            if self._premium_failure_active:
-                message = "Installation stopped because Nexus Premium is required for automated downloads."
-
-            if not self._premium_failure_active:
-                engine_error = getattr(self.install_thread, 'last_error', None)
-                if engine_error:
-                    self._engine_error = engine_error
-                self._failure_message = message
+            engine_error = getattr(self.install_thread, 'last_error', None)
+            if engine_error:
+                self._engine_error = engine_error
+            self._failure_message = message
 
             logger.error(f"Installation failed: {message}")
             if self.show_details_checkbox.isChecked():
                 self._safe_append_text(f"\nError: {message}")
-            if self._premium_failure_active:
-                failure_reason = "download_failed"
-            elif getattr(self.install_thread, 'last_error', None):
+            if getattr(self.install_thread, 'last_error', None):
                 failure_reason = "engine_crash"
             else:
                 failure_reason = "unknown"
@@ -654,18 +629,7 @@ class ProgressHandlersMixin:
                     self._enable_controls_after_operation()
         else:
             # Check for user cancellation first - check message parameter first, then console
-            if self._premium_failure_active:
-                MessageService.warning(
-                    self,
-                    "Nexus Premium Required",
-                    "Jackify stopped the installation because Nexus Mods reported that this account is not Premium.\n\n"
-                    "Automatic installs currently require Nexus Premium. Non-premium support is planned.",
-                    safety_level="medium"
-                )
-                logger.warning("Install stopped: Nexus Premium required")
-                self._safe_append_text("\nInstall stopped: Nexus Premium required.")
-                self._premium_failure_active = False
-            elif getattr(self, '_installation_cancelled', False):
+            if getattr(self, '_installation_cancelled', False):
                 MessageService.information(self, "Installation Cancelled", "The installation was cancelled by the user.", safety_level="low")
                 self._installation_cancelled = False
                 self._cancellation_requested = False

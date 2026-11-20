@@ -17,6 +17,8 @@ _PLAYBOOK_ID_RE = re.compile(r'^[a-z0-9][a-z0-9-]{2,63}$')
 _VALID_HOOKS = {"post_install", "post_configure"}
 _VALID_ON_FAILURE = {"abort_playbook", "continue", "warn"}
 _MAX_STEPS = 32
+_MAX_PREREQUISITES = 8
+_MAX_PROTON_VERSIONS = 5
 _SUPPORTED_SCHEMA_VERSION = 1
 
 _COMMON_STEP_FIELDS = {
@@ -52,6 +54,13 @@ class Step:
 
 
 @dataclass
+class Prerequisite:
+    """A file the user must obtain themselves (e.g. a login-gated download) before the playbook runs."""
+    title: str
+    url: str
+
+
+@dataclass
 class Playbook:
     schema_version: int
     playbook_id: str
@@ -69,6 +78,8 @@ class Playbook:
     intro: str = ""
     outro: str = ""
     disabled: bool = False
+    prerequisites: List[Prerequisite] = field(default_factory=list)
+    proton_recommendation: Optional[Dict[str, Any]] = None
 
 
 def _require(data: dict, field_name: str, expected_type: type) -> Any:
@@ -122,6 +133,22 @@ def _parse_requires_jackify_version(data: dict) -> Optional[str]:
     return spec
 
 
+def _parse_prerequisites(data: dict) -> List[Prerequisite]:
+    raw = data.get("prerequisites", [])
+    if not isinstance(raw, list) or len(raw) > _MAX_PREREQUISITES:
+        raise PlaybookValidationError(f"prerequisites must be a list of at most {_MAX_PREREQUISITES}")
+    result = []
+    for entry in raw:
+        if not isinstance(entry, dict) or not isinstance(entry.get("title"), str) or not entry["title"]:
+            raise PlaybookValidationError("each prerequisite needs a title")
+        try:
+            url = validate_https_allowlisted_url(entry.get("url"), f"prerequisite {entry['title']!r}")
+        except UrlPolicyError as e:
+            raise PlaybookValidationError(str(e))
+        result.append(Prerequisite(title=entry["title"], url=url))
+    return result
+
+
 def _parse_step(raw: Any) -> Step:
     if not isinstance(raw, dict):
         raise PlaybookValidationError("each step must be a JSON object")
@@ -154,10 +181,27 @@ def _parse_step(raw: Any) -> Step:
     )
 
 
+def _parse_proton_recommendation(data: dict) -> Optional[Dict[str, Any]]:
+    raw = data.get("proton_recommendation")
+    if raw is None:
+        return None
+    versions = raw.get("recommended") if isinstance(raw, dict) else None
+    if (
+        not isinstance(versions, list)
+        or not 1 <= len(versions) <= _MAX_PROTON_VERSIONS
+        or not all(isinstance(v, str) and v.strip() for v in versions)
+    ):
+        raise PlaybookValidationError(
+            f"proton_recommendation.recommended must list 1 to {_MAX_PROTON_VERSIONS} version names"
+        )
+    return {"recommended": [v.strip() for v in versions]}
+
+
 def _parse_steps(data: dict) -> List[Step]:
     raw_steps = _require(data, "steps", list)
-    if not (1 <= len(raw_steps) <= _MAX_STEPS):
-        raise PlaybookValidationError(f"steps must contain 1 to {_MAX_STEPS} entries")
+    min_steps = 0 if data.get("proton_recommendation") is not None else 1
+    if not (min_steps <= len(raw_steps) <= _MAX_STEPS):
+        raise PlaybookValidationError(f"steps must contain {min_steps} to {_MAX_STEPS} entries")
 
     steps = []
     seen_ids = set()
@@ -216,4 +260,6 @@ def parse_playbook(data: dict) -> Playbook:
         intro=data.get("intro", ""),
         outro=data.get("outro", ""),
         disabled=bool(data.get("disabled", False)),
+        prerequisites=_parse_prerequisites(data),
+        proton_recommendation=_parse_proton_recommendation(data),
     )

@@ -104,6 +104,18 @@ TOOL_DEFINITIONS: List[ToolDefinition] = [
         is_engine=True,
     ),
     ToolDefinition(
+        tool_id="wabbajack-cli",
+        display_name="Wabbajack Linux CLI (Beta)",
+        description="Wabbajack's own Linux install engine, built from the Omni-guides fork. Opt-in beta engine. Jackify still handles the prefix, configuration and Linux fixes.",
+        github_repo="Omni-guides/wabbajack",
+        asset_patterns=[r"linux-x64\.tar\.gz"],
+        executable_names=["wabbajack-cli"],
+        tier=1,
+        can_uninstall=True,
+        is_engine=True,
+        include_prereleases=True,
+    ),
+    ToolDefinition(
         tool_id="ttw_installer",
         display_name="TTW Linux Installer",
         description="Automates Tale of Two Wastelands installation on Linux. Required for the TTW workflow.",
@@ -228,6 +240,7 @@ def _parse_manifest_entries(entries: list, source: str = "unknown") -> Optional[
                 nexus_game_domain=entry.get("nexus_game_domain", "site"),
                 nexus_file_filter=entry.get("nexus_file_filter"),
                 hidden=entry.get("hidden", False),
+                include_prereleases=entry.get("include_prereleases", False),
             ))
         except (KeyError, TypeError) as e:
             logger.warning("Skipping malformed manifest entry: %s", e)

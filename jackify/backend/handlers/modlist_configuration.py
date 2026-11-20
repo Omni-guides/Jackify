@@ -52,6 +52,22 @@ class ModlistConfigurationMixin:
         else:
             return True
 
+
+    def _update_gamepath_in_ini(self, modlist_ini_path: Path) -> bool:
+        """Keep the engine's gamePath, which can sit below the Stock Game folder."""
+        if getattr(self, 'engine_installed', False) and not self.modlist_sdcard:
+            return True
+        if not self.stock_game_path:
+            return True
+        if not self.path_handler.replace_gamepath(
+            modlist_ini_path=modlist_ini_path,
+            new_game_path=Path(self.stock_game_path),
+            modlist_sdcard=self.modlist_sdcard
+        ):
+            self.logger.error("Failed to update game path in ModOrganizer.ini.")
+            return False
+        return True
+
     def _execute_configuration_steps(self, status_callback=None, defer_playbooks: bool = False):
         """
         Runs the actual configuration steps for the selected modlist.
@@ -327,7 +343,6 @@ class ModlistConfigurationMixin:
         # Sets self.stock_game_path if found
         if not self._detect_stock_game_path():
             self.logger.error("Failed during stock game path detection.")
-            self.logger.error("Failed during stock game path detection.")
             return False
 
         # Step 7b: Detect Steam Library Info (Needed for Step 8)
@@ -336,7 +351,6 @@ class ModlistConfigurationMixin:
         self.logger.info("Step 7b: Detecting Steam Library info...")
         if not self._detect_steam_library_info():
              self.logger.error("Failed to detect necessary Steam Library information.")
-             self.logger.error("Could not find Steam library information.")
              return False
         self.logger.info("Step 7b: Detecting Steam Library info... Done")
 
@@ -345,24 +359,11 @@ class ModlistConfigurationMixin:
             status_callback(f"{self._get_progress_timestamp()} Updating ModOrganizer.ini paths")
         self.logger.info("Step 8: Updating gamePath, Binary, and workingDirectory paths in ModOrganizer.ini...")
         
-        # Update gamePath using replace_gamepath method
         modlist_dir_path_obj = Path(self.modlist_dir)
         modlist_ini_path_obj = Path(self.modlist_ini)
-        stock_game_path_obj = Path(self.stock_game_path) if self.stock_game_path else None
-        # Only call replace_gamepath if we have a valid stock game path
-        if stock_game_path_obj:
-            if not self.path_handler.replace_gamepath(
-                modlist_ini_path=modlist_ini_path_obj, 
-                new_game_path=stock_game_path_obj,
-                modlist_sdcard=self.modlist_sdcard
-            ):
-                self.logger.error("Failed to update gamePath in ModOrganizer.ini. Configuration aborted.")
-                self.logger.error("Failed to update game path in ModOrganizer.ini.")
-                return False  # Abort on failure
-        else:
-            self.logger.info("No stock game path found, skipping gamePath update - edit_binary_working_paths will handle all path updates.")
-            self.logger.info("Using unified path manipulation to avoid duplicate processing.")
-        
+        if not self._update_gamepath_in_ini(modlist_ini_path_obj):
+            return False
+
         # Conditionally update binary and working directory paths
         # Skip for jackify-engine workflows since paths are already correct
         # Exception: Always run for SD card installs to fix Z:/run/media/... to D:/... paths
@@ -392,7 +393,6 @@ class ModlistConfigurationMixin:
                 compat_data_path=getattr(self, 'compat_data_path', None)
             ):
                 self.logger.error("Failed to update binary and working directory paths in ModOrganizer.ini. Configuration aborted.")
-                self.logger.error("Failed to update binary and working directory paths in ModOrganizer.ini.")
                 return False  # Abort on failure
         else:
             self.logger.debug("[SD_CARD_DEBUG] Skipping path manipulation - jackify-engine already set correct paths in ModOrganizer.ini")

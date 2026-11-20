@@ -108,6 +108,7 @@ class PlaybookAutomationController(QObject):
         on_offer_flow: Optional[Callable[[str], None]] = None,
         begin_feedback: Optional[Callable[[], None]] = None,
         handle_feedback: Optional[Callable[[str], None]] = None,
+        consented_playbook_ids: Optional[set] = None,
     ) -> bool:
         """
         Check for matching playbooks and start automation if the user consents.
@@ -144,10 +145,13 @@ class PlaybookAutomationController(QObject):
         for playbook in heavy:
             playbook_hook = playbook.hook or "post_configure"
             steps_for_hook = [s for s in playbook.steps if (s.hook or playbook_hook) == hook]
-            reply = MessageService.question(
-                parent, playbook.display_name, build_confirmation_text(playbook, steps_for_hook),
-                critical=False, safety_level="medium",
-            )
+            if consented_playbook_ids and playbook.playbook_id in consented_playbook_ids:
+                reply = QMessageBox.Yes
+            else:
+                reply = MessageService.question(
+                    parent, playbook.display_name, build_confirmation_text(playbook, steps_for_hook),
+                    critical=False, safety_level="medium",
+                )
             if reply != QMessageBox.Yes:
                 on_progress(f"{playbook.display_name} skipped by user")
                 continue

@@ -134,9 +134,10 @@ class ConfigureExistingModlistScreen(
                     from jackify.backend.utils.modlist_meta import get_modlist_name
                     identified_name = get_modlist_name(install_dir)
                     if identified_name and self._check_ttw_eligibility(identified_name, game_type, install_dir):
-                        self._cleanup_config_thread()
-                        self._initiate_ttw_workflow(identified_name, install_dir)
-                        return
+                        if self._ask_combined_playbook_offer(identified_name, install_dir) is not False:
+                            self._cleanup_config_thread()
+                            self._initiate_ttw_workflow(identified_name, install_dir)
+                            return
 
             # Check for modlist post-install fixes (playbooks - VNV, MEW, etc.) after configuration
             if install_dir and self._check_and_run_playbook_automation(

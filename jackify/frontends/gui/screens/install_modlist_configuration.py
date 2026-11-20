@@ -97,8 +97,9 @@ class ConfigurationPhaseMixin(FocusReclaimMixin, InstallModlistShortcutDialogMix
                     pass
 
                 if self._check_ttw_eligibility(ttw_modlist_name, self._current_game_type, install_dir):
+                    combined = self._ask_combined_playbook_offer(ttw_modlist_name, install_dir)
                     # Offer TTW installation
-                    reply = MessageService.question(
+                    reply = (QMessageBox.Yes if combined else QMessageBox.No) if combined is not None else MessageService.question(
                         self,
                         "Install TTW?",
                         f"{ttw_modlist_name} requires Tale of Two Wastelands!\n\n"

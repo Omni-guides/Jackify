@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "playbook_id": "tuxborn",
+  "revision": 1,
+  "display_name": "Tuxborn",
+  "summary": "Recommends GE-Proton10-34 for the Tuxborn Skyrim modlist.",
+  "maintainer": "omni",
+  "created": "2026-11-13",
+  "match": {
+    "name_contains": ["tuxborn"],
+    "mo2_profiles": [
+      "Tuxborn - Low-Deck",
+      "Tuxborn - Medium-Handheld",
+      "Tuxborn - High-Desktop",
+      "Tuxborn MCO - Low-Deck",
+      "Tuxborn MCO - Medium-Handheld",
+      "Tuxborn MCO - High-Desktop"
+    ]
+  },
+  "confirm": {
+    "any": [
+      { "type": "file_exists", "path": "{modlist_dir}/ModOrganizer.exe" },
+      { "type": "file_exists", "path": "{modlist_dir}/files/ModOrganizer.exe" }
+    ]
+  },
+  "proton_recommendation": {
+    "recommended": ["GE-Proton10-34"]
+  },
+  "steps": []
+}

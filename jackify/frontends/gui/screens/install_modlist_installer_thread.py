@@ -17,9 +17,12 @@ from jackify.backend.utils.cc_content_detector import is_cc_content_error, extra
 from jackify.shared.errors import JackifyError, cc_content_missing, creation_kit_missing
 from jackify.shared.progress_models import InstallationPhase
 
+from .install_modlist_engine_clf3 import Clf3InstallerMixin
+from .install_modlist_engine_wabbajack_cli import WabbajackCliInstallerMixin
+
 
 logger = logging.getLogger(__name__)
-class InstallerThread(QThread):
+class InstallerThread(Clf3InstallerMixin, WabbajackCliInstallerMixin, QThread):
     """Runs jackify-engine install in a background thread. Signals at class level."""
 
     output_received = Signal(str)
@@ -79,11 +82,15 @@ class InstallerThread(QThread):
 
     def cancel(self):
         self.cancelled = True
+        self._wjcli_release_wait()
         if self.process_manager:
             self.process_manager.cancel()
 
     def send_continue(self):
         """Send the continue command to the engine after manual downloads are ready."""
+        if self._wjcli_waiting:
+            self._wjcli_release_wait()
+            return
         if self.process_manager:
             sent = self.process_manager.write_stdin('{"command":"continue"}')
             if sent:
@@ -130,56 +137,19 @@ class InstallerThread(QThread):
 
         return False
 
-    # CLF3 tracing line patterns (after ANSI stripping, from tracing_subscriber::fmt default format)
-    _CLF3_TRACING_INFO_RE = re.compile(
-        r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+(INFO|DEBUG|TRACE)\s+'
-    )
-    _CLF3_TRACING_WARN_RE = re.compile(
-        r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+(WARN|ERROR)\s+\S+:\s+(.*)'
-    )
-    _CLF3_PHASE_HEADER_RE = re.compile(r'^=== .+ ===$')
-    _CLF3_ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
-
     def _read_stderr(self):
-        import time as _time
-        _stderr_log = os.environ.get("JACKIFY_CLF3_VERBOSE")
-        _stderr_fh = open("/tmp/clf3_stderr.log", "w", encoding="utf-8") if _stderr_log else None
-        _last_clf3_phase: str = ''
+        self._clf3_open_stderr_log()
         try:
             for raw in self.process_manager.proc.stderr:
                 line = raw.decode('utf-8', errors='replace').strip()
                 if not line:
                     continue
                 logger.debug(f"Engine stderr: {line}")
-                if _stderr_fh:
-                    _stderr_fh.write(line + "\n")
-                    _stderr_fh.flush()
                 self._raw_stderr_lines.append(line)
                 if len(self._raw_stderr_lines) > 40:
                     self._raw_stderr_lines.pop(0)
 
-                # CLF3: JSON events are on stdout; human-readable detail and tracing go to stderr.
-                # Forward phase headers and log() messages to Show Details.
-                # Verbose INFO/DEBUG/TRACE tracing is dropped; WARN/ERROR is shown stripped.
-                clf3_parser = getattr(self, '_clf3_parser', None)
-                if clf3_parser is not None:
-                    clean = self._CLF3_ANSI_RE.sub('', line)
-                    error = parse_engine_error_line(clean)
-                    if error and self.last_error is None:
-                        self.last_error = error
-                    warn_m = self._CLF3_TRACING_WARN_RE.match(clean)
-                    if warn_m:
-                        self.output_received.emit(f"[WARN] {warn_m.group(2)}\n")
-                    elif not self._CLF3_TRACING_INFO_RE.match(clean):
-                        if self._CLF3_PHASE_HEADER_RE.match(clean):
-                            if clean != _last_clf3_phase:
-                                _last_clf3_phase = clean
-                                self.output_received.emit(clean + '\n')
-                        else:
-                            self.output_received.emit(clean + '\n')
-                    _act = getattr(self, '_clf3_last_activity', None)
-                    if _act is not None:
-                        _act[0] = _time.monotonic()
+                if self._clf3_forward_stderr_line(line):
                     continue
 
                 error = parse_engine_error_line(line)
@@ -199,9 +169,7 @@ class InstallerThread(QThread):
         except Exception as e:
             logger.debug(f"Stderr reader error: {e}")
         finally:
-            if _stderr_fh:
-                _stderr_fh.close()
-                logger.info("CLF3 stderr log written to /tmp/clf3_stderr.log")
+            self._clf3_close_stderr_log()
 
     def _is_download_phase(self) -> bool:
         """True while the engine is downloading, per the structured progress parser.
@@ -321,119 +289,10 @@ class InstallerThread(QThread):
             "Install failed, but the engine did not provide a specific error line."
         )
 
-    def _run_clf3_heartbeat(self, last_activity: list, stop: threading.Event) -> None:
-        """Emit periodic 'finalising' updates to Show Details when stdout goes silent.
-
-        Fires once when silence exceeds THRESHOLD, then repeats every REPEAT seconds
-        of continued silence - so extended waits remain visible to the user.
-        Samples /proc/<pid>/io to show write throughput, giving the user concrete
-        evidence that extraction is progressing even when CLF3 emits no output.
-        Resets when real output arrives so a new silence period can trigger it again.
-        """
-        import copy
-        import time as _time
-        THRESHOLD = 8.0
-        INTERVAL = 5.0
-        REPEAT = 30.0
-        last_heartbeat_at = [0.0]
-        while not stop.wait(INTERVAL):
-            proc = self.process_manager.proc if self.process_manager else None
-            if not proc or proc.poll() is not None:
-                break
-            now = _time.monotonic()
-            elapsed_since_activity = now - last_activity[0]
-            if elapsed_since_activity < THRESHOLD:
-                continue
-            # Allow first fire when silence starts; then only re-fire every REPEAT seconds.
-            already_fired = last_heartbeat_at[0] >= last_activity[0]
-            if already_fired and (now - last_heartbeat_at[0]) < REPEAT:
-                continue
-            clf3_parser = getattr(self, '_clf3_parser', None)
-            phase = (clf3_parser.get_state().phase_name if clf3_parser else None) or 'Working'
-            wait_secs = int(elapsed_since_activity)
-            # Sample write_bytes to show active extraction throughput.
-            # The N/N dispatch counter fires when all archives are handed to worker threads;
-            # the workers themselves continue decompressing in parallel after that point.
-            # /proc/<pid>/io write_bytes confirms real I/O is happening.
-            if not already_fired:
-                total = clf3_parser.get_state().phase_max_steps if clf3_parser else 0
-                archive_str = f"{total} archives" if total else "archives"
-                self.output_received.emit(f"[Decompressing {archive_str}: workers running...]\n")
-            if clf3_parser:
-                from jackify.shared.progress_models import InstallationPhase
-                current = clf3_parser.get_state()
-                heartbeat_state = copy.copy(current)
-                heartbeat_state.phase = InstallationPhase.FINALIZE
-                heartbeat_state.phase_name = "Decompressing"
-                heartbeat_state.phase_step = 0
-                heartbeat_state.phase_max_steps = 0
-                heartbeat_state.overall_percent = 99.0
-                heartbeat_state.message = "Decompressing archives..."
-                self.progress_updated.emit(heartbeat_state)
-            last_heartbeat_at[0] = now
-
-    def _run_clf3_stdout_loop(self, last_activity: list) -> None:
-        """Read CLF3 stdout line-by-line and forward to Show Details.
-
-        JSON progress events (keyed on "type") and plain human-readable text both arrive
-        on stdout. Manual download events (keyed on "event") also appear on stdout.
-
-        Extraction dispatch counters ("Extracting: N/M") are dropped - named per-archive
-        completion lines already cover this information.
-        Directive counters ("Processing: N/M") are buffered; only the final value is
-        emitted when the next non-counter line arrives, avoiding a 1315-line flood.
-        """
-        import time as _time
-        _COUNTER_LINE_RE = re.compile(r'^(?:Extracting|Building BSA|DDS Transform): \d+/\d+$')
-        _PROCESSING_RE = re.compile(r'^Processing: \d+/\d+$')
-        _PHASE_HEADER_RE = re.compile(r'^=== .+ ===$')
-        _buffered_processing = None
-        _last_phase_header: str = ''
-        ansi_escape = re.compile(rb'\x1b\[[0-9;?]*[ -/]*[@-~]')
-        for raw in self.process_manager.proc.stdout:
-            if self.cancelled:
-                self.cancel()
-                break
-            decoded = ansi_escape.sub(b'', raw).decode('utf-8', errors='replace').rstrip('\r\n')
-            stripped = decoded.strip()
-            if not stripped:
-                continue
-            last_activity[0] = _time.monotonic()
-            self._remember_stdout_line(decoded)
-            if self._handle_engine_event(decoded):
-                continue
-            if stripped.startswith('{'):
-                clf3_parser = getattr(self, '_clf3_parser', None)
-                if clf3_parser and clf3_parser.process_line(stripped):
-                    state = clf3_parser.get_state()
-                    self.progress_updated.emit(state)
-                    msg = state.message
-                    if msg.startswith('Extracting ') and '(' in msg and state.phase_name == "Extracting":
-                        # Relabel as "Queuing" - the N/M counter tracks archive dispatch
-                        # to worker threads, not completion of decompression.
-                        self.output_received.emit(msg.replace('Extracting ', 'Queuing ', 1) + '\n')
-                continue
-            if _COUNTER_LINE_RE.match(stripped):
-                continue
-            if _PROCESSING_RE.match(stripped):
-                _buffered_processing = stripped
-                continue
-            if _buffered_processing is not None:
-                self.output_received.emit(_buffered_processing + '\n')
-                _buffered_processing = None
-            if _PHASE_HEADER_RE.match(stripped):
-                if stripped == _last_phase_header:
-                    continue
-                _last_phase_header = stripped
-            self.output_received.emit(decoded + '\n')
-        if _buffered_processing is not None:
-            self.output_received.emit(_buffered_processing + '\n')
-
     def run(self):
         try:
             from jackify.backend.services.engine_invoker import (
                 get_active_engine_id, get_engine_path, build_install_command,
-                resolve_game_dir, resolve_game_location,
             )
             from jackify.backend.handlers.config_handler import ConfigHandler
             config_handler = ConfigHandler()
@@ -456,35 +315,11 @@ class InstallerThread(QThread):
             debug_mode = config_handler.get('debug_mode', False)
             game_dir = None
             clf3_mode = (engine_id == "clf3")
+            wjcli_mode = (engine_id == "wabbajack-cli")
             if clf3_mode:
-                location = resolve_game_location(self.game_type)
-                if location:
-                    game_dir, game_store = location
-                    if game_store != 'steam':
-                        store_label = {'gog': 'GOG', 'epic': 'Epic Games'}.get(game_store, game_store)
-                        self.output_received.emit(
-                            f"[WARN] Game detected from {store_label}, not Steam. "
-                            "Most Wabbajack modlists require the Steam version. "
-                            "If the install fails with hash errors, a store version mismatch is likely the cause.\n"
-                        )
-                else:
-                    logger.warning("CLF3: could not resolve game directory for game_type=%s", self.game_type)
-
-            if clf3_mode and self.clf3_cdn_url and not os.path.isfile(self.modlist):
-                self.output_received.emit("Downloading modlist file via CLF3...\n")
-                import subprocess as _sp
-                from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
-                fetch_cmd = [engine_path, "fetch", self.clf3_cdn_url, "--output", self.modlist]
-                logger.debug("CLF3 fetch command: %s", " ".join(fetch_cmd))
-                fetch_env = get_clean_subprocess_env({})
-                fetch_cwd = os.path.dirname(self.modlist) or os.path.expanduser("~")
-                os.makedirs(fetch_cwd, exist_ok=True)
-                fetch_result = _sp.run(fetch_cmd, capture_output=True, text=True, env=fetch_env, cwd=fetch_cwd)
-                if fetch_result.returncode != 0:
-                    err = fetch_result.stderr.strip() or fetch_result.stdout.strip() or "unknown error"
-                    self.installation_finished.emit(False, f"Failed to download modlist file:\n\n{err}")
+                game_dir = self._clf3_resolve_game_dir()
+                if not self._clf3_fetch_modlist(engine_path):
                     return
-                self.output_received.emit("Modlist file ready.\n")
 
             cmd = build_install_command(
                 engine_id=engine_id,
@@ -501,7 +336,9 @@ class InstallerThread(QThread):
             from jackify.backend.handlers.subprocess_utils import get_clean_subprocess_env
             writeback_path = str(self.auth_service.get_token_writeback_path()) if self.auth_service else None
             if clf3_mode:
-                env_vars = {'NEXUS_OAUTH_TOKEN': self.api_key}
+                env_vars = self._clf3_env_vars()
+            elif wjcli_mode:
+                env_vars = self._wjcli_env_vars(engine_path)
             else:
                 env_vars = {'NEXUS_API_KEY': self.api_key}
                 if self.oauth_info:
@@ -531,27 +368,17 @@ class InstallerThread(QThread):
 
             from jackify.backend.handlers.subprocess_utils import ProcessManager
             if clf3_mode:
-                import time as _time
-                from jackify.backend.handlers.progress_parser_clf3 import CLF3ProgressStateManager
-                self._clf3_parser = CLF3ProgressStateManager()
-                self._clf3_last_activity = [_time.monotonic()]
-            else:
-                self._clf3_parser = None
+                self._clf3_start_session()
+            elif wjcli_mode:
+                self._wjcli_start_session()
             self.process_manager = ProcessManager(cmd, env=env, text=False, separate_stderr=True, enable_stdin=True)
             stderr_thread = threading.Thread(target=self._read_stderr, daemon=True)
             stderr_thread.start()
 
             if clf3_mode:
-                heartbeat_stop = threading.Event()
-                heartbeat_thread = threading.Thread(
-                    target=self._run_clf3_heartbeat,
-                    args=(self._clf3_last_activity, heartbeat_stop),
-                    daemon=True,
-                )
-                heartbeat_thread.start()
-                self._run_clf3_stdout_loop(self._clf3_last_activity)
-                heartbeat_stop.set()
-                heartbeat_thread.join(timeout=2.0)
+                self._clf3_run_output_loops()
+            elif wjcli_mode:
+                self._wjcli_run_output(engine_path, env_vars)
             else:
                 ansi_escape = re.compile(rb'\x1b\[[0-9;?]*[ -/]*[@-~]')
                 buffer = b''
@@ -723,9 +550,19 @@ class InstallerThread(QThread):
                         self.output_received.emit(decoded)
             stderr_thread.join(timeout=5)
             returncode = self.process_manager.wait()
-            if writeback_path and self.auth_service and not clf3_mode:
+            if clf3_mode:
+                returncode = self._clf3_handle_manual_downloads(returncode, cmd, env)
+                returncode = self._clf3_apply_manual_downloads(returncode)
+            if wjcli_mode:
+                returncode = self._wjcli_handle_manual_downloads(returncode, cmd, env_vars, engine_path)
+            if writeback_path and self.auth_service and not (clf3_mode or wjcli_mode):
                 self.auth_service.apply_token_writeback(writeback_path)
-            if self.process_manager.proc and self.process_manager.proc.stdout:
+            if wjcli_mode:
+                self._wjcli_clear_stored_login()
+            if wjcli_mode and returncode != 0 and not self.cancelled and self.last_error is None:
+                self.last_error = self._wjcli_failure_error(returncode)
+            if (self.process_manager.proc and self.process_manager.proc.stdout
+                    and not (wjcli_mode and self.cancelled)):
                 try:
                     remaining = self.process_manager.proc.stdout.read()
                     if remaining:

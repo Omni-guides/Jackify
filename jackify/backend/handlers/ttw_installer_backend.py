@@ -335,6 +335,8 @@ class TTWInstallerBackendMixin:
                             logger.info("Inserted TTW mod before separator: %s", line.strip())
                         new_lines.append(line)
                     if not separator_found:
+                        if new_lines and not new_lines[-1].endswith("\n"):
+                            new_lines[-1] += "\n"
                         new_lines.append(ttw_mod_line)
                         logger.warning("No TTW separator found in %s, appended to end", profile_name)
                     with open(modlist_file, 'w', encoding='utf-8') as f:

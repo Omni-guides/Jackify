@@ -1124,7 +1124,7 @@ def check_ttw_installation(modlist_dir: Path, game_type: str, r: Results, modlis
 
     try:
         from jackify.backend.services.playbook.hook_wiring import modlist_offers_tool_flow
-        if not modlist_offers_tool_flow(str(modlist_dir), modlist_name, "ttw_install"):
+        if not modlist_offers_tool_flow(str(modlist_dir), modlist_name, "ttw_install", game_type):
             return
     except Exception:
         pass

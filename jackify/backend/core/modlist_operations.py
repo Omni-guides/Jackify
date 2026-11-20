@@ -22,6 +22,7 @@ from jackify.backend.handlers.config_handler import ConfigHandler
 from .modlist_operations_discovery import ModlistOperationsDiscoveryMixin
 from .modlist_operations_configuration_cli import ModlistOperationsConfigurationCLIMixin
 from .modlist_operations_engine_cli import ModlistOperationsEngineCLIMixin
+from .modlist_operations_wabbajack_cli import ModlistOperationsWabbajackCliMixin
 from .modlist_operations_post_install_cli import ModlistOperationsPostInstallCLIMixin
 from .modlist_operations_game_detection import ModlistOperationsGameDetectionMixin
 from .modlist_operations_nexus import ModlistOperationsNexusMixin
@@ -166,6 +167,7 @@ class ModlistInstallCLI(
     ModlistOperationsDiscoveryMixin,
     ModlistOperationsConfigurationCLIMixin,
     ModlistOperationsEngineCLIMixin,
+    ModlistOperationsWabbajackCliMixin,
     ModlistOperationsPostInstallCLIMixin,
     ModlistOperationsGameDetectionMixin,
     ModlistOperationsNexusMixin,

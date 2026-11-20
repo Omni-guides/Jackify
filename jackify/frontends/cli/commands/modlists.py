@@ -293,12 +293,26 @@ class ModlistsCommand:
 
     def _remove_from_list(self, entry) -> bool:
         """Returns True if the caller should stop managing this (now-removed) entry."""
-        print(f"\n{COLOR_INFO}This only removes \"{entry.modlist_name}\" from Jackify's tracked "
-              f"list - the Steam shortcut, Proton prefix and files are left untouched.{COLOR_RESET}")
+        print(f"\n{COLOR_INFO}This removes \"{entry.modlist_name}\" from Jackify's tracked "
+              f"list. The modlist files are left untouched.{COLOR_RESET}")
         confirm = input(f"{COLOR_PROMPT}Remove from list? (y/N): {COLOR_RESET}").strip().lower()
         if confirm != 'y':
             print(f"{COLOR_INFO}Cancelled.{COLOR_RESET}")
             return False
+
+        if entry.appid:
+            print(f"{COLOR_WARNING}Deleting the Steam shortcut and Proton prefix also deletes any saves "
+                  f"and settings stored in the prefix. Steam is restarted, which closes any running "
+                  f"game.{COLOR_RESET}")
+            also = input(f"{COLOR_PROMPT}Also delete the Steam shortcut and Proton prefix? (Y/n): {COLOR_RESET}").strip().lower()
+            if also != 'n':
+                from jackify.backend.services.modlist_uninstall_service import uninstall_modlist
+                success, message = uninstall_modlist(
+                    entry, progress_callback=lambda msg: print(f"{COLOR_INFO}{msg}{COLOR_RESET}"),
+                    delete_install_dir=False,
+                )
+                print(f"{COLOR_SUCCESS if success else COLOR_ERROR}{message or 'Done.'}{COLOR_RESET}")
+                return True
 
         from jackify.backend.services.install_registry import remove_from_registry
 

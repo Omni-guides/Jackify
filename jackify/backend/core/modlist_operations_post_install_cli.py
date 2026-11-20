@@ -370,8 +370,8 @@ class ModlistOperationsPostInstallCLIMixin:
                 print(f"{COLOR_INFO}  - Proton 9 (Valve){COLOR_RESET}")
                 print(f"{COLOR_WARNING}  Valve Proton 10 has known ENB compatibility issues.{COLOR_RESET}")
 
-        from jackify.backend.data.modlist_proton_requirements import get_game_proton_warning
-        _game_warning = get_game_proton_warning(detected_game or '')
+        from jackify.backend.data.modlist_proton_requirements import get_proton_warning
+        _game_warning = get_proton_warning(shortcut_name or '', detected_game or '', install_dir_str)
         if _game_warning:
             print(f"\n{COLOR_INFO}Recommended Proton versions for this game (in order of recommendation):{COLOR_RESET}")
             for _version in _game_warning['recommended']:

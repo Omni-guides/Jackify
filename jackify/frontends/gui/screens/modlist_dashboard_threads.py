@@ -49,13 +49,17 @@ class UninstallThread(QThread):
     finished_uninstall = Signal(bool, str)
     progress = Signal(str)
 
-    def __init__(self, entry: InstallEntry, parent=None):
+    def __init__(self, entry: InstallEntry, parent=None, delete_install_dir: bool = True):
         super().__init__(parent)
         self._entry = entry
+        self._delete_install_dir = delete_install_dir
 
     def run(self):
         try:
-            success, message = uninstall_modlist(self._entry, progress_callback=self.progress.emit)
+            success, message = uninstall_modlist(
+                self._entry, progress_callback=self.progress.emit,
+                delete_install_dir=self._delete_install_dir,
+            )
         except Exception as e:
             logger.error("Uninstall failed for %s: %s", self._entry.modlist_name, e, exc_info=True)
             success, message = False, str(e)

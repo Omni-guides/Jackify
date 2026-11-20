@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 # dialog rather than applied silently.
 _HEAVY_TYPES = {
     "run_catalog_tool", "run_modlist_script", "offer_tool_flow", "replace_mod", "replace_mod_file",
+    "extract_archive",
 }
 
 
@@ -79,6 +80,34 @@ def build_confirmation_text(playbook: Playbook, steps_for_hook: list) -> str:
         parts += ["", playbook.outro]
     parts += ["", "Would you like Jackify to automate these steps?"]
     return "\n".join(parts)
+
+
+def build_combined_confirmation_text(playbook: Playbook, html: bool = False) -> str:
+    """
+    One consent text covering every step of the playbook across all of its hooks, plus any
+    `prerequisites` links. Used where the user is asked once up front (e.g. before the TTW
+    installer opens) instead of once per hook. With html=True the result is rich text for a
+    message box, with prerequisite URLs as clickable links.
+    """
+    import html as html_lib
+
+    def esc(text: str) -> str:
+        return html_lib.escape(text) if html else text
+
+    playbook_hook = playbook.hook or "post_configure"
+    steps = sorted(playbook.steps, key=lambda s: 0 if (s.hook or playbook_hook) == "post_install" else 1)
+    numbered = "\n".join(f"{i}. {esc(step.label)}" for i, step in enumerate(steps, start=1))
+    parts = [esc(playbook.display_name), "", esc(playbook.intro), "", numbered]
+    if playbook.outro:
+        parts += ["", esc(playbook.outro)]
+    if playbook.prerequisites:
+        parts += ["", "Please download these first (a login may be required):"]
+        for item in playbook.prerequisites:
+            link = f'<a href="{html_lib.escape(item.url)}">{esc(item.url)}</a>' if html else item.url
+            parts.append(f"{esc(item.title)}: {link}")
+    parts += ["", "Would you like Jackify to automate these steps?"]
+    text = "\n".join(parts)
+    return text.replace("\n", "<br>") if html else text
 
 
 def run_hook(

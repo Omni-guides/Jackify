@@ -4,8 +4,10 @@ Engine Invoker
 Resolves the active install engine and builds the appropriate subprocess command.
 Keeps engine-specific CLI differences isolated from install workflow code.
 """
+import json
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -102,6 +104,8 @@ def build_install_command(
     """Build the subprocess install command for the given engine."""
     if engine_id == "clf3":
         return _build_clf3_command(engine_path, wabbajack, install_dir, downloads_dir, game_dir)
+    if engine_id == "wabbajack-cli":
+        return _build_wabbajack_cli_command(engine_path, wabbajack, install_dir, downloads_dir)
     return _build_jackify_engine_command(engine_path, wabbajack, install_dir, downloads_dir, install_mode, debug, game_dir)
 
 
@@ -127,6 +131,29 @@ def _build_jackify_engine_command(
     return cmd
 
 
+def _build_wabbajack_cli_command(
+    engine_path: str,
+    wabbajack: str,
+    install_dir: str,
+    downloads_dir: str,
+) -> List[str]:
+    cmd = [engine_path, "install", "--show-progress"]
+    if wabbajack.endswith(".wabbajack") and os.path.isfile(wabbajack):
+        cmd += ["-w", wabbajack]
+    else:
+        cmd += ["-m", wabbajack]
+    return cmd + ["-o", install_dir, "-d", downloads_dir]
+
+
+def build_wabbajack_cli_env_vars(oauth_info: Optional[str], api_key: Optional[str]) -> dict:
+    """Nexus credentials for wabbajack-cli, passed only through NEXUS_OAUTH_INFO."""
+    if oauth_info:
+        return {"NEXUS_OAUTH_INFO": oauth_info}
+    if api_key:
+        return {"NEXUS_OAUTH_INFO": json.dumps({"api_key": api_key})}
+    return {}
+
+
 def _read_resource_settings() -> dict:
     """Read resource_settings.json from the Jackify config dir; return empty dict on any failure."""
     try:
@@ -143,6 +170,51 @@ _RESOURCE_SETTINGS_KEYS = (
     "Web Requests", "Wabbajack Client", "File Hashing", "Downloads",
     "File Extractor", "VFS", "Installer",
 )
+
+
+# Jackify's file keys have no spaces (jackify-engine style); Wabbajack looks resources up by their display name
+_WABBAJACK_RESOURCE_NAMES = {
+    "WebRequests": "Web Requests",
+    "WabbajackClient": "Wabbajack Client",
+    "FileHashing": "File Hashing",
+    "FileExtractor": "File Extractor",
+    "Downloads": "Downloads",
+    "VFS": "VFS",
+    "Installer": "Installer",
+}
+
+
+def build_wabbajack_cli_resource_settings(jackify_settings: dict) -> dict:
+    """Translate Jackify's resource limits into the layout wabbajack-cli reads."""
+    translated = {}
+    for key, value in jackify_settings.items():
+        name = _WABBAJACK_RESOURCE_NAMES.get(str(key).replace(" ", ""))
+        if name is None or not isinstance(value, dict):
+            continue
+        try:
+            max_tasks = int(value.get("MaxTasks", 0) or 0)
+            max_throughput = int(value.get("MaxThroughput", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if max_tasks <= 0:
+            continue
+        translated[name] = {"MaxTasks": max_tasks, "MaxThroughput": max(0, max_throughput)}
+    return translated
+
+
+def write_wabbajack_cli_resource_settings(data_home: Path) -> None:
+    """Give wabbajack-cli the user's Jackify resource limits (Settings -> Resource Limits)."""
+    import json
+    translated = build_wabbajack_cli_resource_settings(_read_resource_settings())
+    if not translated:
+        return
+    try:
+        target = Path(data_home) / "Wabbajack" / "saved_settings" / "resource_settings.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(translated, f, indent=2)
+    except OSError as e:
+        logger.warning("Could not write wabbajack-cli resource settings: %s", e)
 
 
 def ensure_resource_settings_file() -> None:

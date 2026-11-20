@@ -428,7 +428,7 @@ class PostInstallFeedbackMixin:
         """Update progress indicator + activity summary for post-install steps."""
         display_label = label
         if detail:
-            clean_detail = self._strip_timestamp_prefix(detail.strip())
+            clean_detail = self._strip_timestamp_prefix(detail.strip()).strip("= -").strip()
             if clean_detail:
                 if any(keyword in clean_detail.lower() for keyword in ['perl:', 'wine:', '/usr/bin/', 'winetricks:', 'protontricks:']):
                     pass

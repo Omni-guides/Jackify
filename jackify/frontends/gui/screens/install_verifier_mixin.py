@@ -51,7 +51,7 @@ def _merge_playbook_warnings(results, playbook_warnings):
         from jackify.backend.services.install_verifier_service import new_results
         results = new_results()
     for notice in playbook_warnings:
-        results.warn(f"Playbook: {notice}")
+        results.warn(notice)
     return results
 
 
@@ -186,6 +186,7 @@ class InstallVerifierMixin:
         success_params keys: modlist_name, workflow_type, time_taken, game_name, enb_detected, game_type
         """
         success_params["game_type"] = game_type
+        success_params["install_dir"] = install_dir
         self._maybe_apply_jcontainers_fix(install_dir, game_type)
         self._apply_problem_mods_disable(install_dir, game_type, success_params, appid)
         if hasattr(self, "progress_indicator"):
@@ -273,8 +274,11 @@ class InstallVerifierMixin:
                 logger.warning("Failed to show ENB dialog: %s", e)
 
         try:
-            from jackify.backend.data.modlist_proton_requirements import get_game_proton_warning
-            _game_warning = get_game_proton_warning(params.get("game_type", ""))
+            from jackify.backend.data.modlist_proton_requirements import get_proton_warning
+            _game_warning = get_proton_warning(
+                params.get("modlist_name", ""), params.get("game_type", ""),
+                params.get("install_dir", ""),
+            )
             if _game_warning:
                 from jackify.frontends.gui.dialogs.game_proton_warning_dialog import GameProtonWarningDialog
                 game_proton_dialog = GameProtonWarningDialog(

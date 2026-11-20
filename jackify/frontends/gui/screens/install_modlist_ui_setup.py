@@ -66,7 +66,6 @@ class InstallModlistUISetupMixin:
         self.progress_indicator = OverallProgressIndicator(show_progress_bar=True)
         self.file_progress_list = FileProgressList()  # Shows all active files (scrolls if needed)
         self._premium_notice_shown = False
-        self._premium_failure_active = False
         self._installation_cancelled = False
         self._non_premium_gate_enabled = False
         self._non_premium_info_acknowledged = False
@@ -297,19 +296,34 @@ class InstallModlistUISetupMixin:
         engine_row = QHBoxLayout()
         engine_row.setSpacing(4)
         engine_row.setContentsMargins(0, 0, 0, 0)
-        self.engine_checkbox = QCheckBox("Use Experimental Engine")
-        self.engine_checkbox.setToolTip("Use CLF3 (SulfurNitride) as the install engine instead of jackify-engine")
+        self.engine_checkbox = QCheckBox("Use Wabbajack Linux Beta")
+        self.engine_checkbox.setToolTip(
+            "Use Wabbajack's own Linux install engine (beta) instead of jackify-engine"
+        )
         self.engine_checkbox.toggled.connect(self._on_engine_checkbox_toggled)
         engine_row.addWidget(self.engine_checkbox)
         engine_whats_this = QLabel('<a href="https://github.com/Omni-guides/Jackify/wiki/Install-Engines" style="color: #6fa8dc; font-size: 11px;">(what\'s this?)</a>')
         engine_whats_this.setOpenExternalLinks(False)
         engine_whats_this.linkActivated.connect(self._open_url_safe)
         engine_row.addWidget(engine_whats_this)
+        from jackify.backend.services.compute_support import gpu_texture_encoding_available
+        if not gpu_texture_encoding_available():
+            engine_warning = QLabel(
+                '<a href="https://github.com/Omni-guides/Jackify/wiki/Install-Engines#slow-texture-conversion" '
+                'style="color: #e06c4c; font-size: 11px; font-weight: bold; text-decoration: none;">'
+                'NOT RECOMMENDED ON THIS SYSTEM - Why?</a>'
+            )
+            engine_warning.setOpenExternalLinks(False)
+            engine_warning.linkActivated.connect(self._open_url_safe)
+        else:
+            engine_warning = None
         engine_row.addStretch()
         engine_row_widget = QWidget()
         engine_row_widget.setLayout(engine_row)
         self._engine_row_widget = engine_row_widget
         right_checks_layout.addWidget(engine_row_widget)
+        if engine_warning is not None:
+            right_checks_layout.addWidget(engine_warning)
         self._init_engine_checkbox()
 
         resolution_and_restart_layout.addLayout(right_checks_layout)
@@ -489,7 +503,7 @@ class InstallModlistUISetupMixin:
         from jackify.backend.services.tool_registry import get_active_engine_id
         self._engine_row_widget.setVisible(True)
         self.engine_checkbox.blockSignals(True)
-        self.engine_checkbox.setChecked(get_active_engine_id() == "clf3")
+        self.engine_checkbox.setChecked(get_active_engine_id() == "wabbajack-cli")
         self.engine_checkbox.blockSignals(False)
 
     def _on_engine_checkbox_toggled(self, checked: bool) -> None:

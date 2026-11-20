@@ -215,6 +215,25 @@ class ModlistOperationsEngineCLIMixin:
                 install_mode='file' if (modlist_value.endswith('.wabbajack') and os.path.isfile(modlist_value)) else 'online',
                 debug=debug_mode,
             )
+            if engine_id == "wabbajack-cli":
+                from jackify.backend.services.compute_support import gpu_texture_encoding_available
+                if not gpu_texture_encoding_available():
+                    print(
+                        "[WARN] No CUDA or OpenCL driver found. The Wabbajack Linux Beta will convert "
+                        "textures on the CPU, which can take many times longer than jackify-engine: "
+                        "hours instead of minutes for large conversions. The Steam Deck has no OpenCL "
+                        "driver, so it always falls back to the CPU. Making the Wabbajack Linux client "
+                        "usable on the Steam Deck needs work by the Wabbajack project."
+                    )
+                pretty_cmd = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in cmd])
+                print(f"{COLOR_INFO}Launching Wabbajack Linux CLI with command:{COLOR_RESET} {pretty_cmd}")
+                if not self._run_wabbajack_cli_install(
+                    cmd, engine_path, modlist_value, actual_download_path,
+                    auth_service, current_oauth_info or self.context.get('nexus_oauth_info'), api_key,
+                ):
+                    return None
+                return install_dir_str, download_dir_str
+
             if debug_mode and not clf3_mode:
                 self.logger.info("Adding --debug flag to jackify-engine")
             writeback_path = str(auth_service.get_token_writeback_path()) if not clf3_mode else None

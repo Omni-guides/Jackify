@@ -339,10 +339,16 @@ def missing_archives_error(message: str, context: Optional[dict] = None) -> Inst
     )
 
 
+_GENERIC_CONFIG_DETAILS = ("Configuration failed", "Configuration failed to start")
+
+
 def configuration_failed(detail: str, context: Optional[dict] = None) -> ConfigError:
+    message = "Jackify could not complete the post-installation configuration for this modlist."
+    if detail and detail not in _GENERIC_CONFIG_DETAILS and len(detail) < 300 and "\n" not in detail:
+        message = f"{message} {detail}"
     return ConfigError(
         title="Post-Install Configuration Failed",
-        message="Jackify could not complete the post-installation configuration for this modlist.",
+        message=message,
         suggestion=f"Check Jackify logs ({_logs_dir_display()}) for the specific step that failed.",
         solutions=[
             "Confirm Steam is running and fully loaded before retrying.",
@@ -433,6 +439,21 @@ def manual_steps_incomplete() -> ConfigError:
             "Retry your last Jackify action once after Steam restarts.",
             "Do not perform manual Steam shortcut or prefix setup steps.",
             f"If this state appears again, check Jackify logs ({_logs_dir_display()}) and open a GitHub issue.",
+        ],
+    )
+
+
+def manual_downloads_required(summary: str, downloads_dir: str = "") -> InstallError:
+    """CLF3 stopped because some archives have to be downloaded by hand."""
+    where = f" into {downloads_dir}" if downloads_dir else " into your downloads folder"
+    return InstallError(
+        title="Manual Downloads Required",
+        message="The install stopped because some files cannot be downloaded automatically.\n\n" + summary,
+        suggestion="Download the listed files yourself, then run the install again.",
+        solutions=[
+            f"Save the files{where}, keeping the exact file names shown.",
+            "Run the install again - files already downloaded are kept and it carries on from there.",
+            "The Wabbajack Linux Beta and jackify-engine can walk you through manual downloads.",
         ],
     )
 

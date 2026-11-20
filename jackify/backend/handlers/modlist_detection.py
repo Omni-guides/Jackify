@@ -244,7 +244,11 @@ class ModlistDetectionMixin:
                 break
 
         if found_path:
-            self.stock_game_path = found_path
+            from jackify.backend.handlers.game_dir_resolver import resolve_game_dir
+            resolved = resolve_game_dir(modlist_path, Path(found_path), getattr(self, 'modlist_ini', None))
+            self.stock_game_path = str(resolved)
+            if str(resolved) != found_path:
+                self.logger.info(f"Resolved actual game directory: {resolved}")
             return True
         else:
             self.stock_game_path = None

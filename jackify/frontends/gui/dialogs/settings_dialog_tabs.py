@@ -183,19 +183,21 @@ class SettingsDialogTabsMixin:
         install_engine_layout = QVBoxLayout()
         install_engine_group.setLayout(install_engine_layout)
 
-        self.clf3_default_checkbox = QCheckBox("Use CLF3 as default install engine")
-        self.clf3_default_checkbox.setToolTip(
-            "Use CLF3 (SulfurNitride) as the default engine for all installs. "
-            "CLF3 will be downloaded automatically if not already installed. "
+        self.wabbajack_default_checkbox = QCheckBox("Use Wabbajack Linux Beta as default install engine")
+        self.wabbajack_default_checkbox.setToolTip(
+            "Use Wabbajack's own Linux install engine (beta) as the default engine for all installs. "
+            "It will be downloaded automatically if not already installed. "
             "You can still override this per-install on the Install screen."
         )
-        self.clf3_default_checkbox.setStyleSheet("color: #fff;")
+        self.wabbajack_default_checkbox.setStyleSheet("color: #fff;")
+        self._wabbajack_default_initial = False
         try:
             from jackify.backend.services.tool_registry import get_active_engine_id
-            self.clf3_default_checkbox.setChecked(get_active_engine_id() == "clf3")
+            self._wabbajack_default_initial = get_active_engine_id() == "wabbajack-cli"
+            self.wabbajack_default_checkbox.setChecked(self._wabbajack_default_initial)
         except Exception:
             pass
-        install_engine_layout.addWidget(self.clf3_default_checkbox)
+        install_engine_layout.addWidget(self.wabbajack_default_checkbox)
 
         install_engine_layout.addWidget(QLabel("Wine Components Installation:"))
         self.component_method_group = QButtonGroup()

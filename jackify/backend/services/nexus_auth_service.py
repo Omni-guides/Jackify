@@ -198,6 +198,10 @@ class NexusAuthService:
             logger.error("OAuth authorization failed")
             return False
 
+    def cancel_oauth(self) -> None:
+        """Abort an authorize_oauth() call that is waiting for the browser."""
+        self.oauth_service.cancel()
+
     def revoke_oauth(self) -> bool:
         """
         Revoke OAuth authorization by deleting stored token

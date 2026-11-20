@@ -20,11 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 def uninstall_modlist(
-    entry: InstallEntry, progress_callback: Optional[Callable[[str], None]] = None
+    entry: InstallEntry, progress_callback: Optional[Callable[[str], None]] = None,
+    delete_install_dir: bool = True,
 ) -> Tuple[bool, str]:
     """Returns (success, message). success is False only if Steam itself failed to come back up
     or come down; individual missing-file cleanup steps are logged but never fail the whole
-    operation."""
+    operation. With delete_install_dir False only the shortcut and Proton prefix go, and the
+    entry leaves Jackify's list (Remove from List with the prefix option ticked)."""
     def report(msg: str) -> None:
         logger.info(msg)
         if progress_callback:
@@ -61,7 +63,9 @@ def uninstall_modlist(
 
     try:
         install_path = Path(entry.install_dir)
-        if install_path.is_dir():
+        if not delete_install_dir:
+            report("Install directory left in place")
+        elif install_path.is_dir():
             shutil.rmtree(install_path)
             report(f"Removed install directory: {entry.install_dir}")
         else:

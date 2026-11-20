@@ -205,6 +205,17 @@ class WorkflowMixin:
             else:
                 logger.debug("Standard modlist - no special game handling needed")
 
+            from jackify.backend.data.modlist_launch_workarounds import get_modlist_launch_env
+            if steamdeck is None:
+                from .platform_detection_service import PlatformDetectionService
+                steamdeck = PlatformDetectionService.get_instance().is_steamdeck
+            workaround_env = get_modlist_launch_env(shortcut_name, modlist_install_dir, bool(steamdeck))
+            if workaround_env:
+                custom_launch_options = (
+                    f"{workaround_env} {custom_launch_options}" if custom_launch_options
+                    else f"{workaround_env} %command%"
+                )
+
             try:
                 from .playbook.hook_wiring import run_install_hook
                 run_install_hook(modlist_install_dir, shortcut_name)

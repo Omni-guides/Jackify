@@ -460,7 +460,7 @@ class ModlistMenuHandler:
         self.logger.debug(f"[DEBUG] set_modlist returned: {set_modlist_result}")
 
         if not set_modlist_result:
-            _status(f"{COLOR_ERROR}\nError setting up context for configuration.{COLOR_RESET}")
+            _status(f"{COLOR_ERROR}\nError setting up context for configuration: {context.get('failure_reason') or 'unknown reason'}{COLOR_RESET}")
             self.logger.error(f"set_modlist failed for {context.get('name')}")
             if not gui_mode:
                 input(f"\n{COLOR_PROMPT}Press Enter to continue...{COLOR_RESET}")

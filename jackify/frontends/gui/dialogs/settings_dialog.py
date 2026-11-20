@@ -14,6 +14,7 @@ from jackify.frontends.gui.services.message_service import MessageService
 from jackify.frontends.gui.shared_theme import (
     COLOR_BTN_BACK, COLOR_BTN_INSTALL, JACKIFY_COLOR_BLUE, TAB_BAR_STYLE, btn_style,
 )
+from .oauth_authorize_thread import OAuthAuthorizeThread
 from .settings_dialog_tabs import SettingsDialogTabsMixin
 from .settings_dialog_proton import SettingsDialogProtonMixin
 
@@ -184,12 +185,19 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             progress.setMinimumWidth(400)
             progress.show()
             QApplication.processEvents()
-            def show_message(msg):
-                progress.setLabelText(f"Waiting for authorisation...\n\n{msg}")
+            oauth_thread = OAuthAuthorizeThread(auth_service, self)
+            outcome = [False]
+            oauth_thread.message_signal.connect(
+                lambda msg: progress.setLabelText(f"Waiting for authorisation...\n\n{msg}"))
+            oauth_thread.finished_signal.connect(lambda ok: outcome.__setitem__(0, ok))
+            progress.canceled.connect(auth_service.cancel_oauth)
+            oauth_thread.start()
+            while oauth_thread.isRunning():
                 QApplication.processEvents()
-            success = auth_service.authorize_oauth(show_browser_message_callback=show_message)
+                oauth_thread.wait(100)
             progress.close()
             QApplication.processEvents()
+            success = outcome[0]
             self._update_oauth_status()
             if success:
                 _, _, username = auth_service.get_auth_status()
@@ -318,9 +326,11 @@ class SettingsDialog(SettingsDialogTabsMixin, SettingsDialogProtonMixin, QDialog
             self.config_handler.set('playbooks_enabled', self.playbooks_enabled_checkbox.isChecked())
             self.config_handler.set('jackify_db_enabled', self.jackify_db_enabled_checkbox.isChecked())
             self.config_handler.set('force_github_updates', self.force_github_updates_checkbox.isChecked())
-            if getattr(self, 'clf3_default_checkbox', None):
-                from jackify.backend.services.tool_registry import set_active_engine_id
-                set_active_engine_id("clf3" if self.clf3_default_checkbox.isChecked() else "jackify-engine")
+            if getattr(self, 'wabbajack_default_checkbox', None):
+                wabbajack_default = self.wabbajack_default_checkbox.isChecked()
+                if wabbajack_default != self._wabbajack_default_initial:
+                    from jackify.backend.services.tool_registry import set_active_engine_id
+                    set_active_engine_id("wabbajack-cli" if wabbajack_default else "jackify-engine")
 
             # Save component installation method preference
             if self.winetricks_radio.isChecked():

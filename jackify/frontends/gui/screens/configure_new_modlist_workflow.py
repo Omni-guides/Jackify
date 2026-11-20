@@ -45,6 +45,11 @@ class ConfigureNewModlistWorkflowMixin:
         if not mo2_path.endswith('ModOrganizer.exe'):
             MessageService.warning(self, "Invalid File", "The specified file is not ModOrganizer.exe", safety_level="low")
             return
+        from jackify.backend.utils.modlist_folder_check import incomplete_install_reason
+        folder_problem = incomplete_install_reason(os.path.dirname(mo2_path))
+        if folder_problem:
+            MessageService.warning(self, "Incomplete Install", folder_problem, safety_level="low")
+            return
         
         # Start time tracking
         self._workflow_start_time = time.time()

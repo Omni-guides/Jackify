@@ -99,12 +99,12 @@ _TYPE_MAP = {
     "engine_error": _engine_error,
     "auth_failed": lambda msg, ctx: oauth_expired(),
     "premium_required": lambda msg, ctx: InstallError(
-        "Nexus Premium Required",
+        "Nexus Download Not Allowed",
         msg,
-        suggestion="Jackify requires a Nexus Premium account for automated installs.",
+        suggestion="Nexus Mods did not allow a direct download for this account.",
         solutions=[
-            "Log in to Nexus Mods with a Premium account.",
-            "Non-premium support is planned for a future release.",
+            "Download the listed files in your browser when Jackify offers them.",
+            "A Nexus Premium account downloads everything automatically, but it is not required.",
         ],
     ),
     "network_error": lambda msg, ctx: InstallError(

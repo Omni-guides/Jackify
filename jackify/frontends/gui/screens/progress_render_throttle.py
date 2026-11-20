@@ -44,6 +44,13 @@ def _flush_pending(owner) -> None:
     thread = getattr(owner, 'install_thread', None)
     # on_installation_finished waits for the thread before clearing the display, so a
     # stopped thread means the install is over and this state is stale.
-    if state is None or thread is None or not thread.isRunning():
+    if state is None or thread is None:
+        return
+    try:
+        running = thread.isRunning()
+    except RuntimeError:
+        # Qt has already deleted the thread's C++ object after a failed install
+        return
+    if not running:
         return
     owner.on_progress_updated(state)

@@ -399,7 +399,12 @@ https://wiki.scenicroute.games/Somnium/1_Installation.html</i>"""
     def cancel_and_cleanup(self):
         """Handle Cancel button - clean up processes and go back"""
         self.collapse_show_details_before_leave()
-        self.go_back()
+        if self._integration_mode and not self._integration_result_sent:
+            # Hands control back to the install screen, which finishes the remaining steps
+            self.resize_request.emit("collapse")
+            self.integration_complete.emit(False, "")
+        else:
+            self.go_back()
         QTimer.singleShot(0, self.cleanup_processes)
     
     def reset_screen_to_defaults(self):
@@ -409,6 +414,7 @@ https://wiki.scenicroute.games/Somnium/1_Installation.html</i>"""
         # Without this reset it stays True forever once set, so a later standalone TTW
         # install would silently try to integrate into a stale modlist from a prior run.
         self._integration_mode = False
+        self._integration_output_dir_fixed = False
         self.file_edit.setText("")
         self.install_dir_edit.setText(self.config_handler.get_modlist_install_base_dir())
         self.console.clear()

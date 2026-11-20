@@ -415,6 +415,18 @@ def main(initial_nxm_url: str = ""):
             y = int(screen_geometry.top() + (screen_geometry.height() * 0.1))  # 10% from top
             window.move(x, y)
     
+    from jackify.shared.paths import get_unavailable_data_dir
+    _bypassed_dir = get_unavailable_data_dir()
+    if _bypassed_dir:
+        QTimer.singleShot(0, lambda: MessageService.warning(
+            window,
+            "Data Directory Unavailable",
+            f"The configured Jackify data directory could not be used:<br><br>"
+            f"{_bypassed_dir}<br><br>"
+            f"If it is on a drive that is no longer mounted at that path, Jackify is using "
+            f"~/Jackify for this session. Your saved setting has not been changed.",
+        ))
+
     # Start background update check after window is shown
     window._check_for_updates_on_startup()
     window._check_tool_updates_on_startup()

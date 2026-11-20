@@ -218,6 +218,7 @@ class ModlistHandler(ModlistDetectionMixin, ModlistConfigurationMixin, ModlistWi
             True if the context was successfully set, False otherwise.
         """
         self.logger.info(f"Setting context for selected modlist: {modlist_info.get('name')}")
+        modlist_info.pop('failure_reason', None)
         
         # 1. Extract info from dictionary
         app_name = modlist_info.get('name')
@@ -226,20 +227,20 @@ class ModlistHandler(ModlistDetectionMixin, ModlistConfigurationMixin, ModlistWi
 
         if not all([app_name, app_id, modlist_dir_path_str]):
             self.logger.error(f"Incomplete modlist info provided: {modlist_info}")
+            modlist_info['failure_reason'] = "The modlist name, Steam AppID or folder is missing."
             return False
             
         self.logger.debug(f"Using AppName: {app_name}, AppID: {app_id}, Path: {modlist_dir_path_str}")
         modlist_dir_path = Path(modlist_dir_path_str)
 
         # 2. Validate paths and set internal state
-        if not modlist_dir_path.is_dir():
-            self.logger.error(f"Modlist directory does not exist: {modlist_dir_path}")
+        from jackify.backend.utils.modlist_folder_check import incomplete_install_reason
+        folder_problem = incomplete_install_reason(str(modlist_dir_path))
+        if folder_problem:
+            self.logger.error(folder_problem)
+            modlist_info['failure_reason'] = folder_problem
             return False
-            
         modlist_ini_path = modlist_dir_path / "ModOrganizer.ini"
-        if not modlist_ini_path.is_file():
-             self.logger.error(f"ModOrganizer.ini not found in directory: {modlist_dir_path}")
-             return False
 
         # Set state variables
         self.game_name = app_name 

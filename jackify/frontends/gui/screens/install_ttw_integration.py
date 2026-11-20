@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class TTWIntegrationMixin:
     """Mixin providing modlist integration workflow for InstallTTWScreen."""
 
-    def set_modlist_integration_mode(self, modlist_name: str, install_dir: str):
+    def set_modlist_integration_mode(self, modlist_name: str, install_dir: str, output_dir: str = None):
         """Set the screen to modlist integration mode
 
         This mode is activated when TTW needs to be installed and integrated
@@ -27,12 +27,16 @@ class TTWIntegrationMixin:
             install_dir: Installation directory of the modlist
         """
         self._integration_mode = True
+        self._integration_result_sent = False
         self._integration_modlist_name = modlist_name
         self._integration_install_dir = install_dir
+        # A playbook-supplied output dir is the modlist's own pre-registered TTW mod folder, so
+        # there is nothing to rename or re-register once the installer has written into it.
+        self._integration_output_dir_fixed = bool(output_dir)
 
         # Pre-populate output dir to install TTW directly into the modlist mods folder,
         # avoiding the wasteful copy step during integration.
-        ttw_target = Path(install_dir) / "mods" / "[NoDelete] Tale of Two Wastelands"
+        ttw_target = Path(output_dir) if output_dir else Path(install_dir) / "mods" / "[NoDelete] Tale of Two Wastelands"
         self.install_dir_edit.setText(str(ttw_target))
 
         self.status_banner.setText("Please fill in the details above and click Start Install")
@@ -51,6 +55,9 @@ class TTWIntegrationMixin:
 
         logger.debug(f"TTW screen set to integration mode for modlist: {modlist_name}")
         logger.debug(f"TTW output pre-populated to: {ttw_target}")
+
+    def _note_integration_result(self, success: bool, ttw_version: str) -> None:
+        self._integration_result_sent = True
 
     def _perform_modlist_integration(self):
         """Integrate TTW into the modlist automatically
@@ -82,6 +89,11 @@ class TTWIntegrationMixin:
                 version_match = re.search(r'v?(\d+\.\d+(?:\.\d+)?)', mpi_filename, re.IGNORECASE)
                 if version_match:
                     ttw_version = version_match.group(1)
+
+            if getattr(self, '_integration_output_dir_fixed', False):
+                self._safe_append_text("\nTTW installed into the modlist's own TTW folder.")
+                self.integration_complete.emit(True, ttw_version)
+                return
 
             # If TTW was installed directly into the modlist mods dir (integration mode
             # pre-populate), rename to the versioned folder name and skip the copy step.

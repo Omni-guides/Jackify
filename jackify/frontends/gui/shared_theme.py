@@ -7,6 +7,7 @@ from typing import Optional
 JACKIFY_COLOR_BLUE = "#3fd0ea"  # Official Jackify blue
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), 'assets')
 LOGO_PATH = os.path.join(ASSETS_DIR, 'jackify_logo.png')
+WABBAJACK_LOGO_PATH = os.path.join(ASSETS_DIR, 'wabbajack_logo.png')
 BANNER_PATH = os.path.join(ASSETS_DIR, 'jackify_banner.png')  # transparent background
 DISCLAIMER_TEXT = (
     "Jackify is provided as-is. Back up your modlist and game data before making changes. "

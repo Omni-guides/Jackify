@@ -39,6 +39,7 @@ from jackify.frontends.gui.mixins.thread_lifecycle_mixin import ThreadLifecycleM
 from jackify.frontends.gui.screens.modlist_dashboard_card import (
     CARD_WIDTH, AddModlistCard, DashboardCard, btn_style,
 )
+from jackify.frontends.gui.screens.modlist_dashboard_remove import ask_remove_from_list
 from jackify.frontends.gui.screens.modlist_dashboard_threads import (
     GalleryVersionFetchThread, UninstallThread,
 )
@@ -480,6 +481,9 @@ class ModlistDashboardScreen(ThreadLifecycleMixin, FocusReclaimMixin, QWidget):
         if not self._confirm_files_stay_behind(entry):
             return
 
+        self._start_uninstall(entry, delete_install_dir=True)
+
+    def _start_uninstall(self, entry: InstallEntry, delete_install_dir: bool):
         self.check_updates_button.setEnabled(False)
         card = self._cards.get(entry.install_id)
         if card:
@@ -488,7 +492,8 @@ class ModlistDashboardScreen(ThreadLifecycleMixin, FocusReclaimMixin, QWidget):
         self._show_uninstall_progress(entry)
         from jackify.frontends.gui.mixins.thread_registry import register_managed_thread
 
-        self._uninstall_thread = UninstallThread(entry, parent=self)
+        self._uninstall_thread = UninstallThread(
+            entry, parent=self, delete_install_dir=delete_install_dir)
         self._uninstall_thread.progress.connect(self._on_uninstall_progress)
         self._uninstall_thread.finished_uninstall.connect(
             lambda success, message: self._on_uninstall_done(entry, success, message)
@@ -571,26 +576,14 @@ class ModlistDashboardScreen(ThreadLifecycleMixin, FocusReclaimMixin, QWidget):
         self._rebuild_card_list()
 
     def _remove_from_list(self, entry: InstallEntry):
-        """Drop the registry entry only - the CLI's "Remove from this list only" action,
-        for a modlist whose Steam shortcut/prefix/files should not be touched (e.g. Missing
-        because its drive is temporarily unmounted). Not destructive - only edits Jackify's
-        own tracking file - so a plain Yes/No question, not the typed-DELETE WarningDialog
-        Uninstall uses."""
-        reply = MessageService.question(
-            self, "Remove from List",
-            f"Remove \"{entry.modlist_name}\" from Jackify's tracked list?\n\n"
-            f"The Steam shortcut, Proton prefix and files are left untouched. If it is "
-            f"reinstalled or its drive comes back, use \"Add an Existing Modlist\" to bring "
-            f"it back onto the Dashboard.",
-            safety_level="low",
-        )
-        if reply != QMessageBox.Yes:
+        """Drop the registry entry; optionally also delete its Steam shortcut and Proton prefix."""
+        also_delete = ask_remove_from_list(self, entry)
+        if also_delete is None:
             return
-
-        # No rebuild here - this runs from the Properties dialog's own nested event loop
-        # (dlg.exec() is still active), and rebuilding now would destroy the card whose
-        # mousePressEvent opened that dialog while it is still on the call stack, three
-        # frames up. _open_properties() already rebuilds unconditionally once dlg.exec()
-        # actually returns, which is the only point it is safe to do so.
+        if also_delete:
+            self._start_uninstall(entry, delete_install_dir=False)
+            return
+        # No rebuild here: this can run from the Properties dialog's nested event loop, and
+        # _open_properties() rebuilds once dlg.exec() returns.
         remove_from_registry(entry.install_id)
 

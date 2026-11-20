@@ -303,7 +303,10 @@ class ModlistService:
                         completion_callback(True, "Core configuration complete", context.name, enb_detected)
                     else:
                         debug_callback("Configuration failed, calling completion callback with failure")
-                        completion_callback(False, "Configuration failed", context.name, False)
+                        completion_callback(
+                            False, config_context.get('failure_reason') or "Configuration failed",
+                            context.name, False,
+                        )
                 
                 return success
                 

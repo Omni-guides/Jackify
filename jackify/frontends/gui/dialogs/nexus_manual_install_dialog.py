@@ -20,13 +20,23 @@ class NexusManualInstallDialog(QDialog):
     the archive to Jackify for extraction and installation.
     """
 
-    def __init__(self, tool_id: str, display_name: str, nexus_url: str, parent=None):
+    def __init__(self, tool_id: str, display_name: str, nexus_url: str, parent=None, *,
+                 window_title: Optional[str] = None, heading: Optional[str] = None,
+                 body_text: Optional[str] = None, open_button_text: str = "Open Nexus Page",
+                 confirm_button_text: str = "Install", start_dir: Optional[str] = None):
+        """The keyword-only arguments reword the dialog for non-Nexus archives (e.g. a playbook's
+        login-gated download); the defaults keep the original Nexus wording."""
         super().__init__(parent)
         self._tool_id = tool_id
         self._nexus_url = nexus_url
         self._archive_path: Optional[Path] = None
+        self._heading = heading
+        self._body_text = body_text
+        self._open_button_text = open_button_text
+        self._confirm_button_text = confirm_button_text
+        self._start_dir = start_dir or str(Path.home() / "Downloads")
 
-        self.setWindowTitle(f"Install {display_name}")
+        self.setWindowTitle(window_title or f"Install {display_name}")
         self.setModal(True)
         self.setMinimumWidth(480)
         self.setStyleSheet("QDialog { background: #181818; color: #fff; }")
@@ -53,12 +63,12 @@ class NexusManualInstallDialog(QDialog):
         card_layout.setSpacing(16)
         card_layout.setContentsMargins(28, 28, 28, 28)
 
-        title_label = QLabel(f"Manual download required: {display_name}")
+        title_label = QLabel(self._heading or f"Manual download required: {display_name}")
         title_label.setStyleSheet("color: #3fd0ea; font-size: 14px; font-weight: 600;")
         title_label.setWordWrap(True)
         card_layout.addWidget(title_label)
 
-        body_label = QLabel(
+        body_label = QLabel(self._body_text or (
             f"{display_name} is only available on Nexus Mods. As you do not have Nexus "
             "Premium, please perform the following steps manually:\n\n"
             f"1. Click 'Open Nexus Page' below and click Manual Download on the Nexus page "
@@ -66,13 +76,14 @@ class NexusManualInstallDialog(QDialog):
             "2. Once the download is complete, click 'Browse...' below and select the "
             "downloaded archive\n"
             "3. Click Install to complete the installation."
-        )
+        ))
         body_label.setWordWrap(True)
         card_layout.addWidget(body_label)
 
-        nexus_btn = QPushButton("Open Nexus Page")
-        nexus_btn.clicked.connect(self._open_nexus)
-        card_layout.addWidget(nexus_btn)
+        if self._nexus_url:
+            nexus_btn = QPushButton(self._open_button_text)
+            nexus_btn.clicked.connect(self._open_nexus)
+            card_layout.addWidget(nexus_btn)
 
         file_row = QHBoxLayout()
         self._file_edit = QLineEdit()
@@ -103,7 +114,7 @@ class NexusManualInstallDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(cancel_btn)
 
-        self._install_btn = QPushButton("Install")
+        self._install_btn = QPushButton(self._confirm_button_text)
         self._install_btn.setDefault(True)
         self._install_btn.setMinimumWidth(100)
         self._install_btn.setEnabled(False)
@@ -121,7 +132,7 @@ class NexusManualInstallDialog(QDialog):
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Select downloaded archive",
-            str(Path.home() / "Downloads"),
+            self._start_dir,
             "Archives (*.zip *.tar.gz *.tar.xz *.7z);;All files (*)",
         )
         if path:

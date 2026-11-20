@@ -13,17 +13,68 @@ class InstallWorkflowExecutionMixin:
     """Mixin containing install-run and manual-download dialog execution methods."""
 
     def _session_engine_id(self) -> str:
-        """Return the engine to use for this install based on the install screen checkbox."""
-        return "clf3" if self.engine_checkbox.isChecked() else "jackify-engine"
+        """Return the engine for this install: the checkbox, else the Tools Hub active engine."""
+        if self.engine_checkbox.isChecked():
+            return "wabbajack-cli"
+        from jackify.backend.services.tool_registry import get_active_engine_id
+        return "clf3" if get_active_engine_id() == "clf3" else "jackify-engine"
 
-    def _ensure_clf3_installed(self) -> bool:
+    def _confirm_gpu_for_session_engine(self) -> bool:
+        """Warn when the Wabbajack Linux Beta would encode textures on the CPU.
+
+        Returns False when the user backs out. Choosing jackify-engine unticks the engine
+        checkbox and returns True so the install carries on with it.
         """
-        If CLF3 is already installed, return True immediately.
-        If not, prompt and install it via the same path Tools Hub uses, returning True on
+        if self._session_engine_id() != "wabbajack-cli":
+            return True
+        from jackify.backend.services.compute_support import gpu_texture_encoding_available
+        from jackify.backend.handlers.config_handler import ConfigHandler
+        config = ConfigHandler()
+        if gpu_texture_encoding_available() or config.get('wjcli_cpu_texture_warning_dismissed', False):
+            return True
+        from PySide6.QtWidgets import QCheckBox, QMessageBox
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("No GPU Compute Driver Found")
+        box.setText(
+            "The Wabbajack Linux Beta converts textures on the GPU through CUDA or OpenCL. "
+            "Neither was found on this system, so it will use the CPU instead."
+        )
+        box.setInformativeText(
+            "On texture-heavy modlists that can take many times longer than jackify-engine: "
+            "hours instead of minutes for large conversions. The Steam Deck has no OpenCL "
+            "driver, so it always falls back to the CPU for texture conversion. Making the "
+            "Wabbajack Linux client usable on the Steam Deck needs work by the Wabbajack project."
+        )
+        remember = QCheckBox("Don't warn me again")
+        box.setCheckBox(remember)
+        use_default = box.addButton("Use jackify-engine", QMessageBox.AcceptRole)
+        proceed = box.addButton("Continue anyway", QMessageBox.DestructiveRole)
+        cancel = box.addButton("Cancel", QMessageBox.RejectRole)
+        box.setDefaultButton(use_default)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is cancel or clicked is None:
+            return False
+        if remember.isChecked():
+            config.set('wjcli_cpu_texture_warning_dismissed', True)
+            config.save_config()
+        if clicked is use_default:
+            self.engine_checkbox.setChecked(False)
+        return clicked in (use_default, proceed)
+
+    def _ensure_session_engine_installed(self) -> bool:
+        """
+        Return True if the session engine is installed or does not need installing.
+        If not installed, prompt and install it via the same path Tools Hub uses, returning True on
         success (including the Nexus-Premium/manual-download outcomes, not just GitHub).
         """
         from jackify.frontends.gui.services.tool_install_prompt import ensure_tool_installed
-        return ensure_tool_installed(self, "clf3", "CLF3")
+        labels = {"clf3": "CLF3", "wabbajack-cli": "Wabbajack Linux CLI (Beta)"}
+        engine_id = self._session_engine_id()
+        if engine_id not in labels:
+            return True
+        return ensure_tool_installed(self, engine_id, labels[engine_id])
 
     def validate_and_start_install(self):
         import time
