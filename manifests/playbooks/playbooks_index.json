@@ -14,7 +14,11 @@
     },
     {
       "playbook_id": "nuclear-sunset",
-      "sha256": "63f1b5cdc3289c9397a3342bd5a9a2bceab11564fabe9a302e51292ba1625530"
+      "sha256": "7828222f4316aedd5cf8c064c4b8cd4420a7ece2127dffe112be52670ee14cf2"
+    },
+    {
+      "playbook_id": "tuxborn",
+      "sha256": "ab3ca195885315438db1b5bd4cc26178051dc2901064031689f62c215fc7bcb3"
     }
   ]
 }

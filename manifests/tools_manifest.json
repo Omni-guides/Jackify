@@ -1,5 +1,5 @@
 {
-  "manifest_version": 3,
+  "manifest_version": 6,
   "tools": [
     {
       "tool_id": "jackify-engine",
@@ -24,6 +24,19 @@
       "can_uninstall": true,
       "is_engine": true,
       "can_launch": false
+    },
+    {
+      "tool_id": "wabbajack-cli",
+      "display_name": "Wabbajack Linux CLI (Beta)",
+      "description": "Wabbajack's own Linux install engine, built from the Omni-guides fork. Opt-in beta engine. Jackify still handles the prefix, configuration and Linux fixes.",
+      "github_repo": "Omni-guides/wabbajack",
+      "asset_patterns": ["linux-x64\\.tar\\.gz"],
+      "executable_names": ["wabbajack-cli"],
+      "tier": 1,
+      "can_uninstall": true,
+      "is_engine": true,
+      "can_launch": false,
+      "include_prereleases": true
     },
     {
       "tool_id": "ttw_installer",
